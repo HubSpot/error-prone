@@ -1,3 +1,11 @@
+provides:
+  - docgen
+
+depends:
+  - annotation
+  - core
+  - docgen_processor
+
 env:
   SET_VERSION_OVERRIDE: "2.3.4-$GIT_BRANCH-SNAPSHOT"
 
