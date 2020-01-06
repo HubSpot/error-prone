@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.google.errorprone;
+package com.google.errorprone.descriptionlistener;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.ImmutableList.toImmutableList;
@@ -22,6 +22,7 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableList;
+import com.google.errorprone.DescriptionListener;
 import com.google.errorprone.fixes.AppliedFix;
 import com.google.errorprone.fixes.Fix;
 import com.google.errorprone.matchers.Description;
@@ -31,6 +32,7 @@ import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.JCDiagnostic;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import com.sun.tools.javac.util.Log;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.EnumSet;
@@ -69,6 +71,15 @@ public class JavacErrorDescriptionListener implements DescriptionListener {
               return EnumSet.noneOf(JCDiagnostic.DiagnosticFlag.class);
             }
           });
+
+  public JavacErrorDescriptionListener(DescriptionListenerResources resources) {
+    this (
+        resources.getLog(),
+        resources.getEndPositions(),
+        resources.getSourceFile(),
+        resources.getContext(),
+        resources.getUseErrors());
+  }
 
   private JavacErrorDescriptionListener(
       Log log,
@@ -167,17 +178,5 @@ public class JavacErrorDescriptionListener implements DescriptionListener {
       messageBuilder.append("?");
     }
     return messageBuilder.toString();
-  }
-
-  static Factory provider(Context context) {
-    return (log, compilation) ->
-        new JavacErrorDescriptionListener(
-            log, compilation.endPositions, compilation.getSourceFile(), context, false);
-  }
-
-  static Factory providerForRefactoring(Context context) {
-    return (log, compilation) ->
-        new JavacErrorDescriptionListener(
-            log, compilation.endPositions, compilation.getSourceFile(), context, true);
   }
 }
