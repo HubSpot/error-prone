@@ -75,8 +75,8 @@ public class JavacErrorDescriptionListener implements DescriptionListener {
   public JavacErrorDescriptionListener(DescriptionListenerResources resources) {
     this (
         resources.getLog(),
-        resources.getEndPositions(),
-        resources.getSourceFile(),
+        resources.getCompilation().endPositions,
+        resources.getCompilation().getSourceFile(),
         resources.getContext(),
         resources.getUseErrors());
   }
