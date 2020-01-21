@@ -34,6 +34,14 @@ public interface DescriptionListener {
    */
   void onDescribed(Description description);
 
+  /**
+   * Called when analysis of the code is complete and no more
+   * descriptions are available
+   */
+  default void onAnalysisComplete() {
+
+  }
+
   /** Factory for creating DescriptionListeners while compiling each file. */
   interface Factory {
     DescriptionListener getDescriptionListener(Log log, JCCompilationUnit compilation);

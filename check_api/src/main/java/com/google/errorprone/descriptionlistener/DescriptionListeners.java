@@ -49,6 +49,13 @@ public class DescriptionListeners {
         listener.onDescribed(description);
       }
     }
+
+    @Override
+    public void onAnalysisComplete() {
+      for (DescriptionListener listener : delegates) {
+        listener.onAnalysisComplete();
+      }
+    }
   }
 
   private static class MultiCustomDescriptionListenerFactory implements CustomDescriptionListenerFactory {

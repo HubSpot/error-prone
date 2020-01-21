@@ -173,6 +173,9 @@ public class ErrorProneAnalyzer implements TaskListener {
     } finally {
       log.useSource(originalSource);
     }
+
+    // notify any description listeners that care that we're done
+    descriptionListener.onAnalysisComplete();
   }
 
   /** Returns true if the given source file should be excluded from analysis. */
