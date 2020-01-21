@@ -152,6 +152,9 @@ public class ErrorProneAnalyzer implements TaskListener {
         // CompilationUnitTree once we've seen all the enclosed classes.
         transformer.get().apply(new TreePath(compilation), context, countingDescriptionListener);
       }
+
+      // notify any description listeners that care that we're done
+      descriptionListener.onAnalysisComplete();
     } catch (ErrorProneError e) {
       e.logFatalError(log, context);
       // let the exception propagate to javac's main, where it will cause the compilation to
@@ -173,9 +176,6 @@ public class ErrorProneAnalyzer implements TaskListener {
     } finally {
       log.useSource(originalSource);
     }
-
-    // notify any description listeners that care that we're done
-    descriptionListener.onAnalysisComplete();
   }
 
   /** Returns true if the given source file should be excluded from analysis. */
