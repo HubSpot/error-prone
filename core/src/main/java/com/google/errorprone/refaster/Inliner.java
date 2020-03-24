@@ -26,6 +26,7 @@ import com.google.errorprone.util.ASTHelpers;
 import com.google.errorprone.util.RuntimeVersion;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
+import com.sun.tools.javac.code.Symbol.ModuleSymbol;
 import com.sun.tools.javac.code.Symbol.TypeSymbol;
 import com.sun.tools.javac.code.Symbol.TypeVariableSymbol;
 import com.sun.tools.javac.code.Symtab;
@@ -93,6 +94,14 @@ public final class Inliner {
     } catch (NullPointerException e) {
       throw new CouldNotResolveImportException(qualifiedClass);
     }
+  }
+
+  private java.util.Optional<ClassSymbol> resolveIdent(ModuleSymbol moduleSymbol, CharSequence qualifiedClass) {
+    Symbol symbol = JavaCompiler.instance(context).resolveIdent(moduleSymbol, qualifiedClass.toString());
+
+    return java.util.Optional.ofNullable(symbol)
+        .filter(ClassSymbol.class::isInstance)
+        .map(ClassSymbol.class::cast);
   }
 
   public Context getContext() {
