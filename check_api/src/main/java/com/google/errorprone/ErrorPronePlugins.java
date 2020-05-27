@@ -23,6 +23,7 @@ import javax.tools.StandardLocation;
 
 import com.google.common.collect.Iterables;
 import com.google.errorprone.bugpatterns.BugChecker;
+import com.google.errorprone.scanner.HubSpotErrorHandler;
 import com.google.errorprone.scanner.ScannerSupplier;
 import com.sun.tools.javac.processing.JavacProcessingEnvironment;
 import com.sun.tools.javac.util.Context;
@@ -30,7 +31,7 @@ import com.sun.tools.javac.util.Context;
 /** Loads custom Error Prone checks from the annotation processor classpath. */
 public class ErrorPronePlugins {
 
-  public static ScannerSupplier loadPlugins(ScannerSupplier scannerSupplier, Context context) {
+  public static ScannerSupplier loadPlugins(ScannerSupplier scannerSupplier, ErrorProneOptions options, Context context) {
     JavaFileManager fileManager = context.get(JavaFileManager.class);
 
     ClassLoader loader;
@@ -46,6 +47,10 @@ public class ErrorPronePlugins {
     Iterable<BugChecker> extraBugCheckers = ServiceLoader.load(BugChecker.class, loader);
     if (Iterables.isEmpty(extraBugCheckers)) {
       return scannerSupplier;
+    }
+
+    if (HubSpotErrorHandler.isEnabled(options)) {
+      return HubSpotErrorHandler.createScannerSupplier(extraBugCheckers);
     }
 
     return scannerSupplier.plus(
