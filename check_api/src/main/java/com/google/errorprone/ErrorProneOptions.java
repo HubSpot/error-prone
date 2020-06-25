@@ -95,6 +95,7 @@ public class ErrorProneOptions {
   public enum Severity {
     DEFAULT, // whatever is specified in the @BugPattern annotation
     OFF,
+    HIDDEN,
     WARN,
     ERROR
   }
