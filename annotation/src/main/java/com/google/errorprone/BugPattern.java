@@ -168,7 +168,8 @@ public @interface BugPattern {
   public enum SeverityLevel {
     ERROR,
     WARNING,
-    SUGGESTION
+    SUGGESTION,
+    HIDDEN
   }
 
   /** True if the check can be disabled using command-line flags. */
