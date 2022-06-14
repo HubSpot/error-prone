@@ -18,6 +18,7 @@ package com.google.errorprone.hubspot;
 
 import com.google.errorprone.ErrorProneAnalyzer;
 import com.google.errorprone.ErrorProneOptions;
+import com.google.errorprone.scanner.ScannerSupplier;
 import com.sun.source.util.TaskEvent;
 import com.sun.source.util.TaskEvent.Kind;
 import com.sun.source.util.TaskListener;
@@ -26,17 +27,26 @@ import com.sun.tools.javac.util.Context;
 public class HubSpotErrorProneAnalyzer implements TaskListener {
   private final Context context;
   private final ErrorProneOptions options;
-  private final ErrorProneAnalyzer delegate;
+  private final TaskListener standardAnalyzer;
 
 
-  public static TaskListener wrap(Context context, ErrorProneOptions options, ErrorProneAnalyzer analyzer) {
-    return new HubSpotErrorProneAnalyzer(context, options, analyzer);
+  public static HubSpotErrorProneAnalyzer create(ScannerSupplier scannerSupplier, ErrorProneOptions options, Context context) {
+    // Note: This analyzer doesn't make any attempt to handle refaster refactorings. We fall back on
+    // standard analyzer impl if refaster is requested
+
+    TaskListener standardAnalyzer = ErrorProneAnalyzer.createByScanningForPlugins(scannerSupplier, options, context);
+
+    if (HubSpotUtils.isErrorHandlingEnabled(options)) {
+      standardAnalyzer = ErrorReportingAnalyzer.wrap(standardAnalyzer);
+    }
+
+    return new HubSpotErrorProneAnalyzer(context, options, standardAnalyzer);
   }
 
-  private HubSpotErrorProneAnalyzer(Context context, ErrorProneOptions options, ErrorProneAnalyzer delegate) {
+  private HubSpotErrorProneAnalyzer(Context context, ErrorProneOptions options, TaskListener standardAnalyzer) {
     this.context = context;
     this.options = options;
-    this.delegate = delegate;
+    this.standardAnalyzer = standardAnalyzer;
   }
 
   @Override
@@ -45,31 +55,15 @@ public class HubSpotErrorProneAnalyzer implements TaskListener {
       HubSpotLifecycleManager.instance(context).handleStartup();
     }
 
-    try {
-      delegate.started(taskEvent);
-    } catch (Throwable t) {
-      if (HubSpotUtils.isErrorHandlingEnabled(options)) {
-        HubSpotUtils.recordUncaughtException(t);
-      }
-
-      throw t;
-    }
+    standardAnalyzer.started(taskEvent);
   }
 
   @Override
   public void finished(TaskEvent taskEvent) {
+    standardAnalyzer.finished(taskEvent);
+
     if (taskEvent.getKind() == Kind.COMPILATION) {
       HubSpotLifecycleManager.instance(context).handleShutdown();
-    }
-
-    try {
-      delegate.finished(taskEvent);
-    } catch (Throwable t) {
-      if (HubSpotUtils.isErrorHandlingEnabled(options)) {
-        HubSpotUtils.recordUncaughtException(t);
-      }
-
-      throw t;
     }
   }
 }
