@@ -20,19 +20,17 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Optional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Strings;
-import com.google.common.base.Supplier;
-import com.google.errorprone.ErrorProneOptions;
 import com.sun.tools.javac.util.Context;
 
+/**
+ * Manages files within ${project.baseDir}/target/generated-(compile|test-compile)-metadata/**
+ */
 class FileManager {
   private static final ObjectMapper MAPPER = new ObjectMapper();
-  private static final String OVERWATCH_DIR_ENV_VAR = "MAVEN_PROJECTBASEDIR";
-  private static final String BLAZAR_DIR_ENV_VAR = "VIEWABLE_BUILD_ARTIFACTS_DIR";
 
   public static synchronized FileManager instance(Context context) {
     FileManager instance = context.get(FileManager.class);
@@ -45,29 +43,34 @@ class FileManager {
     return instance;
   }
 
-  private final String phase;
+  private final Optional<Path> targetBaseDir;
 
   FileManager(String phase) {
-    this.phase = phase;
+    String targetDir = System.getenv("MAVEN_PROJECTBASEDIR");
+
+    this.targetBaseDir = Strings.isNullOrEmpty(targetDir) ?
+        Optional.empty() :
+        Optional.of(Path.of(targetDir, "target",
+            String.format("generated-%s-metadata", phase)));
   }
 
   Optional<Path> getErrorOutputPath() {
-    return getDataDir(OVERWATCH_DIR_ENV_VAR, "target/overwatch-metadata")
+    return getDataDir("overwatch-metadata")
         .map(o -> o.resolve("error-prone-exceptions.json"));
   }
 
   Optional<Path> getTimingsOutputPath() {
-    return getDataDir(BLAZAR_DIR_ENV_VAR, "error-prone")
+    return getDataDir("error-prone")
         .map(o -> o.resolve("error-prone-timings.json"));
   }
 
   Optional<Path> getLifeCycleCanaryPath(String id) {
-    return getDataDir(OVERWATCH_DIR_ENV_VAR, "target/overwatch-metadata")
+    return getDataDir("overwatch-metadata")
         .map(o -> o.resolve(String.format("lifecycle-canary-%s.json", id)));
   }
 
   Optional<Path> getUncaughtExceptionPath() {
-    return getDataDir(BLAZAR_DIR_ENV_VAR, "error-prone")
+    return getDataDir("error-prone")
         .map(o -> o.resolve("error-prone-exception.log"));
   }
 
@@ -81,13 +84,12 @@ class FileManager {
     }
   }
 
-  private Optional<Path> getDataDir(String envVar, String pathToAppend) {
-    String dir = System.getenv(envVar);
-    if (Strings.isNullOrEmpty(dir)) {
+  private Optional<Path> getDataDir(String pathToAppend) {
+    if (targetBaseDir.isEmpty()) {
       return Optional.empty();
     }
 
-    Path res = Paths.get(dir).resolve(pathToAppend).resolve(phase);
+    Path res = targetBaseDir.get().resolve(pathToAppend);
     if (!Files.exists(res)) {
       try {
         Files.createDirectories(res);
