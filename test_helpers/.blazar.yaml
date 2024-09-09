@@ -1,6 +1,5 @@
 buildpack:
   name: Blazar-Buildpack-Java
-  branch: js-jdk-toolchains
 
 provides:
   - test_helpers
