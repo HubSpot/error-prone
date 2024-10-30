@@ -398,11 +398,15 @@ public class A {
         testHelper
                 .addSourceLines(
                         "Foo.java",
-                        "import java.util.function.Supplier;",
-                        "class A {",
-                        "  static Supplier<B> supplier = B::new;",
-                        "}",
-                        "class B extends A {}")
+                        """
+                        import java.util.function.Supplier;
+                        
+                        class A {
+                          static Supplier<B> supplier = B::new;
+                        }
+                        
+                        class B extends A {}
+                        """)
                 .doTest();
     }
 
@@ -411,16 +415,20 @@ public class A {
         testHelper
                 .addSourceLines(
                         "Foo.java",
-                        "import java.util.Comparator;",
-                        "class A {",
-                        "  static Comparator<B> comparator = Comparator.comparing(B::value);",
-                        "}",
-                        "class B extends A {",
-                        "  int value;",
-                        "  int value() {",
-                        "    return value;",
-                        "  }",
-                        "}")
+                        """
+                        import java.util.Comparator;
+                        
+                        class A {
+                          static Comparator<B> comparator = Comparator.comparing(B::value);
+                        }
+                        
+                        class B extends A {
+                          int value;
+                          int value() {
+                            return value;
+                          }
+                        }
+                        """)
                 .doTest();
     }
 
@@ -429,11 +437,15 @@ public class A {
         testHelper
                 .addSourceLines(
                         "Foo.java",
-                        "import java.util.function.Supplier;",
-                        "class A {",
-                        "  static Supplier<B> supplier = () -> new B();",
-                        "}",
-                        "class B extends A {}")
+                        """
+                        import java.util.function.Supplier;
+
+                        class A {
+                          static Supplier<B> supplier = () -> new B();
+                        }
+
+                        class B extends A {}
+                        """)
                 .doTest();
     }
 
@@ -442,13 +454,16 @@ public class A {
         testHelper
                 .addSourceLines(
                         "Foo.java",
-                        "class A {",
-                        "  // BUG: Diagnostic contains:",
-                        "  static int value = B.value(); ",
-                        "}",
-                        "class B extends A {",
-                        "  static int value() { return 0; }",
-                        "}")
+                        """
+                        class A {
+                          // BUG: Diagnostic contains:
+                          static int value = B.value();
+                        }
+
+                        class B extends A {
+                          static int value() { return 0; }
+                        }
+                        """)
                 .doTest();
     }
 }
