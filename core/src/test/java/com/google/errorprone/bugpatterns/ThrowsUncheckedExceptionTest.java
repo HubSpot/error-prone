@@ -33,12 +33,70 @@ public final class ThrowsUncheckedExceptionTest {
 
   @Test
   public void positiveCase() {
-    compilationHelper.addSourceFile("ThrowsUncheckedExceptionPositiveCases.java").doTest();
+    compilationHelper
+        .addSourceLines(
+            "ThrowsUncheckedExceptionPositiveCases.java",
+            """
+package com.google.errorprone.bugpatterns.testdata;
+
+import java.io.IOException;
+
+/**
+ * @author yulissa@google.com (Yulissa Arroyo-Paredes)
+ */
+public class ThrowsUncheckedExceptionPositiveCases {
+  // BUG: Diagnostic contains: 'public void doSomething() {'
+  public void doSomething() throws IllegalArgumentException {
+    throw new IllegalArgumentException("thrown");
+  }
+
+  // BUG: Diagnostic contains: 'public void doSomethingElse() {'
+  public void doSomethingElse() throws RuntimeException, NullPointerException {
+    throw new NullPointerException("thrown");
+  }
+
+  // BUG: Diagnostic contains: Unchecked exceptions do not need to be declared
+  public void doMore() throws RuntimeException, IOException {
+    throw new IllegalArgumentException("thrown");
+  }
+
+  // BUG: Diagnostic contains: Unchecked exceptions do not need to be declared
+  public void doEverything() throws RuntimeException, IOException, IndexOutOfBoundsException {
+    throw new IllegalArgumentException("thrown");
+  }
+
+  // BUG: Diagnostic contains: 'public void doBetter() {'
+  public void doBetter() throws RuntimeException, AssertionError {
+    throw new RuntimeException("thrown");
+  }
+}""")
+        .doTest();
   }
 
   @Test
   public void negativeCase() {
-    compilationHelper.addSourceFile("ThrowsUncheckedExceptionNegativeCases.java").doTest();
+    compilationHelper
+        .addSourceLines(
+            "ThrowsUncheckedExceptionNegativeCases.java",
+            """
+            package com.google.errorprone.bugpatterns.testdata;
+
+            import java.io.FileNotFoundException;
+            import java.io.IOException;
+
+            /**
+             * @author yulissa@google.com (Yulissa Arroyo-Paredes)
+             */
+            public class ThrowsUncheckedExceptionNegativeCases {
+              public void doSomething() {
+                throw new IllegalArgumentException("thrown");
+              }
+
+              public void doMore() throws IOException {
+                throw new FileNotFoundException("thrown");
+              }
+            }""")
+        .doTest();
   }
 
   @Test
@@ -46,16 +104,22 @@ public final class ThrowsUncheckedExceptionTest {
     BugCheckerRefactoringTestHelper.newInstance(ThrowsUncheckedException.class, getClass())
         .addInputLines(
             "in/Test.java",
-            "import java.io.IOError;",
-            "interface Test {",
-            "  void f() throws IOError, RuntimeException;",
-            "}")
+            """
+            import java.io.IOError;
+
+            interface Test {
+              void f() throws IOError, RuntimeException;
+            }
+            """)
         .addOutputLines(
-            "out/Test.java", //
-            "import java.io.IOError;",
-            "interface Test {",
-            "  void f();",
-            "}")
+            "out/Test.java",
+            """
+            import java.io.IOError;
+
+            interface Test {
+              void f();
+            }
+            """)
         .doTest(TEXT_MATCH);
   }
 
@@ -64,18 +128,24 @@ public final class ThrowsUncheckedExceptionTest {
     BugCheckerRefactoringTestHelper.newInstance(ThrowsUncheckedException.class, getClass())
         .addInputLines(
             "in/Test.java",
-            "import java.io.IOError;",
-            "import java.io.IOException;",
-            "interface Test {",
-            "  void f() throws IOError, RuntimeException, IOException;",
-            "}")
+            """
+            import java.io.IOError;
+            import java.io.IOException;
+
+            interface Test {
+              void f() throws IOError, RuntimeException, IOException;
+            }
+            """)
         .addOutputLines(
             "out/Test.java",
-            "import java.io.IOError;",
-            "import java.io.IOException;",
-            "interface Test {",
-            "  void f() throws IOException;",
-            "}")
+            """
+            import java.io.IOError;
+            import java.io.IOException;
+
+            interface Test {
+              void f() throws IOException;
+            }
+            """)
         .doTest();
   }
 
@@ -84,18 +154,24 @@ public final class ThrowsUncheckedExceptionTest {
     BugCheckerRefactoringTestHelper.newInstance(ThrowsUncheckedException.class, getClass())
         .addInputLines(
             "in/Test.java",
-            "import java.io.IOError;",
-            "import java.io.IOException;",
-            "interface Test {",
-            "  void f() throws IOException, IOError, RuntimeException;",
-            "}")
+            """
+            import java.io.IOError;
+            import java.io.IOException;
+
+            interface Test {
+              void f() throws IOException, IOError, RuntimeException;
+            }
+            """)
         .addOutputLines(
             "out/Test.java",
-            "import java.io.IOError;",
-            "import java.io.IOException;",
-            "interface Test {",
-            "  void f() throws IOException;",
-            "}")
+            """
+            import java.io.IOError;
+            import java.io.IOException;
+
+            interface Test {
+              void f() throws IOException;
+            }
+            """)
         .doTest();
   }
 
@@ -104,16 +180,22 @@ public final class ThrowsUncheckedExceptionTest {
     BugCheckerRefactoringTestHelper.newInstance(ThrowsUncheckedException.class, getClass())
         .addInputLines(
             "in/Test.java",
-            "import java.io.IOException;",
-            "interface Test {",
-            "  void f() throws ReflectiveOperationException, IOException, RuntimeException;",
-            "}")
+            """
+            import java.io.IOException;
+
+            interface Test {
+              void f() throws ReflectiveOperationException, IOException, RuntimeException;
+            }
+            """)
         .addOutputLines(
             "out/Test.java",
-            "import java.io.IOException;",
-            "interface Test {",
-            "  void f() throws ReflectiveOperationException, IOException;",
-            "}")
+            """
+            import java.io.IOException;
+
+            interface Test {
+              void f() throws ReflectiveOperationException, IOException;
+            }
+            """)
         .doTest();
   }
 }

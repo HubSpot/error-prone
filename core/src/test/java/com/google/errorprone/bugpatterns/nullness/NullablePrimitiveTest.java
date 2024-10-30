@@ -31,12 +31,62 @@ public class NullablePrimitiveTest {
 
   @Test
   public void positiveCase() {
-    compilationHelper.addSourceFile("NullablePrimitivePositiveCases.java").doTest();
+    compilationHelper
+        .addSourceLines(
+            "NullablePrimitivePositiveCases.java",
+            """
+            package com.google.errorprone.bugpatterns.testdata;
+
+            import org.jspecify.annotations.Nullable;
+
+            /**
+             * @author sebastian.h.monte@gmail.com (Sebastian Monte)
+             */
+            public class NullablePrimitivePositiveCases {
+
+              // BUG: Diagnostic contains: remove
+              @Nullable
+              int a;
+
+              public void method(
+                  // BUG: Diagnostic contains: remove
+                  @Nullable
+                  int a) {
+              }
+
+              // BUG: Diagnostic contains: remove
+              @Nullable
+              public int method() {
+                return 0;
+              }
+            }""")
+        .doTest();
   }
 
   @Test
   public void negativeCase() {
-    compilationHelper.addSourceFile("NullablePrimitiveNegativeCases.java").doTest();
+    compilationHelper
+        .addSourceLines(
+            "NullablePrimitiveNegativeCases.java",
+            """
+            package com.google.errorprone.bugpatterns.testdata;
+
+            import org.jspecify.annotations.Nullable;
+
+            /**
+             * @author sebastian.h.monte@gmail.com (Sebastian Monte)
+             */
+            public class NullablePrimitiveNegativeCases {
+              @Nullable Integer a;
+
+              public void method(@Nullable Integer a) {}
+
+              @Nullable
+              public Integer method() {
+                return Integer.valueOf(0);
+              }
+            }""")
+        .doTest();
   }
 
   @Test
@@ -44,10 +94,14 @@ public class NullablePrimitiveTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "import javax.annotation.Nullable;",
-            "class Test {",
-            "  @Nullable public Test() {}",
-            "}")
+            """
+            import javax.annotation.Nullable;
+
+            class Test {
+              @Nullable
+              public Test() {}
+            }
+            """)
         .doTest();
   }
 
@@ -56,10 +110,14 @@ public class NullablePrimitiveTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "import javax.annotation.Nullable;",
-            "class Test {",
-            "  @Nullable void f() {}",
-            "}")
+            """
+            import javax.annotation.Nullable;
+
+            class Test {
+              @Nullable
+              void f() {}
+            }
+            """)
         .doTest();
   }
 
@@ -68,12 +126,15 @@ public class NullablePrimitiveTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "import java.util.List;",
-            "import org.checkerframework.checker.nullness.qual.Nullable;",
-            "class Test {",
-            "  // BUG: Diagnostic contains:",
-            "  List<@Nullable int[]> xs;",
-            "}")
+            """
+            import java.util.List;
+            import org.checkerframework.checker.nullness.qual.Nullable;
+
+            class Test {
+              // BUG: Diagnostic contains:
+              List<@Nullable int[]> xs;
+            }
+            """)
         .doTest();
   }
 
@@ -83,27 +144,36 @@ public class NullablePrimitiveTest {
     compilationHelper
         .addSourceLines(
             "Nullable.java",
-            "import java.lang.annotation.ElementType;",
-            "import java.lang.annotation.Retention;",
-            "import java.lang.annotation.RetentionPolicy;",
-            "import java.lang.annotation.Target;",
-            "@Retention(RetentionPolicy.RUNTIME)",
-            "@Target(ElementType.TYPE_USE)",
-            "public @interface Nullable {}")
+            """
+            import java.lang.annotation.ElementType;
+            import java.lang.annotation.Retention;
+            import java.lang.annotation.RetentionPolicy;
+            import java.lang.annotation.Target;
+
+            @Retention(RetentionPolicy.RUNTIME)
+            @Target(ElementType.TYPE_USE)
+            public @interface Nullable {}
+            """)
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  // BUG: Diagnostic contains:",
-            "  @Nullable int x;",
-            "  // BUG: Diagnostic contains:",
-            "  @Nullable int f() {",
-            "    return 42;",
-            "  }",
-            "  <@Nullable T> int g() {",
-            "    return 42;",
-            "  }",
-            "  int @Nullable [] y;",
-            "}")
+            """
+            class Test {
+              // BUG: Diagnostic contains:
+              @Nullable int x;
+
+              // BUG: Diagnostic contains:
+              @Nullable
+              int f() {
+                return 42;
+              }
+
+              <@Nullable T> int g() {
+                return 42;
+              }
+
+              int @Nullable [] y;
+            }
+            """)
         .doTest();
   }
 
@@ -112,12 +182,15 @@ public class NullablePrimitiveTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "import java.util.List;",
-            "import org.checkerframework.checker.nullness.qual.NonNull;",
-            "class Test {",
-            "  // BUG: Diagnostic contains:",
-            "  @NonNull int xs;",
-            "}")
+            """
+            import java.util.List;
+            import org.checkerframework.checker.nullness.qual.NonNull;
+
+            class Test {
+              // BUG: Diagnostic contains:
+              @NonNull int xs;
+            }
+            """)
         .doTest();
   }
 }

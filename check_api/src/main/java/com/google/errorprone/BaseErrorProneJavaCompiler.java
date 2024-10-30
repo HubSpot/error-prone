@@ -27,6 +27,7 @@ import com.google.errorprone.scanner.ScannerSupplier;
 import com.sun.source.util.JavacTask;
 import com.sun.tools.javac.api.BasicJavacTask;
 import com.sun.tools.javac.api.JavacTool;
+import com.sun.tools.javac.comp.CompileStates.CompileState;
 import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.JavacMessages;
 import com.sun.tools.javac.util.Options;
@@ -73,6 +74,7 @@ public class BaseErrorProneJavaCompiler implements JavaCompiler {
     ImmutableList<String> javacOpts = errorProneOptions.getRemainingArgs();
     javacOpts = defaultToLatestSupportedLanguageLevel(javacOpts);
     javacOpts = setCompilePolicyToByFile(javacOpts);
+    javacOpts = setShouldStopIfErrorPolicyToFlow(javacOpts);
     JavacTask task =
         (JavacTask)
             javacTool.getTask(
@@ -200,6 +202,27 @@ public class BaseErrorProneJavaCompiler implements JavaCompiler {
       }
     }
     return ImmutableList.<String>builder().addAll(args).add("-XDcompilePolicy=simple").build();
+  }
+
+  private static void checkShouldStopIfErrorPolicy(String arg) {
+    String value = arg.substring(arg.lastIndexOf('=') + 1);
+    CompileState state = CompileState.valueOf(value);
+    if (CompileState.FLOW.isAfter(state)) {
+      throw new InvalidCommandLineOptionException(
+          String.format(
+              "%s is not supported by Error Prone, pass --should-stop=ifError=FLOW instead", arg));
+    }
+  }
+
+  private static ImmutableList<String> setShouldStopIfErrorPolicyToFlow(
+      ImmutableList<String> args) {
+    for (String arg : args) {
+      if (arg.startsWith("--should-stop=ifError") || arg.startsWith("-XDshould-stop.ifError")) {
+        checkShouldStopIfErrorPolicy(arg);
+        return args; // don't do anything if a valid policy is already set
+      }
+    }
+    return ImmutableList.<String>builder().addAll(args).add("--should-stop=ifError=FLOW").build();
   }
 
   /** Registers our message bundle. */

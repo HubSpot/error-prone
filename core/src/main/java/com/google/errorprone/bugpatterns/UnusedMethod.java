@@ -107,6 +107,7 @@ public final class UnusedMethod extends BugChecker implements CompilationUnitTre
    */
   private static final ImmutableSet<String> EXEMPTING_METHOD_ANNOTATIONS =
       ImmutableSet.of(
+          "android.webkit.JavascriptInterface",
           "com.fasterxml.jackson.annotation.JsonAnyGetter",
           "com.fasterxml.jackson.annotation.JsonAnySetter",
           "com.fasterxml.jackson.annotation.JsonCreator",

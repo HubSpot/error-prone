@@ -33,7 +33,169 @@ public class InconsistentCapitalizationTest {
 
   @Test
   public void negativeCases() {
-    compilationHelper.addSourceFile("InconsistentCapitalizationNegativeCases.java").doTest();
+    compilationHelper
+        .addSourceLines(
+            "InconsistentCapitalizationNegativeCases.java",
+            """
+package com.google.errorprone.bugpatterns.testdata;
+
+/** Negative cases for {@link com.google.errorprone.bugpatterns.InconsistentCapitalizationTest}. */
+public class InconsistentCapitalizationNegativeCases {
+
+  public void doesntConflictWithOtherVariables() {
+    int aa;
+    int aA;
+  }
+
+  public void doesntConflictWithVariableOutOfScope() {
+    if (true) {
+      int a;
+    }
+    if (true) {
+      int a;
+    }
+  }
+
+  public void doesntConflictBetweenForVariables() {
+    for (int i = 0; i < 1; i++) {}
+
+    for (int i = 0; i < 1; i++) {}
+  }
+
+  private class DoesntConflictBetweenMethods {
+    int a;
+
+    void a() {}
+
+    void b(int baba) {
+      int c = baba;
+      if (c == baba) {}
+    }
+
+    void c() {
+      int c;
+    }
+  }
+
+  private static class DoesntConflictWithClass {
+
+    static int B;
+
+    static class A {
+
+      static int A;
+    }
+
+    class B {}
+  }
+
+  private static class DoesAllowUpperCaseStaticVariable {
+
+    static int A;
+
+    void method() {
+      int a;
+    }
+  }
+
+  private enum DoesntConflictWithUpperCaseEnum {
+    TEST;
+
+    private Object test;
+  }
+
+  public void doesntConflictWithMethodParameter(long aa) {
+    int aA;
+  }
+
+  private class DoesntConflictWithConstructorParameter {
+
+    DoesntConflictWithConstructorParameter(Object aa) {
+      Object aA;
+    }
+  }
+
+  private class DoesntConflictOutOfScope {
+
+    class A {
+      private Object aaa;
+      private Object aab;
+    }
+
+    class B {
+      private Object aaA;
+
+      void method(String aaB) {
+        char aAb;
+      }
+    }
+  }
+
+  private static class DoesntReplaceMember {
+
+    class A {
+      Object aa;
+      Object ab;
+
+      void method() {
+        B b = new B();
+        aa = b.aA;
+        ab = b.aB.aA;
+        new B().aA();
+        aa.equals(ab);
+        aa.equals(b.aB.aA);
+        aa.equals(b.aB);
+      }
+    }
+
+    class B {
+      Object aA;
+      C aB = new C();
+
+      void aA() {}
+    }
+
+    class C {
+      Object aA;
+    }
+  }
+
+  class DoesntConflictWithNested {
+    Object aa;
+    Object ab;
+
+    class Nested {
+      Object aB;
+
+      Nested(Object aa) {
+        DoesntConflictWithNested.this.aa = aa;
+      }
+
+      class Nested2 {
+        Object aB;
+
+        Nested2(Object aa) {
+          DoesntConflictWithNested.this.aa = aa;
+        }
+      }
+    }
+  }
+
+  static class DoesntFixExternalParentClassFieldMatch {
+
+    static class Parent {
+      Object aa;
+    }
+
+    static class Child extends Parent {
+
+      Child(Object aA) {
+        aa = aA;
+      }
+    }
+  }
+}""")
+        .doTest();
   }
 
   @Test
@@ -41,20 +203,26 @@ public class InconsistentCapitalizationTest {
     refactoringHelper
         .addInputLines(
             "in/Test.java",
-            "class Test {",
-            "  Object aa;",
-            "  void method(Object aA) {",
-            "    this.aa = aA;",
-            "  }",
-            "}")
+            """
+            class Test {
+              Object aa;
+
+              void method(Object aA) {
+                this.aa = aA;
+              }
+            }
+            """)
         .addOutputLines(
             "out/Test.java",
-            "class Test {",
-            "  Object aa;",
-            "  void method(Object aa) {",
-            "    this.aa = aa;",
-            "  }",
-            "}")
+            """
+            class Test {
+              Object aa;
+
+              void method(Object aa) {
+                this.aa = aa;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -63,20 +231,26 @@ public class InconsistentCapitalizationTest {
     refactoringHelper
         .addInputLines(
             "in/Test.java",
-            "class Test {",
-            "  Object aa;",
-            "  Test(Object aA) {",
-            "    this.aa = aA;",
-            "  }",
-            "}")
+            """
+            class Test {
+              Object aa;
+
+              Test(Object aA) {
+                this.aa = aA;
+              }
+            }
+            """)
         .addOutputLines(
             "out/Test.java",
-            "class Test {",
-            "  Object aa;",
-            "  Test(Object aa) {",
-            "    this.aa = aa;",
-            "  }",
-            "}")
+            """
+            class Test {
+              Object aa;
+
+              Test(Object aa) {
+                this.aa = aa;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -85,28 +259,38 @@ public class InconsistentCapitalizationTest {
     refactoringHelper
         .addInputLines(
             "in/Test.java",
-            "import java.util.function.Function;",
-            "class Test {",
-            "  Object ea;",
-            "  Test() {",
-            "    Function<Void, Object> f = (eA) -> {",
-            "        this.ea = eA;",
-            "        return eA;",
-            "    };",
-            "  }",
-            "}")
+            """
+            import java.util.function.Function;
+
+            class Test {
+              Object ea;
+
+              Test() {
+                Function<Void, Object> f =
+                    (eA) -> {
+                      this.ea = eA;
+                      return eA;
+                    };
+              }
+            }
+            """)
         .addOutputLines(
             "out/Test.java",
-            "import java.util.function.Function;",
-            "class Test {",
-            "  Object ea;",
-            "  Test() {",
-            "    Function<Void, Object> f = (ea) -> {",
-            "        this.ea = ea;",
-            "        return ea;",
-            "    };",
-            "  }",
-            "}")
+            """
+            import java.util.function.Function;
+
+            class Test {
+              Object ea;
+
+              Test() {
+                Function<Void, Object> f =
+                    (ea) -> {
+                      this.ea = ea;
+                      return ea;
+                    };
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -116,28 +300,32 @@ public class InconsistentCapitalizationTest {
     refactoringHelper
         .addInputLines(
             "in/Test.java",
-            "class Test {",
-            "  Object aa;",
-            "  Test(Object aA) {",
-            "    this.aa = aA;",
-            "    if (aA == this.aa) {",
-            "      for (Object i = aA;;) {",
-            "      }",
-            "    }",
-            "  }",
-            "}")
+            """
+            class Test {
+              Object aa;
+
+              Test(Object aA) {
+                this.aa = aA;
+                if (aA == this.aa) {
+                  for (Object i = aA; ; ) {}
+                }
+              }
+            }
+            """)
         .addOutputLines(
             "out/Test.java",
-            "class Test {",
-            "  Object aa;",
-            "  Test(Object aa) {",
-            "    this.aa = aa;",
-            "    if (aa == this.aa) {",
-            "      for (Object i = aa;;) {",
-            "      }",
-            "    }",
-            "  }",
-            "}")
+            """
+            class Test {
+              Object aa;
+
+              Test(Object aa) {
+                this.aa = aa;
+                if (aa == this.aa) {
+                  for (Object i = aa; ; ) {}
+                }
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -146,24 +334,28 @@ public class InconsistentCapitalizationTest {
     refactoringHelper
         .addInputLines(
             "in/Test.java",
-            "class Test {",
-            "  Object aa;",
-            "  Test(Object aA) {",
-            "    aa = aA;",
-            "    if (aA == aa) {",
-            "    }",
-            "  }",
-            "}")
+            """
+            class Test {
+              Object aa;
+
+              Test(Object aA) {
+                aa = aA;
+                if (aA == aa) {}
+              }
+            }
+            """)
         .addOutputLines(
             "out/Test.java",
-            "class Test {",
-            "  Object aa;",
-            "  Test(Object aa) {",
-            "    this.aa = aa;",
-            "    if (aa == this.aa) {",
-            "    }",
-            "  }",
-            "}")
+            """
+            class Test {
+              Object aa;
+
+              Test(Object aa) {
+                this.aa = aa;
+                if (aa == this.aa) {}
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -172,34 +364,44 @@ public class InconsistentCapitalizationTest {
     refactoringHelper
         .addInputLines(
             "in/Test.java",
-            "import java.util.function.Function;",
-            "class Test {",
-            "  Object aa;",
-            "  Object ab;",
-            "  class Nested {",
-            "    Object aB;",
-            "    Nested(Object aA) {",
-            "      aa = aA;",
-            "      if (aa == aA) {}",
-            "      Test.this.aa = aA;",
-            "    }",
-            "  }",
-            "}")
+            """
+            import java.util.function.Function;
+
+            class Test {
+              Object aa;
+              Object ab;
+
+              class Nested {
+                Object aB;
+
+                Nested(Object aA) {
+                  aa = aA;
+                  if (aa == aA) {}
+                  Test.this.aa = aA;
+                }
+              }
+            }
+            """)
         .addOutputLines(
             "out/Test.java",
-            "import java.util.function.Function;",
-            "class Test {",
-            "  Object aa;",
-            "  Object ab;",
-            "  class Nested {",
-            "    Object aB;",
-            "    Nested(Object aa) {",
-            "      Test.this.aa = aa;",
-            "      if (Test.this.aa == aa) {}",
-            "      Test.this.aa = aa;",
-            "    }",
-            "  }",
-            "}")
+            """
+            import java.util.function.Function;
+
+            class Test {
+              Object aa;
+              Object ab;
+
+              class Nested {
+                Object aB;
+
+                Nested(Object aa) {
+                  Test.this.aa = aa;
+                  if (Test.this.aa == aa) {}
+                  Test.this.aa = aa;
+                }
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -208,34 +410,42 @@ public class InconsistentCapitalizationTest {
     refactoringHelper
         .addInputLines(
             "in/Test.java",
-            "import java.util.function.Function;",
-            "class Test {",
-            "  static class A {",
-            "    Object aa;",
-            "    static class Nested extends A {",
-            "      Nested(Object aA) {",
-            "        aa = aA;",
-            "        if (aa == aA) {}",
-            "        super.aa = aA;",
-            "      }",
-            "    }",
-            "  }",
-            "}")
+            """
+            import java.util.function.Function;
+
+            class Test {
+              static class A {
+                Object aa;
+
+                static class Nested extends A {
+                  Nested(Object aA) {
+                    aa = aA;
+                    if (aa == aA) {}
+                    super.aa = aA;
+                  }
+                }
+              }
+            }
+            """)
         .addOutputLines(
             "out/Test.java",
-            "import java.util.function.Function;",
-            "class Test {",
-            "  static class A {",
-            "    Object aa;",
-            "    static class Nested extends A {",
-            "      Nested(Object aa) {",
-            "        super.aa = aa;",
-            "        if (super.aa == aa) {}",
-            "        super.aa = aa;",
-            "      }",
-            "    }",
-            "  }",
-            "}")
+            """
+            import java.util.function.Function;
+
+            class Test {
+              static class A {
+                Object aa;
+
+                static class Nested extends A {
+                  Nested(Object aa) {
+                    super.aa = aa;
+                    if (super.aa == aa) {}
+                    super.aa = aa;
+                  }
+                }
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -245,28 +455,36 @@ public class InconsistentCapitalizationTest {
     refactoringHelper
         .addInputLines(
             "in/Test.java",
-            "import java.util.function.Function;",
-            "class Test {",
-            "  Object aa;",
-            "  Function<Object, Object> f = new Function() {",
-            "    public Object apply(Object aA) {",
-            "      aa = aA;",
-            "      return aA;",
-            "    }",
-            "  };",
-            "}")
+            """
+            import java.util.function.Function;
+
+            class Test {
+              Object aa;
+              Function<Object, Object> f =
+                  new Function() {
+                    public Object apply(Object aA) {
+                      aa = aA;
+                      return aA;
+                    }
+                  };
+            }
+            """)
         .addOutputLines(
             "out/Test.java",
-            "import java.util.function.Function;",
-            "class Test {",
-            "  Object aa;",
-            "  Function<Object, Object> f = new Function() {",
-            "    public Object apply(Object aa) {",
-            "      Test.this.aa = aa;",
-            "      return aa;",
-            "    }",
-            "  };",
-            "}")
+            """
+            import java.util.function.Function;
+
+            class Test {
+              Object aa;
+              Function<Object, Object> f =
+                  new Function() {
+                    public Object apply(Object aa) {
+                      Test.this.aa = aa;
+                      return aa;
+                    }
+                  };
+            }
+            """)
         .doTest();
   }
 
@@ -276,16 +494,20 @@ public class InconsistentCapitalizationTest {
     refactoringHelper
         .addInputLines(
             "Test.java",
-            "class Test {",
-            "  Object _DocumentObjectData_QNAME;",
-            "  Object _DocumentObjectdata_QNAME;",
-            "}")
+            """
+            class Test {
+              Object _DocumentObjectData_QNAME;
+              Object _DocumentObjectdata_QNAME;
+            }
+            """)
         .addOutputLines(
             "Test.java",
-            "class Test {",
-            "  Object _DocumentObjectData_QNAME;",
-            "  Object _DocumentObjectdata_QNAME;",
-            "}")
+            """
+            class Test {
+              Object _DocumentObjectData_QNAME;
+              Object _DocumentObjectdata_QNAME;
+            }
+            """)
         .doTest();
   }
 
@@ -294,17 +516,22 @@ public class InconsistentCapitalizationTest {
     compilationHelper
         .addSourceLines(
             "Callback.java",
-            "public class Callback {",
-            "  interface WaitHandler { } // ignore",
-            "  private final WaitHandler waitHandler;",
-            "  // BUG: Diagnostic contains:",
-            "  protected Callback(final WaitHandler waithandler) {",
-            "    this.waitHandler = waithandler;",
-            "  }",
-            "  public static Callback doOnSuccess() {",
-            "    return new Callback(null) {};",
-            "  }",
-            "}")
+            """
+            public class Callback {
+              interface WaitHandler {} // ignore
+
+              private final WaitHandler waitHandler;
+
+              // BUG: Diagnostic contains:
+              protected Callback(final WaitHandler waithandler) {
+                this.waitHandler = waithandler;
+              }
+
+              public static Callback doOnSuccess() {
+                return new Callback(null) {};
+              }
+            }
+            """)
         .doTest();
   }
 }
