@@ -17,7 +17,6 @@ package com.google.errorprone.bugpatterns;
 
 import com.google.errorprone.CompilationTestHelper;
 import com.google.errorprone.annotations.Var;
-import java.util.Arrays;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -35,11 +34,13 @@ public class FieldCanBeFinalTest {
   public void annotationFieldsAreAlreadyFinal() {
     compilationHelper
         .addSourceLines(
-            "Anno.java", //
-            "public @interface Anno {",
-            "  int x = 42;",
-            "  static int y = 42;",
-            "}")
+            "Anno.java",
+            """
+            public @interface Anno {
+              int x = 42;
+              static int y = 42;
+            }
+            """)
         .doTest();
   }
 
@@ -48,13 +49,16 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  // BUG: Diagnostic contains: private final int x",
-            "  private int x;",
-            "  Test() {",
-            "    x = 42;",
-            "  }",
-            "}")
+            """
+            class Test {
+              // BUG: Diagnostic contains: private final int x
+              private int x;
+
+              Test() {
+                x = 42;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -63,13 +67,17 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "import com.google.errorprone.annotations.Keep;",
-            "class Test {",
-            "  @Keep private int x;",
-            "  Test() {",
-            "    x = 42;",
-            "  }",
-            "}")
+            """
+            import com.google.errorprone.annotations.Keep;
+
+            class Test {
+              @Keep private int x;
+
+              Test() {
+                x = 42;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -78,13 +86,17 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "import javax.inject.Inject;",
-            "class Test {",
-            "  @Inject private int x;",
-            "  Test() {",
-            "    x = 42;",
-            "  }",
-            "}")
+            """
+            import javax.inject.Inject;
+
+            class Test {
+              @Inject private int x;
+
+              Test() {
+                x = 42;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -93,26 +105,31 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  // BUG: Diagnostic contains: private final int x1",
-            "  private int x1;",
-            "  private int x2;",
-            "  // BUG: Diagnostic contains: private static final int y1",
-            "  private static int y1;",
-            "  private static int y2;",
-            "  {",
-            "    x1 = 42;",
-            "    x2 = 42;",
-            "  }",
-            "  static {",
-            "    y1 = 42;",
-            "    y2 = 42;",
-            "  }",
-            "  void mutate() {",
-            "    x2 = 0;",
-            "    y2 = 0;",
-            "  }",
-            "}")
+            """
+            class Test {
+              // BUG: Diagnostic contains: private final int x1
+              private int x1;
+              private int x2;
+              // BUG: Diagnostic contains: private static final int y1
+              private static int y1;
+              private static int y2;
+
+              {
+                x1 = 42;
+                x2 = 42;
+              }
+
+              static {
+                y1 = 42;
+                y2 = 42;
+              }
+
+              void mutate() {
+                x2 = 0;
+                y2 = 0;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -121,18 +138,22 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  // BUG: Diagnostic contains: private static final int x1",
-            "  private static int x1;",
-            "  private static int x2;",
-            "  static {",
-            "    x1 = 42;",
-            "    x2 = 42;",
-            "  }",
-            "  {",
-            "    x2 = 42;",
-            "  }",
-            "}")
+            """
+            class Test {
+              // BUG: Diagnostic contains: private static final int x1
+              private static int x1;
+              private static int x2;
+
+              static {
+                x1 = 42;
+                x2 = 42;
+              }
+
+              {
+                x2 = 42;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -141,13 +162,16 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  @SuppressWarnings(\"FieldCanBeFinal\")",
-            "  private int x;",
-            "  Test() {",
-            "    x = 42;",
-            "  }",
-            "}")
+            """
+            class Test {
+              @SuppressWarnings("FieldCanBeFinal")
+              private int x;
+
+              Test() {
+                x = 42;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -156,13 +180,16 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "@SuppressWarnings(\"FieldCanBeFinal\") ",
-            "class Test {",
-            "  private int x;",
-            "  Test() {",
-            "    x = 42;",
-            "  }",
-            "}")
+            """
+            @SuppressWarnings("FieldCanBeFinal")
+            class Test {
+              private int x;
+
+              Test() {
+                x = 42;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -172,16 +199,20 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  // BUG: Diagnostic contains: private final int x",
-            "  private int x;",
-            "  Test(int x) {",
-            "    this.x = x;",
-            "  }",
-            "  Test() {",
-            "    this(42);",
-            "  }",
-            "}")
+            """
+            class Test {
+              // BUG: Diagnostic contains: private final int x
+              private int x;
+
+              Test(int x) {
+                this.x = x;
+              }
+
+              Test() {
+                this(42);
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -191,17 +222,20 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  // BUG: Diagnostic contains: private final int x",
-            "  private int x;",
-            "  Test(boolean flag, int x, int y) {",
-            "    if (flag) {",
-            "      this.x = x;",
-            "    } else {",
-            "      this.x = y;",
-            "    }",
-            "  }",
-            "}")
+            """
+            class Test {
+              // BUG: Diagnostic contains: private final int x
+              private int x;
+
+              Test(boolean flag, int x, int y) {
+                if (flag) {
+                  this.x = x;
+                } else {
+                  this.x = y;
+                }
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -210,13 +244,16 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  private int x;",
-            "  Test(int x) {",
-            "    this.x = x;",
-            "    this.x = x;",
-            "  }",
-            "}")
+            """
+            class Test {
+              private int x;
+
+              Test(int x) {
+                this.x = x;
+                this.x = x;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -225,15 +262,19 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  private int x;",
-            "  Test() {",
-            "    this.x = 42;",
-            "  }",
-            "  void incr() {",
-            "    x += 1;",
-            "  }",
-            "}")
+            """
+            class Test {
+              private int x;
+
+              Test() {
+                this.x = 42;
+              }
+
+              void incr() {
+                x += 1;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -242,15 +283,19 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  private int x;",
-            "  Test() {",
-            "    this.x = 42;",
-            "  }",
-            "  void incr() {",
-            "    x++;",
-            "  }",
-            "}")
+            """
+            class Test {
+              private int x;
+
+              Test() {
+                this.x = 42;
+              }
+
+              void incr() {
+                x++;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -259,16 +304,19 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  private int x;",
-            "  // BUG: Diagnostic contains: private final int y",
-            "  private int y;",
-            "  Test(Test other) {",
-            "    x = 42;",
-            "    y = 42;",
-            "    other.x = x;",
-            "  }",
-            "}")
+            """
+            class Test {
+              private int x;
+              // BUG: Diagnostic contains: private final int y
+              private int y;
+
+              Test(Test other) {
+                x = 42;
+                y = 42;
+                other.x = x;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -277,24 +325,28 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "A.java",
-            "class A {",
-            "  int x;",
-            "  A(B b) {",
-            "    x = 42;",
-            "    b.x = 42;",
-            "  }",
-            "}")
+            """
+            class A {
+              int x;
+
+              A(B b) {
+                x = 42;
+                b.x = 42;
+              }
+            }
+            """)
         .addSourceLines(
             "B.java",
-            "class B {",
-            "  int x;",
-            "  B(A a) {",
-            "    x = 42;",
-            "    a.x = 42;",
-            "  }",
-            "}")
-        // hackily force processing of both compilation units so we can verify both diagnostics
-        .setArgs(Arrays.asList("-XDshouldStopPolicyIfError=FLOW"))
+            """
+            class B {
+              int x;
+
+              B(A a) {
+                x = 42;
+                a.x = 42;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -320,12 +372,14 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  // BUG: Diagnostic contains: private final boolean flag",
-            "  private boolean flag = false;",
-            "  Test() {",
-            "  }",
-            "}")
+            """
+            class Test {
+              // BUG: Diagnostic contains: private final boolean flag
+              private boolean flag = false;
+
+              Test() {}
+            }
+            """)
         .doTest();
   }
 
@@ -334,13 +388,17 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "import javax.inject.Inject;",
-            "class Test {",
-            "  @Inject private Object x;",
-            "  Test() {",
-            "    this.x = x;",
-            "  }",
-            "}")
+            """
+            import javax.inject.Inject;
+
+            class Test {
+              @Inject private Object x;
+
+              Test() {
+                this.x = x;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -349,13 +407,17 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "@interface NonFinalForTesting {}",
-            "class Test {",
-            "  @NonFinalForTesting private int x;",
-            "  Test(int x) {",
-            "    this.x = x;",
-            "  }",
-            "}")
+            """
+            @interface NonFinalForTesting {}
+
+            class Test {
+              @NonFinalForTesting private int x;
+
+              Test(int x) {
+                this.x = x;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -364,13 +426,17 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "import com.google.common.annotations.VisibleForTesting;",
-            "class Test {",
-            "  @VisibleForTesting public int x;",
-            "  Test() {",
-            "    x = 42;",
-            "  }",
-            "}")
+            """
+            import com.google.common.annotations.VisibleForTesting;
+
+            class Test {
+              @VisibleForTesting public int x;
+
+              Test() {
+                x = 42;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -379,13 +445,17 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "import com.google.common.annotations.VisibleForTesting;",
-            "class Test {",
-            "  protected int x;",
-            "  Test() {",
-            "    x = 42;",
-            "  }",
-            "}")
+            """
+            import com.google.common.annotations.VisibleForTesting;
+
+            class Test {
+              protected int x;
+
+              Test() {
+                x = 42;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -394,15 +464,19 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "import com.google.common.annotations.VisibleForTesting;",
-            "class Test {",
-            "  public int x;",
-            "  int y;",
-            "  Test() {",
-            "    x = 42;",
-            "    y = 42;",
-            "  }",
-            "}")
+            """
+            import com.google.common.annotations.VisibleForTesting;
+
+            class Test {
+              public int x;
+              int y;
+
+              Test() {
+                x = 42;
+                y = 42;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -411,17 +485,25 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "com/googlecode/objectify/v4/annotation/Entity.java",
-            "package com.googlecode.objectify.v4.annotation;",
-            "public @interface Entity {}")
+            """
+            package com.googlecode.objectify.v4.annotation;
+
+            public @interface Entity {}
+            """)
         .addSourceLines(
             "Test.java",
-            "import com.googlecode.objectify.v4.annotation.Entity;",
-            "@Entity class Test {",
-            "  private int x;",
-            "  Test(int x) {",
-            "    this.x = x;",
-            "  }",
-            "}")
+            """
+            import com.googlecode.objectify.v4.annotation.Entity;
+
+            @Entity
+            class Test {
+              private int x;
+
+              Test(int x) {
+                this.x = x;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -430,13 +512,16 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  private int x;",
-            "  private final Runnable r;",
-            "  Test() {",
-            "    r = () -> x = 1;",
-            "  }",
-            "}")
+            """
+            class Test {
+              private int x;
+              private final Runnable r;
+
+              Test() {
+                r = () -> x = 1;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -445,15 +530,19 @@ public class FieldCanBeFinalTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "class Test {",
-            "  private Runnable r;",
-            "  Test() {",
-            "    r = foo(() -> r = null);",
-            "  }",
-            "  private static Runnable foo(Runnable r) {",
-            "    return r;",
-            "  }",
-            "}")
+            """
+            class Test {
+              private Runnable r;
+
+              Test() {
+                r = foo(() -> r = null);
+              }
+
+              private static Runnable foo(Runnable r) {
+                return r;
+              }
+            }
+            """)
         .doTest();
   }
 }

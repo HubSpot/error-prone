@@ -32,11 +32,47 @@ public class StringBuilderInitWithCharTest {
 
   @Test
   public void positiveCases() {
-    compilationHelper.addSourceFile("StringBuilderInitWithCharPositiveCases.java").doTest();
+    compilationHelper
+        .addSourceLines(
+            "StringBuilderInitWithCharPositiveCases.java",
+            """
+            package com.google.errorprone.bugpatterns.testdata;
+
+            /**
+             * @author lowasser@google.com (Louis Wasserman)
+             */
+            public class StringBuilderInitWithCharPositiveCases {
+              {
+                // BUG: Diagnostic contains: new StringBuilder("a")
+                new StringBuilder('a');
+                // BUG: Diagnostic contains: new StringBuilder("\\"")
+                new StringBuilder('"');
+                char c = 'c';
+                // BUG: Diagnostic contains: new StringBuilder().append(c)
+                new StringBuilder(c);
+              }
+            }""")
+        .doTest();
   }
 
   @Test
   public void negativeCases() {
-    compilationHelper.addSourceFile("StringBuilderInitWithCharNegativeCases.java").doTest();
+    compilationHelper
+        .addSourceLines(
+            "StringBuilderInitWithCharNegativeCases.java",
+            """
+            package com.google.errorprone.bugpatterns.testdata;
+
+            /**
+             * @author lowasser@google.com (Louis Wasserman)
+             */
+            public class StringBuilderInitWithCharNegativeCases {
+              {
+                new StringBuilder("a");
+                new StringBuilder(5);
+                new StringBuilder();
+              }
+            }""")
+        .doTest();
   }
 }

@@ -40,20 +40,25 @@ public class UnsafeReflectiveConstructionCastTest {
     testHelper
         .addInputLines(
             "in/Test.java",
-            "class Test {",
-            "  private String newInstanceOnGetDeclaredConstructorChained() throws Exception {",
-            "    return (String) ",
-            "      Class.forName(\"java.lang.String\").getDeclaredConstructor().newInstance();",
-            "  }",
-            "}")
+            """
+class Test {
+  private String newInstanceOnGetDeclaredConstructorChained() throws Exception {
+    return (String) Class.forName("java.lang.String").getDeclaredConstructor().newInstance();
+  }
+}
+""")
         .addOutputLines(
             "out/Test.java",
-            "class Test {",
-            "  private String newInstanceOnGetDeclaredConstructorChained() throws Exception {",
-            "    return Class.forName(\"java.lang.String\")",
-            "        .asSubclass(String.class).getDeclaredConstructor().newInstance();",
-            "  }",
-            "}")
+            """
+            class Test {
+              private String newInstanceOnGetDeclaredConstructorChained() throws Exception {
+                return Class.forName("java.lang.String")
+                    .asSubclass(String.class)
+                    .getDeclaredConstructor()
+                    .newInstance();
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -62,20 +67,25 @@ public class UnsafeReflectiveConstructionCastTest {
     testHelper
         .addInputLines(
             "in/Test.java",
-            "class Test {",
-            "  private String newInstanceOnGetConstructorChained() throws Exception {",
-            "    return (String) ",
-            "      Class.forName(\"java.lang.String\").getConstructor().newInstance();",
-            "  }",
-            "}")
+            """
+            class Test {
+              private String newInstanceOnGetConstructorChained() throws Exception {
+                return (String) Class.forName("java.lang.String").getConstructor().newInstance();
+              }
+            }
+            """)
         .addOutputLines(
             "out/Test.java",
-            "class Test {",
-            "  private String newInstanceOnGetConstructorChained() throws Exception {",
-            "    return Class.forName(\"java.lang.String\")",
-            "        .asSubclass(String.class).getConstructor().newInstance();",
-            "  }",
-            "}")
+            """
+            class Test {
+              private String newInstanceOnGetConstructorChained() throws Exception {
+                return Class.forName("java.lang.String")
+                    .asSubclass(String.class)
+                    .getConstructor()
+                    .newInstance();
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -84,21 +94,29 @@ public class UnsafeReflectiveConstructionCastTest {
     testHelper
         .addInputLines(
             "in/Test.java",
-            "class Test {",
-            "  class Fn<T> {};",
-            "  private Fn<String> newInstanceOnGetDeclaredConstructorChained() throws Exception {",
-            "    return (Fn<String>) Class.forName(\"Fn\").getDeclaredConstructor().newInstance();",
-            "  }",
-            "}")
+            """
+            class Test {
+              class Fn<T> {}
+              ;
+
+              private Fn<String> newInstanceOnGetDeclaredConstructorChained() throws Exception {
+                return (Fn<String>) Class.forName("Fn").getDeclaredConstructor().newInstance();
+              }
+            }
+            """)
         .addOutputLines(
             "out/Test.java",
-            "class Test {",
-            "  class Fn<T> {};",
-            "  private Fn<String> newInstanceOnGetDeclaredConstructorChained() throws Exception {",
-            "    return (Fn<String>) Class.forName(\"Fn\")",
-            "        .asSubclass(Fn.class).getDeclaredConstructor().newInstance();",
-            "  }",
-            "}")
+            """
+class Test {
+  class Fn<T> {}
+  ;
+
+  private Fn<String> newInstanceOnGetDeclaredConstructorChained() throws Exception {
+    return (Fn<String>)
+        Class.forName("Fn").asSubclass(Fn.class).getDeclaredConstructor().newInstance();
+  }
+}
+""")
         .doTest();
   }
 
@@ -107,19 +125,62 @@ public class UnsafeReflectiveConstructionCastTest {
     compilationHelper
         .addSourceLines(
             "in/Test.java",
-            "import java.io.Serializable;",
-            "class Test {",
-            "  interface Fn {};",
-            "  private Fn newInstanceOnGetDeclaredConstructorChained() throws Exception {",
-            "    return (Serializable & Fn) ",
-            "      Class.forName(\"Fn\").getDeclaredConstructor().newInstance();",
-            "  }",
-            "}")
+            """
+import java.io.Serializable;
+
+class Test {
+  interface Fn {}
+  ;
+
+  private Fn newInstanceOnGetDeclaredConstructorChained() throws Exception {
+    return (Serializable & Fn) Class.forName("Fn").getDeclaredConstructor().newInstance();
+  }
+}
+""")
         .doTest();
   }
 
   @Test
   public void negativeCase() {
-    compilationHelper.addSourceFile("UnsafeReflectiveConstructionCastNegativeCases.java").doTest();
+    compilationHelper
+        .addSourceLines(
+            "UnsafeReflectiveConstructionCastNegativeCases.java",
+            """
+package com.google.errorprone.bugpatterns.testdata;
+
+/**
+ * Negative cases for {@link UnsafeReflectiveConstructionCast}.
+ *
+ * @author bhagwani@google.com (Sumit Bhagwani)
+ */
+public class UnsafeReflectiveConstructionCastNegativeCases {
+
+  public String newInstanceDirectCall() throws Exception {
+    return (String) Class.forName("java.lang.String").newInstance();
+  }
+
+  public String newInstanceDirectlyOnClassAndGetDeclaredConstructor() throws Exception {
+    return (String) String.class.getDeclaredConstructor().newInstance();
+  }
+
+  public String newInstanceDirectlyOnClassAndNewInstance() throws Exception {
+    return (String) String.class.newInstance();
+  }
+
+  public String invocationWithAsSubclass() throws Exception {
+    return Class.forName("java.lang.String").asSubclass(String.class).newInstance();
+  }
+
+  public class Supplier<T> {
+    public T get(String className) {
+      try {
+        return (T) Class.forName(className).getDeclaredConstructor().newInstance();
+      } catch (ReflectiveOperationException e) {
+        throw new IllegalStateException(e);
+      }
+    }
+  }
+}""")
+        .doTest();
   }
 }

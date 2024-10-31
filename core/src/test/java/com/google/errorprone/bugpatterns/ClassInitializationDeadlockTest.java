@@ -18,7 +18,6 @@ package com.google.errorprone.bugpatterns;
 
 import com.google.auto.value.processor.AutoValueProcessor;
 import com.google.errorprone.CompilationTestHelper;
-
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -34,12 +33,14 @@ public class ClassInitializationDeadlockTest {
     testHelper
         .addSourceLines(
             "A.java",
-            "public class A {",
-            "  // BUG: Diagnostic contains:",
-            "  private static Object cycle = new B();",
-            "  public static class B extends A {",
-            "  }",
-            "}")
+            """
+            public class A {
+              // BUG: Diagnostic contains:
+              private static Object cycle = new B();
+
+              public static class B extends A {}
+            }
+            """)
         .doTest();
   }
 
@@ -48,15 +49,18 @@ public class ClassInitializationDeadlockTest {
     testHelper
         .addSourceLines(
             "A.java",
-            "public class A {",
-            "  private static Object cycle = new Object() {",
-            "    void f() {",
-            "      new B();",
-            "    }",
-            "  };",
-            "  public static class B extends A {",
-            "  }",
-            "}")
+            """
+            public class A {
+              private static Object cycle =
+                  new Object() {
+                    void f() {
+                      new B();
+                    }
+                  };
+
+              public static class B extends A {}
+            }
+            """)
         .doTest();
   }
 
@@ -64,15 +68,19 @@ public class ClassInitializationDeadlockTest {
   public void negativeEnum() {
     testHelper
         .addSourceLines(
-            "E.java", //
-            "enum E {",
-            "  ONE(0),",
-            "  TWO {",
-            "    void f() {}",
-            "  };",
-            "  E(int x) {}",
-            "  E() {}",
-            "}")
+            "E.java",
+            """
+            enum E {
+              ONE(0),
+              TWO {
+                void f() {}
+              };
+
+              E(int x) {}
+
+              E() {}
+            }
+            """)
         .doTest();
   }
 
@@ -81,12 +89,15 @@ public class ClassInitializationDeadlockTest {
     testHelper
         .addSourceLines(
             "A.java",
-            "public class A {",
-            "  private static Object benign_cycle = new B.C();",
-            "  private static class B {",
-            "    public static class C extends A { }",
-            "  }",
-            "}")
+            """
+            public class A {
+              private static Object benign_cycle = new B.C();
+
+              private static class B {
+                public static class C extends A {}
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -96,16 +107,22 @@ public class ClassInitializationDeadlockTest {
         .setArgs("-processor", AutoValueProcessor.class.getName())
         .addSourceLines(
             "A.java",
-            "import com.google.auto.value.AutoValue;",
-            "@AutoValue",
-            "abstract class Animal {",
-            "  private static final Animal WALLABY = new AutoValue_Animal(\"Wallaby\", 4);",
-            "  static Animal create(String name, int numberOfLegs) {",
-            "    return new AutoValue_Animal(name, numberOfLegs);",
-            "  }",
-            "  abstract String name();",
-            "  abstract int numberOfLegs();",
-            "}")
+            """
+            import com.google.auto.value.AutoValue;
+
+            @AutoValue
+            abstract class Animal {
+              private static final Animal WALLABY = new AutoValue_Animal("Wallaby", 4);
+
+              static Animal create(String name, int numberOfLegs) {
+                return new AutoValue_Animal(name, numberOfLegs);
+              }
+
+              abstract String name();
+
+              abstract int numberOfLegs();
+            }
+            """)
         .doTest();
   }
 
@@ -114,12 +131,15 @@ public class ClassInitializationDeadlockTest {
     testHelper
         .addSourceLines(
             "A.java",
-            "public class A {",
-            "  static Object constant = 1;",
-            "  Object nonStatic = new B();",
-            "  static Class<?> classLiteral = B.class;",
-            "  static class B extends A {}",
-            "}")
+            """
+            public class A {
+              static Object constant = 1;
+              Object nonStatic = new B();
+              static Class<?> classLiteral = B.class;
+
+              static class B extends A {}
+            }
+            """)
         .doTest();
   }
 
@@ -128,11 +148,13 @@ public class ClassInitializationDeadlockTest {
     testHelper
         .addSourceLines(
             "A.java",
-            "public interface A {",
-            "  Object cycle = new B();",
-            "  public static class B implements A {",
-            "  }",
-            "}")
+            """
+            public interface A {
+              Object cycle = new B();
+
+              public static class B implements A {}
+            }
+            """)
         .doTest();
   }
 
@@ -141,13 +163,16 @@ public class ClassInitializationDeadlockTest {
     testHelper
         .addSourceLines(
             "A.java",
-            "public interface A {",
-            "  // BUG: Diagnostic contains:",
-            "  Object cycle = new B();",
-            "  default void f() {}",
-            "  public static class B implements A {",
-            "  }",
-            "}")
+            """
+            public interface A {
+              // BUG: Diagnostic contains:
+              Object cycle = new B();
+
+              default void f() {}
+
+              public static class B implements A {}
+            }
+            """)
         .doTest();
   }
 
@@ -156,12 +181,15 @@ public class ClassInitializationDeadlockTest {
     testHelper
         .addSourceLines(
             "A.java",
-            "public class A {",
-            "  private static Object cycle = new B();",
-            "  public static final class B extends A {",
-            "    private B() {}",
-            "  }",
-            "}")
+            """
+            public class A {
+              private static Object cycle = new B();
+
+              public static final class B extends A {
+                private B() {}
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -170,16 +198,20 @@ public class ClassInitializationDeadlockTest {
     testHelper
         .addSourceLines(
             "A.java",
-            "public class A {",
-            "  // BUG: Diagnostic contains:",
-            "  private static Object cycle = new B();",
-            "  public static final class B extends A {",
-            "    private B() {}",
-            "    public static B create() {",
-            "      return new B();",
-            "    }",
-            "  }",
-            "}")
+            """
+            public class A {
+              // BUG: Diagnostic contains:
+              private static Object cycle = new B();
+
+              public static final class B extends A {
+                private B() {}
+
+                public static B create() {
+                  return new B();
+                }
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -188,15 +220,19 @@ public class ClassInitializationDeadlockTest {
     testHelper
         .addSourceLines(
             "A.java",
-            "public class A {",
-            "  private static Object cycle = new B();",
-            "  public static final class B extends A {",
-            "    private B() {}",
-            "    public B create() {",
-            "      return new B();",
-            "    }",
-            "  }",
-            "}")
+            """
+            public class A {
+              private static Object cycle = new B();
+
+              public static final class B extends A {
+                private B() {}
+
+                public B create() {
+                  return new B();
+                }
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -205,11 +241,13 @@ public class ClassInitializationDeadlockTest {
     testHelper
         .addSourceLines(
             "A.java",
-            "public class A {",
-            "  private static Object cycle = new A().new B();",
-            "  public class B extends A {",
-            "  }",
-            "}")
+            """
+            public class A {
+              private static Object cycle = new A().new B();
+
+              public class B extends A {}
+            }
+            """)
         .doTest();
   }
 
@@ -218,11 +256,13 @@ public class ClassInitializationDeadlockTest {
     testHelper
         .addSourceLines(
             "A.java",
-            "public class A {",
-            "  public static class B extends A {",
-            "    private static B self = new B();",
-            "  }",
-            "}")
+            """
+            public class A {
+              public static class B extends A {
+                private static B self = new B();
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -230,11 +270,14 @@ public class ClassInitializationDeadlockTest {
   public void negativePrivateInterface() {
     testHelper
         .addSourceLines(
-            "A.java", //
-            "public class A {",
-            "  private interface I {}",
-            "  static final I i = new I() {};",
-            "}")
+            "A.java",
+            """
+            public class A {
+              private interface I {}
+
+              static final I i = new I() {};
+            }
+            """)
         .doTest();
   }
 
@@ -242,14 +285,18 @@ public class ClassInitializationDeadlockTest {
   public void intermediateNonPrivate() {
     testHelper
         .addSourceLines(
-            "A.java", //
-            "public class A {",
-            "  // BUG: Diagnostic contains: C is a subclass of the containing class A (via B, which"
-                + " can be initialized from outside the current file)",
-            "  public static final C i = new C();",
-            "  public static class B extends A {}",
-            "  private static class C extends B {}",
-            "}")
+            "A.java",
+            """
+public class A {
+  // BUG: Diagnostic contains: C is a subclass of the containing class A (via B, which can be
+  // initialized from outside the current file)
+  public static final C i = new C();
+
+  public static class B extends A {}
+
+  private static class C extends B {}
+}
+""")
         .doTest();
   }
 
@@ -257,14 +304,18 @@ public class ClassInitializationDeadlockTest {
   public void negativeNonPrivateUnrelatedSuper() {
     testHelper
         .addSourceLines(
-            "A.java", //
-            "public class A {",
-            "  public static final C i = new C();",
-            "  public interface B {",
-            "    default void f() {}",
-            "  }",
-            "  private static class C extends A implements B {}",
-            "}")
+            "A.java",
+            """
+            public class A {
+              public static final C i = new C();
+
+              public interface B {
+                default void f() {}
+              }
+
+              private static class C extends A implements B {}
+            }
+            """)
         .doTest();
   }
 
@@ -272,15 +323,18 @@ public class ClassInitializationDeadlockTest {
   public void nestedEnum() {
     testHelper
         .addSourceLines(
-            "TestInterface.java", //
-            "public interface TestInterface {",
-            "  default Object foo() {",
-            "    return null;",
-            "  }",
-            "  enum TestEnum implements TestInterface {",
-            "    INSTANCE;",
-            "  }",
-            "}")
+            "TestInterface.java",
+            """
+            public interface TestInterface {
+              default Object foo() {
+                return null;
+              }
+
+              enum TestEnum implements TestInterface {
+                INSTANCE;
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -288,30 +342,16 @@ public class ClassInitializationDeadlockTest {
   public void nestedInterface() {
     testHelper
         .addSourceLines(
-            "Foo.java", //
-            "interface Foo {",
-            "  default void foo() {}",
-            "  interface Sub extends Foo {",
-            "    final Sub INSTANCE = new Sub() {};",
-            "  }",
-            "}")
-        .doTest();
-  }
+            "Foo.java",
+            """
+            interface Foo {
+              default void foo() {}
 
-  @Test
-  public void negativeAutoValueExtension() {
-    testHelper
-        .addSourceLines(
-            "$$AutoValue_Foo.java", //
-            "class $$AutoValue_Foo extends Foo {",
-            "}")
-        .addSourceLines(
-            "A.java",
-            "import com.google.auto.value.AutoValue;",
-            "@AutoValue",
-            "abstract class Foo {",
-            "  private static final Foo FOO = new $$AutoValue_Foo();",
-            "}")
+              interface Sub extends Foo {
+                final Sub INSTANCE = new Sub() {};
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -320,70 +360,110 @@ public class ClassInitializationDeadlockTest {
     testHelper
         .addSourceLines(
             "Foo.java",
-            "class A {",
-            "  // BUG: Diagnostic contains:",
-            "  private static Object cycle = new B();",
-            "}",
-            "class B extends A {}")
+            """
+            class A {
+              // BUG: Diagnostic contains:
+              private static Object cycle = new B();
+            }
+
+            class B extends A {}
+            """)
         .doTest();
   }
 
   @Test
-  public void simpleSubclassMethodReference() {
+  public void negativeAutoValueExtension() {
     testHelper
         .addSourceLines(
-            "Foo.java",
-            "import java.util.function.Supplier;",
-            "class A {",
-            "  static Supplier<B> supplier = B::new;",
-            "}",
-            "class B extends A {}")
+            "$$AutoValue_Foo.java",
+            """
+            class $$AutoValue_Foo extends Foo {}
+            """)
+        .addSourceLines(
+            "A.java",
+            """
+            import com.google.auto.value.AutoValue;
+
+            @AutoValue
+            abstract class Foo {
+              private static final Foo FOO = new $$AutoValue_Foo();
+            }
+            """)
         .doTest();
   }
 
-  @Test
-  public void compoundSubclassMethodReference() {
-    testHelper
-        .addSourceLines(
-            "Foo.java",
-            "import java.util.Comparator;",
-            "class A {",
-            "  static Comparator<B> comparator = Comparator.comparing(B::value);",
-            "}",
-            "class B extends A {",
-            "  int value;",
-            "  int value() {",
-            "    return value;",
-            "  }",
-            "}")
-        .doTest();
-  }
 
-  @Test
-  public void lambda() {
-    testHelper
-        .addSourceLines(
-            "Foo.java",
-            "import java.util.function.Supplier;",
-            "class A {",
-            "  static Supplier<B> supplier = () -> new B();",
-            "}",
-            "class B extends A {}")
-        .doTest();
-  }
+    @Test
+    public void simpleSubclassMethodReference() {
+        testHelper
+                .addSourceLines(
+                        "Foo.java",
+                        """
+                        import java.util.function.Supplier;
+                        
+                        class A {
+                          static Supplier<B> supplier = B::new;
+                        }
+                        
+                        class B extends A {}
+                        """)
+                .doTest();
+    }
 
-  @Test
-  public void subclassStaticMethod() {
-    testHelper
-        .addSourceLines(
-            "Foo.java",
-            "class A {",
-            "  // BUG: Diagnostic contains:",
-            "  static int value = B.value(); ",
-            "}",
-            "class B extends A {",
-            "  static int value() { return 0; }",
-            "}")
-        .doTest();
-  }
+    @Test
+    public void compoundSubclassMethodReference() {
+        testHelper
+                .addSourceLines(
+                        "Foo.java",
+                        """
+                        import java.util.Comparator;
+                        
+                        class A {
+                          static Comparator<B> comparator = Comparator.comparing(B::value);
+                        }
+                        
+                        class B extends A {
+                          int value;
+                          int value() {
+                            return value;
+                          }
+                        }
+                        """)
+                .doTest();
+    }
+
+    @Test
+    public void lambda() {
+        testHelper
+                .addSourceLines(
+                        "Foo.java",
+                        """
+                        import java.util.function.Supplier;
+
+                        class A {
+                          static Supplier<B> supplier = () -> new B();
+                        }
+
+                        class B extends A {}
+                        """)
+                .doTest();
+    }
+
+    @Test
+    public void subclassStaticMethod() {
+        testHelper
+                .addSourceLines(
+                        "Foo.java",
+                        """
+                        class A {
+                          // BUG: Diagnostic contains:
+                          static int value = B.value();
+                        }
+
+                        class B extends A {
+                          static int value() { return 0; }
+                        }
+                        """)
+                .doTest();
+    }
 }

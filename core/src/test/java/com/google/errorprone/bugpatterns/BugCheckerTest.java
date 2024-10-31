@@ -46,29 +46,30 @@ public class BugCheckerTest {
     CompilationTestHelper.newInstance(LegacySuppressionCheck.class, getClass())
         .addSourceLines(
             "A.java",
-            "class A {",
-            "  void m() {",
-            "    // BUG: Diagnostic contains: []",
-            "    int unsuppressed;",
-            "    // BUG: Diagnostic contains: []",
-            "    @SuppressWarnings(\"foo\") int unrelatedSuppression;",
-            "    // BUG: Diagnostic contains: [Suppressible, SuppressibleTps, ManualIsSuppressed]",
-            "    @SuppressWarnings(\"Suppressible\") int suppressed;",
-            "    // BUG: Diagnostic contains: [Suppressible, SuppressibleTps, ManualIsSuppressed]",
-            "    @SuppressWarnings(\"Alternative\") int suppressedWithAlternativeName;",
-            "    // BUG: Diagnostic contains: [Suppressible, SuppressibleTps, ManualIsSuppressed]",
-            "    @SuppressWarnings(\"all\") int allSuppressed;",
-            "    // BUG: Diagnostic contains: [Suppressible, SuppressibleTps, ManualIsSuppressed]",
-            "    @SuppressWarnings({\"foo\", \"Suppressible\"}) int alsoSuppressed;",
-            "    // BUG: Diagnostic contains: [Suppressible, SuppressibleTps, ManualIsSuppressed]",
-            "    @SuppressWarnings({\"all\", \"foo\"}) int redundantlySuppressed;",
-            "    // BUG: Diagnostic contains: [Suppressible, SuppressibleTps, ManualIsSuppressed]",
-            "    @SuppressWarnings({\"all\", \"OnlySuppressedInsideDeprecatedCode\"}) int"
-                + " ineffectiveSuppression;",
-            "    // BUG: Diagnostic contains: []",
-            "    @Deprecated int unuspportedSuppression;",
-            "  }",
-            "}")
+            """
+class A {
+  void m() {
+    // BUG: Diagnostic contains: []
+    int unsuppressed;
+    // BUG: Diagnostic contains: []
+    @SuppressWarnings("foo") int unrelatedSuppression;
+    // BUG: Diagnostic contains: [Suppressible, SuppressibleTps, ManualIsSuppressed]
+    @SuppressWarnings("Suppressible") int suppressed;
+    // BUG: Diagnostic contains: [Suppressible, SuppressibleTps, ManualIsSuppressed]
+    @SuppressWarnings("Alternative") int suppressedWithAlternativeName;
+    // BUG: Diagnostic contains: [Suppressible, SuppressibleTps, ManualIsSuppressed]
+    @SuppressWarnings("all") int allSuppressed;
+    // BUG: Diagnostic contains: [Suppressible, SuppressibleTps, ManualIsSuppressed]
+    @SuppressWarnings({"foo", "Suppressible"}) int alsoSuppressed;
+    // BUG: Diagnostic contains: [Suppressible, SuppressibleTps, ManualIsSuppressed]
+    @SuppressWarnings({"all", "foo"}) int redundantlySuppressed;
+    // BUG: Diagnostic contains: [Suppressible, SuppressibleTps, ManualIsSuppressed]
+    @SuppressWarnings({"all", "OnlySuppressedInsideDeprecatedCode"}) int ineffectiveSuppression;
+    // BUG: Diagnostic contains: []
+    @Deprecated int unuspportedSuppression;
+  }
+}
+""")
         .doTest();
   }
 
@@ -79,27 +80,29 @@ public class BugCheckerTest {
     CompilationTestHelper.newInstance(SuppressibleCheck.class, getClass())
         .addSourceLines(
             "A.java",
-            "class A {",
-            "  void m() {",
-            "    // BUG: Diagnostic contains:",
-            "    int unsuppressed;",
-            "    // BUG: Diagnostic contains:",
-            "    @SuppressWarnings(\"foo\") int unrelatedSuppression;",
-            "    @SuppressWarnings(\"Suppressible\") int suppressed;",
-            "    @SuppressWarnings(\"Alternative\") int suppressedWithAlternativeName;",
-            "    @SuppressWarnings(\"all\") int allSuppressed;",
-            "    @SuppressWarnings({\"foo\", \"Suppressible\"}) int alsoSuppressed;",
-            "    @SuppressWarnings({\"all\", \"foo\"}) int redundantlySuppressed;",
-            "    System.out.println(s(() -> {",
-            "      // BUG: Diagnostic contains: ",
-            "      int insideCalToMethodWhoseDeclarationHasASuppression;",
-            "    }));",
-            "  }",
-            "  @SuppressWarnings(\"all\")",
-            "  String s(Runnable r) {",
-            "    return \"\";",
-            "  }",
-            "}")
+            """
+            class A {
+              void m() {
+                // BUG: Diagnostic contains:
+                int unsuppressed;
+                // BUG: Diagnostic contains:
+                @SuppressWarnings("foo") int unrelatedSuppression;
+                @SuppressWarnings("Suppressible") int suppressed;
+                @SuppressWarnings("Alternative") int suppressedWithAlternativeName;
+                @SuppressWarnings("all") int allSuppressed;
+                @SuppressWarnings({"foo", "Suppressible"}) int alsoSuppressed;
+                @SuppressWarnings({"all", "foo"}) int redundantlySuppressed;
+                System.out.println(s(() -> {
+                  // BUG: Diagnostic contains:
+                  int insideCalToMethodWhoseDeclarationHasASuppression;
+                }));
+              }
+              @SuppressWarnings("all")
+              String s(Runnable r) {
+                return "";
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -108,16 +111,17 @@ public class BugCheckerTest {
     CompilationTestHelper.newInstance(CustomSuppressibilityCheck.class, getClass())
         .addSourceLines(
             "A.java",
-            "class A {",
-            "  void m() {",
-            "    // BUG: Diagnostic contains:",
-            "    int unsuppressed;",
-            "    // BUG: Diagnostic contains:",
-            "    @SuppressWarnings({\"all\", \"OnlySuppressedInsideDeprecatedCode\"}) int"
-                + " ineffectiveSuppression;",
-            "    @Deprecated int suppressed;",
-            "  }",
-            "}")
+            """
+class A {
+  void m() {
+    // BUG: Diagnostic contains:
+    int unsuppressed;
+    // BUG: Diagnostic contains:
+    @SuppressWarnings({"all", "OnlySuppressedInsideDeprecatedCode"}) int ineffectiveSuppression;
+    @Deprecated int suppressed;
+  }
+}
+""")
         .doTest();
   }
 
@@ -128,27 +132,29 @@ public class BugCheckerTest {
     CompilationTestHelper.newInstance(SuppressibleTreePathScannerCheck.class, getClass())
         .addSourceLines(
             "A.java",
-            "class A {",
-            "  void m() {",
-            "    // BUG: Diagnostic contains:",
-            "    int unsuppressed;",
-            "    // BUG: Diagnostic contains:",
-            "    @SuppressWarnings(\"foo\") int unrelatedSuppression;",
-            "    @SuppressWarnings(\"Suppressible\") int suppressed;",
-            "    @SuppressWarnings(\"Alternative\") int suppressedWithAlternativeName;",
-            "    @SuppressWarnings(\"all\") int allSuppressed;",
-            "    @SuppressWarnings({\"foo\", \"Suppressible\"}) int alsoSuppressed;",
-            "    @SuppressWarnings({\"all\", \"foo\"}) int redundantlySuppressed;",
-            "    System.out.println(s(() -> {",
-            "      // BUG: Diagnostic contains: ",
-            "      int insideCalToMethodWhoseDeclarationHasASuppression;",
-            "    }));",
-            "  }",
-            "  @SuppressWarnings(\"all\")",
-            "  String s(Runnable r) {",
-            "    return \"\";",
-            "  }",
-            "}")
+            """
+            class A {
+              void m() {
+                // BUG: Diagnostic contains:
+                int unsuppressed;
+                // BUG: Diagnostic contains:
+                @SuppressWarnings("foo") int unrelatedSuppression;
+                @SuppressWarnings("Suppressible") int suppressed;
+                @SuppressWarnings("Alternative") int suppressedWithAlternativeName;
+                @SuppressWarnings("all") int allSuppressed;
+                @SuppressWarnings({"foo", "Suppressible"}) int alsoSuppressed;
+                @SuppressWarnings({"all", "foo"}) int redundantlySuppressed;
+                System.out.println(s(() -> {
+                  // BUG: Diagnostic contains:
+                  int insideCalToMethodWhoseDeclarationHasASuppression;
+                }));
+              }
+              @SuppressWarnings("all")
+              String s(Runnable r) {
+                return "";
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -159,27 +165,29 @@ public class BugCheckerTest {
     CompilationTestHelper.newInstance(ManuallySuppressibleCheck.class, getClass())
         .addSourceLines(
             "A.java",
-            "class A {",
-            "  void m() {",
-            "    // BUG: Diagnostic contains:",
-            "    int unsuppressed;",
-            "    // BUG: Diagnostic contains:",
-            "    @SuppressWarnings(\"foo\") int unrelatedSuppression;",
-            "    @SuppressWarnings(\"Suppressible\") int suppressed;",
-            "    @SuppressWarnings(\"Alternative\") int suppressedWithAlternativeName;",
-            "    @SuppressWarnings(\"all\") int allSuppressed;",
-            "    @SuppressWarnings({\"foo\", \"Suppressible\"}) int alsoSuppressed;",
-            "    @SuppressWarnings({\"all\", \"foo\"}) int redundantlySuppressed;",
-            "    System.out.println(s(() -> {",
-            "      // BUG: Diagnostic contains: ",
-            "      int insideCalToMethodWhoseDeclarationHasASuppression;",
-            "    }));",
-            "  }",
-            "  @SuppressWarnings(\"all\")",
-            "  String s(Runnable r) {",
-            "    return \"\";",
-            "  }",
-            "}")
+            """
+            class A {
+              void m() {
+                // BUG: Diagnostic contains:
+                int unsuppressed;
+                // BUG: Diagnostic contains:
+                @SuppressWarnings("foo") int unrelatedSuppression;
+                @SuppressWarnings("Suppressible") int suppressed;
+                @SuppressWarnings("Alternative") int suppressedWithAlternativeName;
+                @SuppressWarnings("all") int allSuppressed;
+                @SuppressWarnings({"foo", "Suppressible"}) int alsoSuppressed;
+                @SuppressWarnings({"all", "foo"}) int redundantlySuppressed;
+                System.out.println(s(() -> {
+                  // BUG: Diagnostic contains:
+                  int insideCalToMethodWhoseDeclarationHasASuppression;
+                }));
+              }
+              @SuppressWarnings("all")
+              String s(Runnable r) {
+                return "";
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -189,13 +197,15 @@ public class BugCheckerTest {
         .setArgs("-XepDisableWarningsInGeneratedCode")
         .addSourceLines(
             "A.java",
-            "import javax.annotation.processing.Generated;",
-            "class A {",
-            "  void m() {",
-            "    // BUG: Diagnostic contains:",
-            "    @Generated(\"some-tool\") int unsuppressed;",
-            "  }",
-            "}")
+            """
+            import javax.annotation.processing.Generated;
+            class A {
+              void m() {
+                // BUG: Diagnostic contains:
+                @Generated("some-tool") int unsuppressed;
+              }
+            }
+            """)
         .doTest();
 
     // The check is suppressed if its severity is downgraded to `WARNING`.
@@ -204,12 +214,14 @@ public class BugCheckerTest {
             "-XepDisableWarningsInGeneratedCode", "-Xep:OnlySuppressedInsideDeprecatedCode:WARN")
         .addSourceLines(
             "A.java",
-            "import javax.annotation.processing.Generated;",
-            "class A {",
-            "  void m() {",
-            "    @Generated(\"some-tool\") int unsuppressed;",
-            "  }",
-            "}")
+            """
+            import javax.annotation.processing.Generated;
+            class A {
+              void m() {
+                @Generated("some-tool") int unsuppressed;
+              }
+            }
+            """)
         .doTest();
   }
 

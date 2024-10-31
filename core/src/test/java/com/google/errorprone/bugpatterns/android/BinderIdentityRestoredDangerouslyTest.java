@@ -30,7 +30,18 @@ public final class BinderIdentityRestoredDangerouslyTest {
 
   private final CompilationTestHelper compilationHelper =
       CompilationTestHelper.newInstance(BinderIdentityRestoredDangerously.class, getClass())
-          .addSourceFile("testdata/stubs/android/os/Binder.java")
+          .addSourceLines(
+              "Binder.java",
+              """
+              package android.os;
+
+              public class Binder {
+                public static final long clearCallingIdentity() {
+                  return 1;
+                }
+
+                public static final void restoreCallingIdentity(long token) {}
+              }""")
           .setArgs(ImmutableList.of("-XDandroidCompatible=true"));
 
   @Test
@@ -38,17 +49,20 @@ public final class BinderIdentityRestoredDangerouslyTest {
     compilationHelper
         .addSourceLines(
             "InFinally.java",
-            "import android.os.Binder;",
-            "public class InFinally {",
-            "  void foo() {",
-            "    long identity = Binder.clearCallingIdentity();",
-            "    try {",
-            "      // Do something (typically Binder IPC) ",
-            "    } finally {",
-            "      Binder.restoreCallingIdentity(identity);",
-            "    }",
-            "  }",
-            "}")
+            """
+            import android.os.Binder;
+
+            public class InFinally {
+              void foo() {
+                long identity = Binder.clearCallingIdentity();
+                try {
+                  // Do something (typically Binder IPC)
+                } finally {
+                  Binder.restoreCallingIdentity(identity);
+                }
+              }
+            }
+            """)
         .doTest();
   }
 
@@ -57,15 +71,18 @@ public final class BinderIdentityRestoredDangerouslyTest {
     compilationHelper
         .addSourceLines(
             "InFinally.java",
-            "import android.os.Binder;",
-            "public class InFinally {",
-            "  void foo() {",
-            "    long identity = Binder.clearCallingIdentity();",
-            "    // Do something (typically Binder IPC) ",
-            "    // BUG: Diagnostic contains: Binder.restoreCallingIdentity() in a finally block",
-            "    Binder.restoreCallingIdentity(identity);",
-            "  }",
-            "}")
+            """
+            import android.os.Binder;
+
+            public class InFinally {
+              void foo() {
+                long identity = Binder.clearCallingIdentity();
+                // Do something (typically Binder IPC)
+                // BUG: Diagnostic contains: Binder.restoreCallingIdentity() in a finally block
+                Binder.restoreCallingIdentity(identity);
+              }
+            }
+            """)
         .doTest();
   }
 }

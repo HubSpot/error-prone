@@ -34,6 +34,7 @@ import com.google.errorprone.bugpatterns.ArrayAsKeyOfSetOrMap;
 import com.google.errorprone.bugpatterns.ArrayEquals;
 import com.google.errorprone.bugpatterns.ArrayFillIncompatibleType;
 import com.google.errorprone.bugpatterns.ArrayHashCode;
+import com.google.errorprone.bugpatterns.ArrayRecordComponent;
 import com.google.errorprone.bugpatterns.ArrayToString;
 import com.google.errorprone.bugpatterns.ArraysAsListPrimitiveArray;
 import com.google.errorprone.bugpatterns.AssertFalse;
@@ -119,7 +120,6 @@ import com.google.errorprone.bugpatterns.DoNotCallSuggester;
 import com.google.errorprone.bugpatterns.DoNotClaimAnnotations;
 import com.google.errorprone.bugpatterns.DoNotMockAutoValue;
 import com.google.errorprone.bugpatterns.DoNotMockChecker;
-import com.google.errorprone.bugpatterns.DoNotUseRuleChain;
 import com.google.errorprone.bugpatterns.DoubleBraceInitialization;
 import com.google.errorprone.bugpatterns.DuplicateDateFormatField;
 import com.google.errorprone.bugpatterns.DuplicateMapKeys;
@@ -155,6 +155,7 @@ import com.google.errorprone.bugpatterns.ForOverrideChecker;
 import com.google.errorprone.bugpatterns.FunctionalInterfaceClash;
 import com.google.errorprone.bugpatterns.FunctionalInterfaceMethodChanged;
 import com.google.errorprone.bugpatterns.FutureReturnValueIgnored;
+import com.google.errorprone.bugpatterns.FutureTransformAsync;
 import com.google.errorprone.bugpatterns.FuturesGetCheckedIllegalExceptionType;
 import com.google.errorprone.bugpatterns.FuzzyEqualsShouldNotBeUsedInEqualsMethod;
 import com.google.errorprone.bugpatterns.GetClassOnAnnotation;
@@ -164,6 +165,7 @@ import com.google.errorprone.bugpatterns.GuiceNestedCombine;
 import com.google.errorprone.bugpatterns.HashtableContains;
 import com.google.errorprone.bugpatterns.HidingField;
 import com.google.errorprone.bugpatterns.ICCProfileGetInstance;
+import com.google.errorprone.bugpatterns.IdentifierName;
 import com.google.errorprone.bugpatterns.IdentityBinaryExpression;
 import com.google.errorprone.bugpatterns.IdentityHashMapBoxing;
 import com.google.errorprone.bugpatterns.IdentityHashMapUsage;
@@ -230,9 +232,10 @@ import com.google.errorprone.bugpatterns.LoopOverCharArray;
 import com.google.errorprone.bugpatterns.LossyPrimitiveCompare;
 import com.google.errorprone.bugpatterns.MathAbsoluteNegative;
 import com.google.errorprone.bugpatterns.MathRoundIntLong;
-import com.google.errorprone.bugpatterns.MemberName;
 import com.google.errorprone.bugpatterns.MemoizeConstantVisitorStateLookups;
 import com.google.errorprone.bugpatterns.MethodCanBeStatic;
+import com.google.errorprone.bugpatterns.MisformattedTestData;
+import com.google.errorprone.bugpatterns.MisleadingEscapedSpace;
 import com.google.errorprone.bugpatterns.MissingBraces;
 import com.google.errorprone.bugpatterns.MissingCasesInEnumSwitch;
 import com.google.errorprone.bugpatterns.MissingDefault;
@@ -376,6 +379,7 @@ import com.google.errorprone.bugpatterns.ThreadJoinLoop;
 import com.google.errorprone.bugpatterns.ThreadLocalUsage;
 import com.google.errorprone.bugpatterns.ThreeLetterTimeZoneID;
 import com.google.errorprone.bugpatterns.ThrowIfUncheckedKnownChecked;
+import com.google.errorprone.bugpatterns.ThrowIfUncheckedKnownUnchecked;
 import com.google.errorprone.bugpatterns.ThrowNull;
 import com.google.errorprone.bugpatterns.ThrowSpecificExceptions;
 import com.google.errorprone.bugpatterns.ThrowsUncheckedException;
@@ -581,6 +585,7 @@ import com.google.errorprone.bugpatterns.time.FromTemporalAccessor;
 import com.google.errorprone.bugpatterns.time.InstantTemporalUnit;
 import com.google.errorprone.bugpatterns.time.InvalidJavaTimeConstant;
 import com.google.errorprone.bugpatterns.time.JavaDurationGetSecondsGetNano;
+import com.google.errorprone.bugpatterns.time.JavaDurationGetSecondsToToSeconds;
 import com.google.errorprone.bugpatterns.time.JavaDurationWithNanos;
 import com.google.errorprone.bugpatterns.time.JavaDurationWithSeconds;
 import com.google.errorprone.bugpatterns.time.JavaInstantGetSecondsGetNano;
@@ -764,6 +769,7 @@ public class BuiltInCheckerSuppliers {
           LossyPrimitiveCompare.class,
           MathRoundIntLong.class,
           MislabeledAndroidString.class,
+          MisleadingEscapedSpace.class,
           MisplacedScopeAnnotations.class,
           MissingSuperCall.class,
           MissingTestCall.class,
@@ -855,6 +861,7 @@ public class BuiltInCheckerSuppliers {
           AnnotateFormatMethod.class,
           ArgumentSelectionDefectChecker.class,
           ArrayAsKeyOfSetOrMap.class,
+          ArrayRecordComponent.class,
           AssertEqualsArgumentOrderChecker.class,
           AssertThrowsMultipleStatements.class,
           AssertionFailureIgnored.class,
@@ -927,6 +934,7 @@ public class BuiltInCheckerSuppliers {
           FragmentInjection.class,
           FragmentNotInstantiable.class,
           FutureReturnValueIgnored.class,
+          FutureTransformAsync.class,
           GetClassOnEnum.class,
           GuiceNestedCombine.class,
           HidingField.class,
@@ -962,6 +970,7 @@ public class BuiltInCheckerSuppliers {
           JUnitAmbiguousTestClass.class,
           JUnitIncompatibleType.class,
           JavaDurationGetSecondsGetNano.class,
+          JavaDurationGetSecondsToToSeconds.class,
           JavaDurationWithNanos.class,
           JavaDurationWithSeconds.class,
           JavaInstantGetSecondsGetNano.class,
@@ -993,6 +1002,7 @@ public class BuiltInCheckerSuppliers {
           MalformedInlineTag.class,
           MathAbsoluteNegative.class,
           MemoizeConstantVisitorStateLookups.class,
+          MisformattedTestData.class,
           MissingCasesInEnumSwitch.class,
           MissingFail.class,
           MissingImplementsComparable.class,
@@ -1078,6 +1088,7 @@ public class BuiltInCheckerSuppliers {
           ThreadLocalUsage.class,
           ThreadPriorityCheck.class,
           ThreeLetterTimeZoneID.class,
+          ThrowIfUncheckedKnownUnchecked.class,
           TimeUnitConversionChecker.class,
           ToStringReturnsNull.class,
           TraditionalSwitchExpression.class,
@@ -1151,7 +1162,6 @@ public class BuiltInCheckerSuppliers {
           DefaultLocale.class, // TODO: enable this by default.
           DepAnn.class,
           DifferentNameButSame.class,
-          DoNotUseRuleChain.class,
           EmptyIfStatement.class,
           EqualsBrokenForNull.class,
           EqualsMissingNullable.class,
@@ -1170,6 +1180,7 @@ public class BuiltInCheckerSuppliers {
           ForEachIterable.class,
           FunctionalInterfaceClash.class,
           HardCodedSdCardPath.class,
+          IdentifierName.class,
           ImmutableMemberCollection.class,
           ImmutableRefactoring.class,
           ImmutableSetForContains.class,
@@ -1185,7 +1196,6 @@ public class BuiltInCheckerSuppliers {
           Java8ApiChecker.class,
           LambdaFunctionalInterface.class,
           LongLiteralLowerCaseSuffix.class,
-          MemberName.class,
           MethodCanBeStatic.class,
           MissingBraces.class,
           MissingDefault.class,
