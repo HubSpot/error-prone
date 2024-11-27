@@ -50,6 +50,7 @@ import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Types;
+import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
 import java.util.regex.Pattern;
 import javax.lang.model.element.ElementKind;
 
@@ -184,7 +185,30 @@ public class ClassInitializationDeadlock extends BugChecker implements BugChecke
                       .map(s -> prettyType(s.asType(), state))
                       .collect(joining(", "))));
         }
-        state.reportMatch(buildDescription(tree).setMessage(message.toString()).build());
+
+        Description.Builder builder = buildDescription(tree)
+            .setMessage(message.toString())
+            .addMetadata("subclass", use.asType().toString())
+            .addMetadata("containingClass", classSymbol.asType().toString());
+
+        JCVariableDecl containingVariableDecl = findContainingVariableDeclaration();
+        if (containingVariableDecl != null) {
+          builder.addMetadata("variableName", containingVariableDecl.getName().toString());
+        }
+
+        state.reportMatch(builder.build());
+      }
+
+      private JCVariableDecl findContainingVariableDeclaration() {
+        TreePath currentPath = getCurrentPath();
+        while (currentPath != null) {
+          if (currentPath.getLeaf() instanceof JCVariableDecl variableDecl) {
+            return variableDecl;
+          }
+          currentPath = currentPath.getParentPath();
+        }
+
+        return null;
       }
     }.scan(path, null);
   }
