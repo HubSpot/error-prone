@@ -18,6 +18,7 @@ package com.google.errorprone.bugpatterns;
 
 import com.google.auto.value.processor.AutoValueProcessor;
 import com.google.errorprone.CompilationTestHelper;
+
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -392,62 +393,176 @@ public class A {
         .doTest();
   }
 
+  @Test
+  public void rawFactoryLambda() {
+    testHelper
+        .addSourceLines(
+            "Foo.java",
+            """
+                import java.util.function.Function;
+                
+                class A {
+                  static Function<Integer, B> factory = (i) -> new B(i);
+                }
+                
+                class B extends A {
+                  B(int i) {}
+                }
+                """)
+        .doTest();
+  }
 
-    @Test
-    public void simpleSubclassMethodReference() {
-        testHelper
-                .addSourceLines(
-                        "Foo.java",
-                        """
-                        import java.util.function.Supplier;
-                        
-                        class A {
-                          static Supplier<B> supplier = B::new;
-                        }
-                        
-                        class B extends A {}
-                        """)
-                .doTest();
-    }
+  @Test
+  public void rawFactoryMethodRef() {
+    testHelper
+        .addSourceLines(
+            "Foo.java",
+            """
+                import java.util.function.Supplier;
+                
+                class A {
+                  static Supplier<B> supplier = B::new;
+                }
+                
+                class B extends A {}
+                """)
+        .doTest();
+  }
 
-    @Test
-    public void compoundSubclassMethodReference() {
-        testHelper
-                .addSourceLines(
-                        "Foo.java",
-                        """
-                        import java.util.Comparator;
-                        
-                        class A {
-                          static Comparator<B> comparator = Comparator.comparing(B::value);
-                        }
-                        
-                        class B extends A {
-                          int value;
-                          int value() {
-                            return value;
-                          }
-                        }
-                        """)
-                .doTest();
-    }
+  @Test
+  public void memoizedSupplierLambda() {
+    testHelper
+        .addSourceLines(
+            "Foo.java",
+            """
+                import com.google.common.base.Suppliers;
+                import java.util.function.Supplier;
+                
+                class A {
+                  static Supplier<B> supplier = Suppliers.memoize(() -> new B());
+                }
+                
+                class B extends A {}
+                """)
+        .doTest();
+  }
 
-    @Test
-    public void lambda() {
-        testHelper
-                .addSourceLines(
-                        "Foo.java",
-                        """
-                        import java.util.function.Supplier;
+  @Test
+  public void memoizedSupplierMethodRef() {
+    testHelper
+        .addSourceLines(
+            "Foo.java",
+            """
+                import com.google.common.base.Suppliers;
+                import java.util.function.Supplier;
+                
+                class A {
+                  static Supplier<B> supplier = Suppliers.memoize(B::new);
+                }
+                
+                class B extends A {}
+                """)
+        .doTest();
+  }
 
-                        class A {
-                          static Supplier<B> supplier = () -> new B();
-                        }
+  @Test
+  public void consumerLambda() {
+    testHelper
+        .addSourceLines(
+            "Foo.java",
+            """
+                import java.util.function.BiFunction;
+                
+                class A {
+                  static BiFunction<Integer, B, Integer> consumer = (i, b) -> i + b.value;
+                }
+                
+                class B extends A {
+                  int value;
+                }
+                """)
+        .doTest();
+  }
 
-                        class B extends A {}
-                        """)
-                .doTest();
-    }
+  @Test
+  public void comparatorFactoryMethodRef() {
+    testHelper
+        .addSourceLines(
+            "Foo.java",
+            """
+                import java.util.Comparator;
+                
+                class A {
+                  static Comparator<B> comparator = Comparator.comparing(B::value);
+                }
+                
+                class B extends A {
+                  int value;
+                  int value() {
+                    return value;
+                  }
+                }
+                """)
+        .doTest();
+  }
+
+  @Test
+  public void otherComparatorLambda() {
+    testHelper
+        .addSourceLines(
+            "Foo.java",
+            """
+                import java.util.Comparator;
+                import java.util.function.Function;
+                
+                class A {
+                  // BUG: Diagnostic contains:
+                  static Comparator<B> comparator = buildComparator(B::value);
+                
+                  static Comparator<B> buildComparator(Function<B, Integer> f) {
+                    new B();
+                    return Comparator.comparing(f);
+                  }
+                }
+                
+                class B extends A {
+                  int value;
+                  int value() {
+                    return value;
+                  }
+                }
+                """)
+        .doTest();
+  }
+
+  @Test
+  public void otherComparatorMethodRef() {
+    testHelper
+        .addSourceLines(
+            "Foo.java",
+            """
+                import java.util.Comparator;
+                import java.util.function.Function;
+                
+                class A {
+                  // BUG: Diagnostic contains:
+                  static Comparator<B> comparator = buildComparator(B::value);
+                
+                  static Comparator<B> buildComparator(Function<B, Integer> f) {
+                    new B();
+                    return Comparator.comparing(f);
+                  }
+                }
+                
+                class B extends A {
+                  int value;
+                  int value() {
+                    return value;
+                  }
+                }
+                """)
+        .doTest();
+  }
 
     @Test
     public void subclassStaticMethod() {
