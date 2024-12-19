@@ -121,6 +121,7 @@ import com.google.errorprone.bugpatterns.DoNotClaimAnnotations;
 import com.google.errorprone.bugpatterns.DoNotMockAutoValue;
 import com.google.errorprone.bugpatterns.DoNotMockChecker;
 import com.google.errorprone.bugpatterns.DoubleBraceInitialization;
+import com.google.errorprone.bugpatterns.DuplicateBranches;
 import com.google.errorprone.bugpatterns.DuplicateDateFormatField;
 import com.google.errorprone.bugpatterns.DuplicateMapKeys;
 import com.google.errorprone.bugpatterns.EmptyCatch;
@@ -324,6 +325,7 @@ import com.google.errorprone.bugpatterns.PublicApiNamedStreamShouldReturnStream;
 import com.google.errorprone.bugpatterns.RandomCast;
 import com.google.errorprone.bugpatterns.RandomModInteger;
 import com.google.errorprone.bugpatterns.ReachabilityFenceUsage;
+import com.google.errorprone.bugpatterns.RedundantControlFlow;
 import com.google.errorprone.bugpatterns.RedundantOverride;
 import com.google.errorprone.bugpatterns.RedundantSetterCall;
 import com.google.errorprone.bugpatterns.RedundantThrows;
@@ -706,6 +708,7 @@ public class BuiltInCheckerSuppliers {
           DoNotCallChecker.class,
           DoNotMockChecker.class,
           DoubleBraceInitialization.class,
+          DuplicateBranches.class,
           DuplicateMapKeys.class,
           DurationFrom.class,
           DurationGetTemporalUnit.class,
@@ -1059,6 +1062,7 @@ public class BuiltInCheckerSuppliers {
           ProtoTimestampGetSecondsGetNano.class,
           QualifierOrScopeOnInjectMethod.class,
           ReachabilityFenceUsage.class,
+          RedundantControlFlow.class,
           ReferenceEquality.class,
           RethrowReflectiveOperationExceptionAsLinkageError.class,
           ReturnAtTheEndOfVoidFunction.class,

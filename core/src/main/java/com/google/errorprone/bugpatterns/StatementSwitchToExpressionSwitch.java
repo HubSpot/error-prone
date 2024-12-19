@@ -22,9 +22,9 @@ import static com.google.common.collect.Iterables.getLast;
 import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
-import static com.google.errorprone.util.ASTHelpers.getCaseExpressions;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
+import static com.google.errorprone.util.ASTHelpers.isSwitchDefault;
 import static com.sun.source.tree.Tree.Kind.BLOCK;
 import static com.sun.source.tree.Tree.Kind.BREAK;
 import static com.sun.source.tree.Tree.Kind.EXPRESSION_STATEMENT;
@@ -78,6 +78,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import javax.inject.Inject;
 import javax.lang.model.element.ElementKind;
@@ -94,7 +95,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
       ImmutableSet.of(THROW, EXPRESSION_STATEMENT);
   private static final ImmutableSet<Kind> KINDS_RETURN_OR_THROW = ImmutableSet.of(THROW, RETURN);
   private static final Pattern FALL_THROUGH_PATTERN =
-      Pattern.compile("\\bfalls?.?through\\b", Pattern.CASE_INSENSITIVE);
+      Pattern.compile("\\bfalls?.?(through|out)\\b", Pattern.CASE_INSENSITIVE);
   // Default (negative) result for assignment switch conversion analysis. Note that the value is
   // immutable.
   private static final AssignmentSwitchAnalysisResult DEFAULT_ASSIGNMENT_SWITCH_ANALYSIS_RESULT =
@@ -207,11 +208,11 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     // One-pass scan through each case in switch
     for (int caseIndex = 0; caseIndex < cases.size(); caseIndex++) {
       CaseTree caseTree = cases.get(caseIndex);
-      boolean isDefaultCase = (getCaseExpressions(caseTree).count() == 0);
+      boolean isDefaultCase = caseTree.getExpressions().isEmpty();
       hasDefaultCase |= isDefaultCase;
       // Accumulate enum values included in this case
       handledEnumValues.addAll(
-          getCaseExpressions(caseTree)
+          caseTree.getExpressions().stream()
               .filter(IdentifierTree.class::isInstance)
               .map(expressionTree -> ((IdentifierTree) expressionTree).getName().toString())
               .collect(toImmutableSet()));
@@ -419,8 +420,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     Optional<ExpressionTree> caseAssignmentTreeOptional = Optional.empty();
 
     // The assignment could be a normal assignment ("=") or a compound assignment (e.g. "+=")
-    if (expression instanceof CompoundAssignmentTree) {
-      CompoundAssignmentTree compoundAssignmentTree = (CompoundAssignmentTree) expression;
+    if (expression instanceof CompoundAssignmentTree compoundAssignmentTree) {
       caseAssignmentTargetOptional = Optional.of(compoundAssignmentTree.getVariable());
       caseAssignmentKindOptional = Optional.of(compoundAssignmentTree.getKind());
       caseAssignmentTreeOptional = Optional.of(expression);
@@ -536,7 +536,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     boolean firstCaseInGroup = true;
     for (int caseIndex = 0; caseIndex < cases.size(); caseIndex++) {
       CaseTree caseTree = cases.get(caseIndex);
-      boolean isDefaultCase = caseTree.getExpression() == null;
+      boolean isDefaultCase = isSwitchDefault(caseTree);
 
       // For readability, filter out trailing unlabelled break statement because these become a
       // No-Op when used inside expression switches
@@ -544,7 +544,12 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
       String transformedBlockSource = transformBlock(caseTree, state, filteredStatements);
 
       if (firstCaseInGroup) {
-        groupedCaseCommentsAccumulator = new StringBuilder();
+        groupedCaseCommentsAccumulator =
+            new StringBuilder(
+                caseIndex == 0
+                    ? extractCommentsBeforeFirstCase(switchTree, allSwitchComments).orElse("")
+                    : "");
+
         replacementCodeBuilder.append("\n  ");
         if (!isDefaultCase) {
           replacementCodeBuilder.append("case ");
@@ -656,13 +661,18 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     boolean firstCaseInGroup = true;
     for (int caseIndex = 0; caseIndex < cases.size(); caseIndex++) {
       CaseTree caseTree = cases.get(caseIndex);
-      boolean isDefaultCase = caseTree.getExpression() == null;
+      boolean isDefaultCase = isSwitchDefault(caseTree);
 
       String transformedBlockSource =
           transformReturnOrThrowBlock(caseTree, state, getStatements(caseTree));
 
       if (firstCaseInGroup) {
-        groupedCaseCommentsAccumulator = new StringBuilder();
+        groupedCaseCommentsAccumulator =
+            new StringBuilder(
+                caseIndex == 0
+                    ? extractCommentsBeforeFirstCase(switchTree, allSwitchComments).orElse("")
+                    : "");
+
         replacementCodeBuilder.append("\n  ");
         if (!isDefaultCase) {
           replacementCodeBuilder.append("case ");
@@ -749,8 +759,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     // NOMUTANTS--should early return above
     if (pathToEnclosing != null) {
       Tree enclosing = pathToEnclosing.getLeaf();
-      if (enclosing instanceof BlockTree) {
-        BlockTree blockTree = (BlockTree) enclosing;
+      if (enclosing instanceof BlockTree blockTree) {
         // Path from root -> switchTree
         TreePath rootToSwitchPath = TreePath.getPath(pathToEnclosing, switchTree);
 
@@ -820,14 +829,19 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     boolean firstCaseInGroup = true;
     for (int caseIndex = 0; caseIndex < cases.size(); caseIndex++) {
       CaseTree caseTree = cases.get(caseIndex);
-      boolean isDefaultCase = caseTree.getExpression() == null;
+      boolean isDefaultCase = isSwitchDefault(caseTree);
       ImmutableList<StatementTree> filteredStatements = filterOutRedundantBreak(caseTree);
 
       String transformedBlockSource =
           transformAssignOrThrowBlock(caseTree, state, filteredStatements);
 
       if (firstCaseInGroup) {
-        groupedCaseCommentsAccumulator = new StringBuilder();
+        groupedCaseCommentsAccumulator =
+            new StringBuilder(
+                caseIndex == 0
+                    ? extractCommentsBeforeFirstCase(switchTree, allSwitchComments).orElse("")
+                    : "");
+
         replacementCodeBuilder.append("\n  ");
         if (!isDefaultCase) {
           replacementCodeBuilder.append("case ");
@@ -989,6 +1003,21 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
   }
 
   /**
+   * Extracts any comments appearing within the switch tree before the first case. Comments are
+   * merged into a single string separated by newlines. Precondition: the switch tree has at least
+   * one case.
+   */
+  private static Optional<String> extractCommentsBeforeFirstCase(
+      SwitchTree switchTree, ImmutableList<ErrorProneComment> allSwitchComments) {
+    // Indexing relative to the start position of the switch statement
+    int switchStart = getStartPosition(switchTree);
+    int firstCaseStartIndex = getStartPosition(switchTree.getCases().get(0)) - switchStart;
+
+    return filterAndRenderComments(
+        allSwitchComments, comment -> comment.getPos() < firstCaseStartIndex);
+  }
+
+  /**
    * Extracts any comments appearing after the specified {@code caseIndex} but before the subsequent
    * case or end of the {@code switchTree}. Comments are merged into a single string separated by
    * newlines.
@@ -1009,12 +1038,22 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
             ? state.getEndPosition(switchTree) - switchStart
             : getStartPosition(switchTree.getCases().get(caseIndex + 1)) - switchStart;
 
-    String filteredComments =
-        allSwitchComments.stream()
-            // Comments after the end of the current case and before the start of the next case
-            .filter(
-                comment ->
-                    comment.getPos() >= caseEndIndex && comment.getPos() < nextCaseStartIndex)
+    return filterAndRenderComments(
+        allSwitchComments,
+        comment -> comment.getPos() >= caseEndIndex && comment.getPos() < nextCaseStartIndex);
+  }
+
+  /**
+   * Filters comments according to the supplied predicate ({@code commentFilter}), removes
+   * fall-through and empty comments, and renders them into a single optional string. If no comments
+   * remain, returns {@code Optional.empty()}.
+   */
+  private static Optional<String> filterAndRenderComments(
+      ImmutableList<ErrorProneComment> comments, Predicate<ErrorProneComment> commentFilter) {
+
+    String rendered =
+        comments.stream()
+            .filter(commentFilter)
             .map(ErrorProneComment::getText)
             // Remove "fall thru" comments
             .map(commentText -> removeFallThruLines(commentText))
@@ -1022,7 +1061,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
             .filter(commentText -> !commentText.isEmpty())
             .collect(joining("\n"));
 
-    return filteredComments.isEmpty() ? Optional.empty() : Optional.of(filteredComments);
+    return rendered.isEmpty() ? Optional.empty() : Optional.of(rendered);
   }
 
   /**
@@ -1092,7 +1131,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
 
   /** Prints source for all expressions in a given {@code case}, separated by commas. */
   private static String printCaseExpressions(CaseTree caseTree, VisitorState state) {
-    return getCaseExpressions(caseTree).map(state::getSourceForNode).collect(joining(", "));
+    return caseTree.getExpressions().stream().map(state::getSourceForNode).collect(joining(", "));
   }
 
   /**

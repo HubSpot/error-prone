@@ -19,6 +19,7 @@ package com.google.errorprone.refaster;
 import static com.google.errorprone.refaster.ControlFlowVisitor.Result.ALWAYS_RETURNS;
 import static com.google.errorprone.refaster.ControlFlowVisitor.Result.MAY_BREAK_OR_RETURN;
 import static com.google.errorprone.refaster.ControlFlowVisitor.Result.NEVER_EXITS;
+import static com.google.errorprone.util.ASTHelpers.isSwitchDefault;
 
 import com.google.errorprone.refaster.ControlFlowVisitor.BreakContext;
 import com.google.errorprone.refaster.ControlFlowVisitor.Result;
@@ -62,13 +63,10 @@ public class ControlFlowVisitor extends SimpleTreeVisitor<Result, BreakContext> 
     NEVER_EXITS {
       @Override
       Result or(Result other) {
-        switch (other) {
-          case MAY_BREAK_OR_RETURN:
-          case NEVER_EXITS:
-            return other;
-          default:
-            return MAY_RETURN;
-        }
+        return switch (other) {
+          case MAY_BREAK_OR_RETURN, NEVER_EXITS -> other;
+          default -> MAY_RETURN;
+        };
       }
 
       @Override
@@ -95,26 +93,20 @@ public class ControlFlowVisitor extends SimpleTreeVisitor<Result, BreakContext> 
 
       @Override
       Result then(Result other) {
-        switch (other) {
-          case MAY_BREAK_OR_RETURN:
-          case ALWAYS_RETURNS:
-            return other;
-          default:
-            return MAY_RETURN;
-        }
+        return switch (other) {
+          case MAY_BREAK_OR_RETURN, ALWAYS_RETURNS -> other;
+          default -> MAY_RETURN;
+        };
       }
     },
     ALWAYS_RETURNS {
 
       @Override
       Result or(Result other) {
-        switch (other) {
-          case MAY_BREAK_OR_RETURN:
-          case ALWAYS_RETURNS:
-            return other;
-          default:
-            return MAY_RETURN;
-        }
+        return switch (other) {
+          case MAY_BREAK_OR_RETURN, ALWAYS_RETURNS -> other;
+          default -> MAY_RETURN;
+        };
       }
 
       @Override
@@ -221,7 +213,7 @@ public class ControlFlowVisitor extends SimpleTreeVisitor<Result, BreakContext> 
     cxt.loopDepth++;
     try {
       for (CaseTree caseTree : node.getCases()) {
-        if (caseTree.getExpression() == null) {
+        if (isSwitchDefault(caseTree)) {
           seenDefault = true;
         }
 

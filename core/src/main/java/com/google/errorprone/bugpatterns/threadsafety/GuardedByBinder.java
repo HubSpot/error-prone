@@ -192,26 +192,23 @@ public final class GuardedByBinder {
               "Only nullary methods are allowed.");
           ExpressionTree methodSelect = node.getMethodSelect();
           switch (methodSelect.getKind()) {
-            case IDENTIFIER:
-              {
-                IdentifierTree identifier = (IdentifierTree) methodSelect;
-                Symbol.MethodSymbol method =
-                    context.resolver.resolveMethod(node, identifier.getName());
-                checkGuardedBy(method != null, identifier.toString());
-                return bindSelect(computeBase(context, method), method);
-              }
-            case MEMBER_SELECT:
-              {
-                MemberSelectTree select = (MemberSelectTree) methodSelect;
-                GuardedByExpression base = visit(select.getExpression(), context);
-                checkGuardedBy(base != null, select.getExpression().toString());
-                Symbol.MethodSymbol method =
-                    context.resolver.resolveMethod(node, base, select.getIdentifier());
-                checkGuardedBy(method != null, select.toString());
-                return bindSelect(normalizeBase(context, method, base), method);
-              }
-            default:
-              throw new IllegalGuardedBy(methodSelect.getKind().toString());
+            case IDENTIFIER -> {
+              IdentifierTree identifier = (IdentifierTree) methodSelect;
+              Symbol.MethodSymbol method =
+                  context.resolver.resolveMethod(node, identifier.getName());
+              checkGuardedBy(method != null, identifier.toString());
+              return bindSelect(computeBase(context, method), method);
+            }
+            case MEMBER_SELECT -> {
+              MemberSelectTree select = (MemberSelectTree) methodSelect;
+              GuardedByExpression base = visit(select.getExpression(), context);
+              checkGuardedBy(base != null, select.getExpression().toString());
+              Symbol.MethodSymbol method =
+                  context.resolver.resolveMethod(node, base, select.getIdentifier());
+              checkGuardedBy(method != null, select.toString());
+              return bindSelect(normalizeBase(context, method, base), method);
+            }
+            default -> throw new IllegalGuardedBy(methodSelect.getKind().toString());
           }
         }
 
@@ -266,24 +263,20 @@ public final class GuardedByBinder {
         public GuardedByExpression visitIdentifier(IdentifierTree node, BinderContext context) {
           Symbol symbol = context.resolver.resolveIdentifier(node);
           checkGuardedBy(symbol != null, "Could not resolve %s", node);
-          if (symbol instanceof Symbol.VarSymbol) {
-            Symbol.VarSymbol varSymbol = (Symbol.VarSymbol) symbol;
+          if (symbol instanceof Symbol.VarSymbol varSymbol) {
             switch (varSymbol.getKind()) {
-              case LOCAL_VARIABLE:
-              case PARAMETER:
+              case LOCAL_VARIABLE, PARAMETER -> {
                 return F.localVariable(varSymbol);
-              case FIELD:
-                {
-                  if (symbol.name.contentEquals("this")) {
-                    return F.thisliteral();
-                  }
-                  return F.select(computeBase(context, varSymbol), varSymbol);
+              }
+              case FIELD -> {
+                if (symbol.name.contentEquals("this")) {
+                  return F.thisliteral();
                 }
-              default:
-                throw new IllegalGuardedBy(varSymbol.getKind().toString());
+                return F.select(computeBase(context, varSymbol), varSymbol);
+              }
+              default -> throw new IllegalGuardedBy(varSymbol.getKind().toString());
             }
-          } else if (symbol instanceof Symbol.MethodSymbol) {
-            Symbol.MethodSymbol methodSymbol = (Symbol.MethodSymbol) symbol;
+          } else if (symbol instanceof Symbol.MethodSymbol methodSymbol) {
             return F.select(computeBase(context, symbol), methodSymbol);
           } else if (symbol instanceof Symbol.ClassSymbol) {
             if (node.getName().contentEquals("this")) {

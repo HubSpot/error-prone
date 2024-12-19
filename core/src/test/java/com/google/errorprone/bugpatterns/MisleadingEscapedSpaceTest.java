@@ -16,8 +16,6 @@
 
 package com.google.errorprone.bugpatterns;
 
-import static com.google.common.truth.TruthJUnit.assume;
-
 import com.google.errorprone.CompilationTestHelper;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -30,8 +28,6 @@ public final class MisleadingEscapedSpaceTest {
 
   @Test
   public void misleadingEscape() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
-
     testHelper
         .addSourceLines(
             "Test.class",
@@ -39,28 +35,26 @@ public final class MisleadingEscapedSpaceTest {
             class Test {
               // BUG: Diagnostic contains:
               private static final String FOO = " \\s ";
-            }""")
+            }\
+            """)
         .doTest();
   }
 
   @Test
   public void literalBackslashS() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
-
     testHelper
         .addSourceLines(
             "Test.class",
             """
             class Test {
               private static final String FOO = " \\\\s ";
-            }""")
+            }\
+            """)
         .doTest();
   }
 
   @Test
   public void asSingleCharacter_misleading() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
-
     testHelper
         .addSourceLines(
             "Test.class",
@@ -68,14 +62,13 @@ public final class MisleadingEscapedSpaceTest {
             class Test {
               // BUG: Diagnostic contains:
               private static final char x = '\\s';
-            }""")
+            }\
+            """)
         .doTest();
   }
 
   @Test
   public void withinTextBlock_notAtEndOfLine_misleading() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
-
     testHelper
         .addSourceLines(
             "Test.class",
@@ -90,14 +83,13 @@ public final class MisleadingEscapedSpaceTest {
               foo   \\s
               bar  \\s baz
               \""";
-            }""")
+            }\
+            """)
         .doTest();
   }
 
   @Test
   public void atEndOfLine_notMisleading() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
-
     testHelper
         .addSourceLines(
             "Test.class",
@@ -107,14 +99,13 @@ public final class MisleadingEscapedSpaceTest {
               foo   \\s
               bar     \\s
               \""";
-            }""")
+            }\
+            """)
         .doTest();
   }
 
   @Test
   public void multipleAtEndOfLine_notMisleading() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
-
     testHelper
         .addSourceLines(
             "Test.class",
@@ -123,28 +114,26 @@ public final class MisleadingEscapedSpaceTest {
               private static final String FOO = \"""
               foo   \\s\\s\\s\\s
               \""";
-            }""")
+            }\
+            """)
         .doTest();
   }
 
   @Test
   public void withinCommentInBrokenUpString_noFinding() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
-
     testHelper
         .addSourceLines(
             "Test.class",
             """
             class Test {
               private static final String FOO = "foo" + /* \\s */ " bar";
-            }""")
+            }\
+            """)
         .doTest();
   }
 
   @Test
   public void atEndOfString_noFinding() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
-
     testHelper
         .addSourceLines(
             "Test.class",
@@ -161,8 +150,6 @@ public final class MisleadingEscapedSpaceTest {
 
   @Test
   public void escapedSpaceAtEndOfString() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
-
     testHelper
         .addSourceLines(
             "Test.class",
@@ -170,7 +157,8 @@ public final class MisleadingEscapedSpaceTest {
             class Test {
               // BUG: Diagnostic contains:
               private static final String FOO = "foo\\s";
-            }""")
+            }\
+            """)
         .doTest();
   }
 }

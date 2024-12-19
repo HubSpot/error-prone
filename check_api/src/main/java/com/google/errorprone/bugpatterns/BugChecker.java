@@ -44,6 +44,7 @@ import com.sun.source.tree.ArrayTypeTree;
 import com.sun.source.tree.AssertTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
+import com.sun.source.tree.BindingPatternTree;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.BreakTree;
 import com.sun.source.tree.CaseTree;
@@ -56,6 +57,7 @@ import com.sun.source.tree.ContinueTree;
 import com.sun.source.tree.DoWhileLoopTree;
 import com.sun.source.tree.EmptyStatementTree;
 import com.sun.source.tree.EnhancedForLoopTree;
+import com.sun.source.tree.ExportsTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ForLoopTree;
 import com.sun.source.tree.IdentifierTree;
@@ -71,12 +73,18 @@ import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ModifiersTree;
+import com.sun.source.tree.ModuleTree;
 import com.sun.source.tree.NewArrayTree;
 import com.sun.source.tree.NewClassTree;
+import com.sun.source.tree.OpensTree;
+import com.sun.source.tree.PackageTree;
 import com.sun.source.tree.ParameterizedTypeTree;
 import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.PrimitiveTypeTree;
+import com.sun.source.tree.ProvidesTree;
+import com.sun.source.tree.RequiresTree;
 import com.sun.source.tree.ReturnTree;
+import com.sun.source.tree.SwitchExpressionTree;
 import com.sun.source.tree.SwitchTree;
 import com.sun.source.tree.SynchronizedTree;
 import com.sun.source.tree.ThrowTree;
@@ -86,9 +94,11 @@ import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.UnionTypeTree;
+import com.sun.source.tree.UsesTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.tree.WhileLoopTree;
 import com.sun.source.tree.WildcardTree;
+import com.sun.source.tree.YieldTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.TreeScanner;
@@ -125,28 +135,25 @@ public abstract class BugChecker implements Suppressible, Serializable {
 
   private static BiPredicate<Set<? extends Name>, VisitorState> suppressionPredicate(
       Set<Class<? extends Annotation>> suppressionClasses) {
-    switch (suppressionClasses.size()) {
-      case 0:
-        return (annos, state) -> false;
-      case 1:
-        {
-          Supplier<Name> self =
-              VisitorState.memoize(
-                  state -> state.getName(Iterables.getOnlyElement(suppressionClasses).getName()));
-          return (annos, state) -> annos.contains(self.get(state));
-        }
-      default:
-        {
-          Supplier<Set<? extends Name>> self =
-              VisitorState.memoize(
-                  state ->
-                      suppressionClasses.stream()
-                          .map(Class::getName)
-                          .map(state::getName)
-                          .collect(toImmutableSet()));
-          return (annos, state) -> !Collections.disjoint(self.get(state), annos);
-        }
-    }
+    return switch (suppressionClasses.size()) {
+      case 0 -> (annos, state) -> false;
+      case 1 -> {
+        Supplier<Name> self =
+            VisitorState.memoize(
+                state -> state.getName(Iterables.getOnlyElement(suppressionClasses).getName()));
+        yield (annos, state) -> annos.contains(self.get(state));
+      }
+      default -> {
+        Supplier<Set<? extends Name>> self =
+            VisitorState.memoize(
+                state ->
+                    suppressionClasses.stream()
+                        .map(Class::getName)
+                        .map(state::getName)
+                        .collect(toImmutableSet()));
+        yield (annos, state) -> !Collections.disjoint(self.get(state), annos);
+      }
+    };
   }
 
   /** Helper to create a Description for the common case where there is a fix. */
@@ -358,12 +365,12 @@ public abstract class BugChecker implements Suppressible, Serializable {
     return ImmutableRangeSet.copyOf(suppressedRegions);
   }
 
-  public interface AnnotationTreeMatcher extends Suppressible {
-    Description matchAnnotation(AnnotationTree tree, VisitorState state);
-  }
-
   public interface AnnotatedTypeTreeMatcher extends Suppressible {
     Description matchAnnotatedType(AnnotatedTypeTree tree, VisitorState state);
+  }
+
+  public interface AnnotationTreeMatcher extends Suppressible {
+    Description matchAnnotation(AnnotationTree tree, VisitorState state);
   }
 
   public interface ArrayAccessTreeMatcher extends Suppressible {
@@ -384,6 +391,10 @@ public abstract class BugChecker implements Suppressible, Serializable {
 
   public interface BinaryTreeMatcher extends Suppressible {
     Description matchBinary(BinaryTree tree, VisitorState state);
+  }
+
+  public interface BindingPatternTreeMatcher extends Suppressible {
+    Description matchBindingPattern(BindingPatternTree tree, VisitorState state);
   }
 
   public interface BlockTreeMatcher extends Suppressible {
@@ -435,6 +446,10 @@ public abstract class BugChecker implements Suppressible, Serializable {
   }
 
   // Intentionally skip ErroneousTreeMatcher -- we don't analyze malformed expressions.
+
+  public interface ExportsTreeMatcher extends Suppressible {
+    Description matchExports(ExportsTree tree, VisitorState state);
+  }
 
   public interface ExpressionStatementTreeMatcher extends Suppressible {
     Description matchExpressionStatement(ExpressionStatementTree tree, VisitorState state);
@@ -496,6 +511,10 @@ public abstract class BugChecker implements Suppressible, Serializable {
     Description matchModifiers(ModifiersTree tree, VisitorState state);
   }
 
+  public interface ModuleTreeMatcher extends Suppressible {
+    Description matchModule(ModuleTree tree, VisitorState state);
+  }
+
   public interface NewArrayTreeMatcher extends Suppressible {
     Description matchNewArray(NewArrayTree tree, VisitorState state);
   }
@@ -506,6 +525,14 @@ public abstract class BugChecker implements Suppressible, Serializable {
 
   // Intentionally skip OtherTreeMatcher. It seems to be used only for let expressions, which are
   // generated by javac to implement autoboxing. We are only interested in source-level constructs.
+
+  public interface OpensTreeMatcher extends Suppressible {
+    Description matchOpens(OpensTree tree, VisitorState state);
+  }
+
+  public interface PackageTreeMatcher extends Suppressible {
+    Description matchPackage(PackageTree tree, VisitorState state);
+  }
 
   public interface ParameterizedTypeTreeMatcher extends Suppressible {
     Description matchParameterizedType(ParameterizedTypeTree tree, VisitorState state);
@@ -519,8 +546,20 @@ public abstract class BugChecker implements Suppressible, Serializable {
     Description matchPrimitiveType(PrimitiveTypeTree tree, VisitorState state);
   }
 
+  public interface ProvidesTreeMatcher extends Suppressible {
+    Description matchProvides(ProvidesTree tree, VisitorState state);
+  }
+
+  public interface RequiresTreeMatcher extends Suppressible {
+    Description matchRequires(RequiresTree tree, VisitorState state);
+  }
+
   public interface ReturnTreeMatcher extends Suppressible {
     Description matchReturn(ReturnTree tree, VisitorState state);
+  }
+
+  public interface SwitchExpressionTreeMatcher extends Suppressible {
+    Description matchSwitchExpression(SwitchExpressionTree tree, VisitorState state);
   }
 
   public interface SwitchTreeMatcher extends Suppressible {
@@ -555,6 +594,10 @@ public abstract class BugChecker implements Suppressible, Serializable {
     Description matchUnionType(UnionTypeTree tree, VisitorState state);
   }
 
+  public interface UsesTreeMatcher extends Suppressible {
+    Description matchUses(UsesTree tree, VisitorState state);
+  }
+
   public interface VariableTreeMatcher extends Suppressible {
     Description matchVariable(VariableTree tree, VisitorState state);
   }
@@ -565,6 +608,10 @@ public abstract class BugChecker implements Suppressible, Serializable {
 
   public interface WildcardTreeMatcher extends Suppressible {
     Description matchWildcard(WildcardTree tree, VisitorState state);
+  }
+
+  public interface YieldTreeMatcher extends Suppressible {
+    Description matchYield(YieldTree tree, VisitorState state);
   }
 
   @Override
