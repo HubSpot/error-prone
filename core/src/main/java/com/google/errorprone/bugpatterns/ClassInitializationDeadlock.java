@@ -20,6 +20,8 @@ import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.fixes.SuggestedFixes.prettyType;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
+import static com.google.errorprone.matchers.Matchers.anyOf;
+import static com.google.errorprone.matchers.Matchers.staticMethod;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.isEffectivelyPrivate;
 import static com.google.errorprone.util.ASTHelpers.isStatic;
@@ -33,6 +35,7 @@ import com.google.common.graph.Traverser;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.matchers.Description;
+import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.ClassTree;
@@ -107,6 +110,12 @@ public class ClassInitializationDeadlock extends BugChecker implements BugChecke
     return NO_MATCH;
   }
 
+  private static final Matcher<ExpressionTree> EXEMPT_METHOD_CALLS =
+      anyOf(
+          staticMethod().onClass("com.google.common.base.Suppliers").named("memoize"),
+          staticMethod().onClass("java.util.Comparator").named("comparing")
+      );
+
   private void scanForSubtypes(TreePath path, ClassSymbol classSymbol, VisitorState state) {
     new TreePathScanner<Void, Void>() {
 
@@ -134,6 +143,14 @@ public class ClassInitializationDeadlock extends BugChecker implements BugChecke
           return null;
         }
         return super.visitLambdaExpression(node, unused);
+      }
+
+      @Override
+      public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
+        if (EXEMPT_METHOD_CALLS.matches(node, state)) {
+          return null;
+        }
+        return super.visitMethodInvocation(node, unused);
       }
 
       @Override
