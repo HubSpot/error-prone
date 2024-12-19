@@ -41,6 +41,7 @@ import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
+import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
@@ -121,12 +122,18 @@ public class ClassInitializationDeadlock extends BugChecker implements BugChecke
 
       @Override
       public Void visitMemberReference(MemberReferenceTree node, Void unused) {
-        return null;
+        if (getCurrentPath() == path) {
+          return null;
+        }
+        return super.visitMemberReference(node, unused);
       }
 
       @Override
       public Void visitLambdaExpression(LambdaExpressionTree node, Void unused) {
-        return null;
+        if (getCurrentPath() == path) {
+          return null;
+        }
+        return super.visitLambdaExpression(node, unused);
       }
 
       @Override
