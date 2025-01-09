@@ -120,12 +120,10 @@ public class Finally extends BugChecker
       Tree prevTree = null;
       for (Tree leaf : state.getPath()) {
         switch (leaf.getKind()) {
-          case METHOD:
-          case LAMBDA_EXPRESSION:
-          case CLASS:
+          case METHOD, LAMBDA_EXPRESSION, CLASS -> {
             return false;
-          default:
-            break;
+          }
+          default -> {}
         }
         MatchResult mr = matchAncestor(leaf, prevTree);
         if (mr != MatchResult.KEEP_LOOKING) {
@@ -139,8 +137,7 @@ public class Finally extends BugChecker
 
     /** Match a tree in the ancestor chain given the ancestor's immediate descendant. */
     protected MatchResult matchAncestor(Tree leaf, Tree prevTree) {
-      if (leaf instanceof TryTree) {
-        TryTree tryTree = (TryTree) leaf;
+      if (leaf instanceof TryTree tryTree) {
         if (tryTree.getFinallyBlock() != null && tryTree.getFinallyBlock().equals(prevTree)) {
           return MatchResult.FOUND_ERROR;
         }
@@ -184,13 +181,10 @@ public class Finally extends BugChecker
       // (1)
       if (label == null) {
         switch (leaf.getKind()) {
-          case WHILE_LOOP:
-          case DO_WHILE_LOOP:
-          case FOR_LOOP:
-          case ENHANCED_FOR_LOOP:
+          case WHILE_LOOP, DO_WHILE_LOOP, FOR_LOOP, ENHANCED_FOR_LOOP -> {
             return MatchResult.NO_MATCH;
-          default:
-            break;
+          }
+          default -> {}
         }
       }
 
@@ -214,8 +208,7 @@ public class Finally extends BugChecker
   private static class FinallyThrowMatcher extends FinallyCompletionMatcher<ThrowTree> {
     @Override
     protected MatchResult matchAncestor(Tree tree, Tree prevTree) {
-      if (tree instanceof TryTree) {
-        TryTree tryTree = (TryTree) tree;
+      if (tree instanceof TryTree tryTree) {
         if (tryTree.getBlock().equals(prevTree) && !tryTree.getCatches().isEmpty()) {
           // The current ancestor is a try block with associated catch blocks.
           return MatchResult.NO_MATCH;

@@ -153,8 +153,7 @@ public class UTemplater extends SimpleTreeVisitor<Tree, Void> {
     UType genericType = templater.template(declSym.type);
     ImmutableList<UTypeVar> typeParameters;
     UMethodType methodType;
-    if (genericType instanceof UForAll) {
-      UForAll forAllType = (UForAll) genericType;
+    if (genericType instanceof UForAll forAllType) {
       typeParameters = forAllType.getTypeVars();
       methodType = (UMethodType) forAllType.getQuantifiedType();
     } else if (genericType instanceof UMethodType) {
@@ -623,14 +622,11 @@ public class UTemplater extends SimpleTreeVisitor<Tree, Void> {
     if (sym == null) {
       return UTypeVarIdent.create(tree.getName());
     }
-    switch (sym.getKind()) {
-      case TYPE_PARAMETER:
-        return UTypeVarIdent.create(tree.getName());
-      case METHOD:
-        return method(sym);
-      default:
-        return ULocalVarIdent.create(tree.getName());
-    }
+    return switch (sym.getKind()) {
+      case TYPE_PARAMETER -> UTypeVarIdent.create(tree.getName());
+      case METHOD -> method(sym);
+      default -> ULocalVarIdent.create(tree.getName());
+    };
   }
 
   /**

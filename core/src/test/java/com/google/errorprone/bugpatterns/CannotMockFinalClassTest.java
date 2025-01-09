@@ -16,8 +16,6 @@
 
 package com.google.errorprone.bugpatterns;
 
-import static com.google.common.truth.TruthJUnit.assume;
-
 import com.google.errorprone.CompilationTestHelper;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -56,14 +54,13 @@ public class CannotMockFinalClassTest {
                 // BUG: Diagnostic contains: Mockito cannot mock
                 FinalClass local = Mockito.mock(FinalClass.class);
               }
-            }""")
+            }\
+            """)
         .doTest();
   }
 
   @Test
   public void positiveCase_record() {
-    assume().that(Runtime.version().feature()).isAtLeast(16);
-
     compilationHelper
         .addSourceLines(
             "Test.java",
@@ -105,7 +102,8 @@ public class CannotMockFinalClassTest {
               public void method() {
                 NonFinalClass local = Mockito.mock(NonFinalClass.class);
               }
-            }""")
+            }\
+            """)
         .doTest();
   }
 
@@ -127,7 +125,8 @@ public class CannotMockFinalClassTest {
               public void method() {
                 FinalClass local = Mockito.mock(FinalClass.class);
               }
-            }""")
+            }\
+            """)
         .doTest();
   }
 }

@@ -16,8 +16,6 @@
 
 package com.google.errorprone.bugpatterns;
 
-import static com.google.common.truth.TruthJUnit.assume;
-
 import com.google.errorprone.CompilationTestHelper;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -109,7 +107,8 @@ public class FallThroughTest {
                   return 0;
                 }
               }
-            }""")
+            }\
+            """)
         .doTest();
   }
 
@@ -264,7 +263,8 @@ public class FallThroughTest {
                   }
                 }
               }
-            }""")
+            }\
+            """)
         .doTest();
   }
 
@@ -338,7 +338,6 @@ public class FallThroughTest {
 
   @Test
   public void arrowSwitch() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
     testHelper
         .addSourceLines(
             "Test.java",
@@ -364,7 +363,6 @@ public class FallThroughTest {
   @Ignore("https://github.com/google/error-prone/issues/2638")
   @Test
   public void i2118() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
     testHelper
         .addSourceLines(
             "Test.java",

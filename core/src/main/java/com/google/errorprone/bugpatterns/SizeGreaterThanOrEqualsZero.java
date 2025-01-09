@@ -149,8 +149,7 @@ public class SizeGreaterThanOrEqualsZero extends BugChecker implements BinaryTre
         expressionType == ExpressionType.GREATER_THAN_EQUAL
             ? tree.getLeftOperand()
             : tree.getRightOperand();
-    if (operand instanceof MethodInvocationTree) {
-      MethodInvocationTree callToSize = (MethodInvocationTree) operand;
+    if (operand instanceof MethodInvocationTree callToSize) {
       if (SIZE_OR_LENGTH_INSTANCE_METHOD.matches(callToSize, state)) {
         return provideReplacementForInstanceMethodInvocation(
             tree, callToSize, state, expressionType);
@@ -266,16 +265,17 @@ public class SizeGreaterThanOrEqualsZero extends BugChecker implements BinaryTre
     ExpressionType returnType;
 
     switch (tree.getKind()) {
-      case GREATER_THAN_EQUAL:
+      case GREATER_THAN_EQUAL -> {
         literalOperand = tree.getRightOperand();
         returnType = ExpressionType.GREATER_THAN_EQUAL;
-        break;
-      case LESS_THAN_EQUAL:
+      }
+      case LESS_THAN_EQUAL -> {
         literalOperand = tree.getLeftOperand();
         returnType = ExpressionType.LESS_THAN_EQUAL;
-        break;
-      default:
+      }
+      default -> {
         return ExpressionType.MISMATCH;
+      }
     }
 
     if (literalOperand.getKind() != Kind.INT_LITERAL) {

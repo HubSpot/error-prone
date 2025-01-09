@@ -16,8 +16,6 @@
 
 package com.google.errorprone.bugpatterns;
 
-import static com.google.common.truth.TruthJUnit.assume;
-
 import com.google.errorprone.CompilationTestHelper;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -113,7 +111,8 @@ public class ClassCanBeStaticTest {
                   }
                 }
               }
-            }""")
+            }\
+            """)
         .setArgs("--release", "11")
         .doTest();
   }
@@ -138,7 +137,8 @@ public class ClassCanBeStaticTest {
               class Inner1 {
                 int innerVar;
               }
-            }""")
+            }\
+            """)
         .doTest();
   }
 
@@ -168,7 +168,8 @@ public class ClassCanBeStaticTest {
                   return outerVar2;
                 }
               }
-            }""")
+            }\
+            """)
         .doTest();
   }
 
@@ -193,7 +194,8 @@ public class ClassCanBeStaticTest {
                 // BUG: Diagnostic contains: public static class Inner3
                 public class Inner3 {}
               }
-            }""")
+            }\
+            """)
         .doTest();
   }
 
@@ -541,7 +543,6 @@ public class ClassCanBeStaticTest {
 
   @Test
   public void nestedInLocal_static() {
-    assume().that(Runtime.version().feature()).isAtLeast(16);
     compilationHelper
         .addSourceLines(
             "A.java",

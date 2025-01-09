@@ -99,8 +99,7 @@ public class EqualsBrokenForNull extends BugChecker implements MethodTreeMatcher
         // Track variables assigned from our parameter.
         Tree initializer = variableTree.getInitializer();
         VarSymbol symbol = getSymbol(variableTree);
-        if (isConsideredFinal(symbol) && initializer instanceof InstanceOfTree) {
-          InstanceOfTree instanceOf = (InstanceOfTree) initializer;
+        if (isConsideredFinal(symbol) && initializer instanceof InstanceOfTree instanceOf) {
           if (instanceOf.getExpression() instanceof IdentifierTree
               && incomingVariableSymbols.contains(getSymbol(instanceOf.getExpression()))) {
             impliesNonNull.add(getSymbol(variableTree));
@@ -134,17 +133,15 @@ public class EqualsBrokenForNull extends BugChecker implements MethodTreeMatcher
       private @Nullable VarSymbol findVariable(Tree tree) {
         while (tree != null) {
           switch (tree.getKind()) {
-            case TYPE_CAST:
-              tree = ((TypeCastTree) tree).getExpression();
-              break;
-            case PARENTHESIZED:
-              tree = ((ParenthesizedTree) tree).getExpression();
-              break;
-            case IDENTIFIER:
+            case TYPE_CAST -> tree = ((TypeCastTree) tree).getExpression();
+            case PARENTHESIZED -> tree = ((ParenthesizedTree) tree).getExpression();
+            case IDENTIFIER -> {
               Symbol symbol = getSymbol(tree);
               return symbol instanceof VarSymbol ? (VarSymbol) symbol : null;
-            default:
+            }
+            default -> {
               return null;
+            }
           }
         }
         return null;

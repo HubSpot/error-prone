@@ -22,6 +22,7 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableList;
+import com.google.errorprone.BugPattern.SeverityLevel;
 import com.google.errorprone.descriptionlistener.DescriptionListenerResources;
 import com.google.errorprone.fixes.AppliedFix;
 import com.google.errorprone.fixes.Fix;
@@ -31,7 +32,6 @@ import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.JCDiagnostic;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import com.sun.tools.javac.util.Log;
-
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.EnumSet;
@@ -101,26 +101,23 @@ public class JavacErrorDescriptionListener implements DescriptionListener {
     JavaFileObject originalSource = log.useSource(sourceFile);
     try {
       JCDiagnostic.Factory factory = JCDiagnostic.Factory.instance(context);
-      JCDiagnostic.DiagnosticType type = JCDiagnostic.DiagnosticType.ERROR;
       DiagnosticPosition pos = description.position;
-      switch (description.severity()) {
-        case ERROR:
-          if (dontUseErrors) {
-            type = JCDiagnostic.DiagnosticType.WARNING;
-          } else {
-            type = JCDiagnostic.DiagnosticType.ERROR;
-          }
-          break;
-        case WARNING:
-          type = JCDiagnostic.DiagnosticType.WARNING;
-          break;
-        case SUGGESTION:
-          type = JCDiagnostic.DiagnosticType.NOTE;
-          break;
-        case HIDDEN:
-          // we don't log anything for hidden level
-          return;
+
+      if (description.severity() == SeverityLevel.HIDDEN) {
+        // we don't log anything for hidden level
+        return;
       }
+
+      JCDiagnostic.DiagnosticType type =
+          switch (description.severity()) {
+            case ERROR ->
+                dontUseErrors
+                    ? JCDiagnostic.DiagnosticType.WARNING
+                    : JCDiagnostic.DiagnosticType.ERROR;
+            case WARNING -> JCDiagnostic.DiagnosticType.WARNING;
+            case SUGGESTION -> JCDiagnostic.DiagnosticType.NOTE;
+            case HIDDEN -> throw new AssertionError("Cannot reach here");
+          };
       log.report(
           factory.create(
               type,

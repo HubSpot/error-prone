@@ -33,7 +33,7 @@ import com.sun.tools.javac.code.Symbol.MethodSymbol;
  *
  * @author andrewrice@google.com (Andrew Rice)
  */
-class NameInCommentHeuristic implements Heuristic {
+final class NameInCommentHeuristic implements Heuristic {
 
   /**
    * Return true if there are no comments on the original actual parameter of a change which match
@@ -58,14 +58,13 @@ class NameInCommentHeuristic implements Heuristic {
 
   private static ImmutableList<Commented<ExpressionTree>> findCommentsForArguments(
       Tree tree, VisitorState state) {
-    switch (tree.getKind()) {
-      case METHOD_INVOCATION:
-        return Comments.findCommentsForArguments((MethodInvocationTree) tree, state);
-      case NEW_CLASS:
-        return Comments.findCommentsForArguments((NewClassTree) tree, state);
-      default:
-        throw new IllegalArgumentException(
-            "Only MethodInvocationTree or NewClassTree is supported");
-    }
+    return switch (tree.getKind()) {
+      case METHOD_INVOCATION ->
+          Comments.findCommentsForArguments((MethodInvocationTree) tree, state);
+      case NEW_CLASS -> Comments.findCommentsForArguments((NewClassTree) tree, state);
+      default ->
+          throw new IllegalArgumentException(
+              "Only MethodInvocationTree or NewClassTree is supported");
+    };
   }
 }

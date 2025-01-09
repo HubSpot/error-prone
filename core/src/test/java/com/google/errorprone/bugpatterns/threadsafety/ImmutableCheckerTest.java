@@ -16,8 +16,6 @@
 
 package com.google.errorprone.bugpatterns.threadsafety;
 
-import static com.google.common.truth.TruthJUnit.assume;
-
 import com.google.common.collect.ImmutableList;
 import com.google.errorprone.CompilationTestHelper;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
@@ -3453,7 +3451,6 @@ abstract class Test {
 
   @Test
   public void switchExpressionsResultingInGenericTypes_doesNotThrow() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
     compilationHelper
         .addSourceLines(
             "Kind.java",
@@ -3480,7 +3477,6 @@ abstract class Test {
 
   @Test
   public void switchExpressionsYieldStatement_doesNotThrow() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
     compilationHelper
         .addSourceLines(
             "Test.java",
@@ -3502,7 +3498,6 @@ abstract class Test {
 
   @Test
   public void switchExpressionsMethodReference_doesNotThrow() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
     compilationHelper
         .addSourceLines(
             "Test.java",
@@ -3522,7 +3517,6 @@ abstract class Test {
 
   @Test
   public void switchExpressionsYieldStatementMethodReference_doesNotThrow() {
-    assume().that(Runtime.version().feature()).isAtLeast(14);
     compilationHelper
         .addSourceLines(
             "Test.java",
@@ -3553,6 +3547,37 @@ abstract class Test {
               private final E e;
               Test(E e) { this.e = e; }
             }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void mutableRecord() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import java.util.List;
+            import com.google.errorprone.annotations.Immutable;
+
+            @Immutable
+            // BUG: Diagnostic contains: 'R' has field 'xs'
+            record R(List<String> xs) {}
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void immutableRecord() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.common.collect.ImmutableList;
+            import com.google.errorprone.annotations.Immutable;
+
+            @Immutable
+            record R(ImmutableList<String> xs) {}
             """)
         .doTest();
   }
