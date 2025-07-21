@@ -34,7 +34,9 @@ import com.sun.tools.javac.util.Log;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import javax.tools.JavaFileObject;
@@ -72,11 +74,16 @@ public class JavacErrorDescriptionListener implements DescriptionListener {
     this.context = resources.getContext();
     this.dontUseErrors = !resources.getUseErrors();
     checkNotNull(resources.getCompilation().endPositions);
+    // Optimization for checks that emit the same fix multiple times. Consider a check that renames
+    // all uses of a symbol, and reports the diagnostic on all occurrences of the symbol. This can
+    // be useful in environments where diagnostics are only shown on changed lines, but can lead to
+    // quadratic behaviour during fix application if we're not careful.
+    Map<Fix, AppliedFix> cache = new HashMap<>();
     try {
       CharSequence sourceFileContent = sourceFile.getCharContent(true);
       fixToAppliedFix =
           fix ->
-              cache.computeIfAbsent(fix, f -> AppliedFix.apply(sourceFileContent, endPositions, f));
+              cache.computeIfAbsent(fix, f -> AppliedFix.apply(sourceFileContent, resources.getCompilation().endPositions, f));
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }

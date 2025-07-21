@@ -25,11 +25,9 @@ import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern.SeverityLevel;
 import com.google.errorprone.ErrorProneOptions.Severity;
-import com.google.errorprone.descriptionlistener.DescriptionListeners;
-import com.google.errorprone.hubspot.HubSpotLifecycleManager;
-import com.google.errorprone.hubspot.HubSpotMetrics;
-import com.google.errorprone.hubspot.HubSpotUtils;
 import com.google.errorprone.RefactoringCollection.RefactoringResult;
+import com.google.errorprone.descriptionlistener.DescriptionListeners;
+import com.google.errorprone.hubspot.HubSpotMetrics;
 import com.google.errorprone.scanner.ErrorProneScannerTransformer;
 import com.google.errorprone.scanner.ScannerSupplier;
 import com.google.errorprone.util.ASTHelpers;
@@ -87,7 +85,7 @@ public class ErrorProneAnalyzer implements TaskListener {
                       ImmutableSet<String> namedCheckers =
                           epOptions.patchingOptions().namedCheckers();
                       ScannerSupplier toUse =
-                          ErrorPronePlugins.loadPlugins(scannerSupplier, context)
+                          ErrorPronePlugins.loadPlugins(scannerSupplier, epOptions, context)
                               .applyOverrides(epOptions)
                               .filter(
                                   bci -> {
