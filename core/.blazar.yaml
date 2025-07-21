@@ -12,7 +12,7 @@ depends:
   - type_annotations
 
 env:
-  SET_VERSION_OVERRIDE: "2.36.0-$GIT_BRANCH-SNAPSHOT"
+  SET_VERSION_OVERRIDE: "2.40.0-$GIT_BRANCH-SNAPSHOT"
   MAVEN_OPTS: -Xmx2048m
 
 buildResources:
