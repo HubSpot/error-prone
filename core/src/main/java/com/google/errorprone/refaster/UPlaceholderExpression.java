@@ -19,7 +19,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Functions;
 import com.google.common.base.MoreObjects;
-import com.google.common.base.Optional;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -36,6 +35,7 @@ import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.List;
 import com.sun.tools.javac.util.Names;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * {@code UTree} representation of an invocation of a placeholder method.
@@ -97,9 +97,9 @@ public abstract class UPlaceholderExpression extends UExpression {
 
       @Override
       public JCTree visitIdentifier(IdentifierTree node, Inliner inliner) {
-        if (node instanceof PlaceholderParamIdent) {
+        if (node instanceof PlaceholderParamIdent placeholderParamIdent) {
           try {
-            return arguments.get(((PlaceholderParamIdent) node).param).inline(inliner);
+            return arguments.get(placeholderParamIdent.param).inline(inliner);
           } catch (CouldNotResolveImportException e) {
             throw new UncheckedCouldNotResolveImportException(e);
           }
@@ -147,10 +147,9 @@ public abstract class UPlaceholderExpression extends UExpression {
   @Override
   protected Choice<Unifier> defaultAction(Tree node, Unifier unifier) {
     // for now we only match JCExpressions
-    if (!(node instanceof JCExpression)) {
+    if (!(node instanceof JCExpression expr)) {
       return Choice.none();
     }
-    JCExpression expr = (JCExpression) node;
 
     PlaceholderVerificationVisitor verification =
         new PlaceholderVerificationVisitor(
@@ -172,7 +171,7 @@ public abstract class UPlaceholderExpression extends UExpression {
                 expr,
                 PlaceholderUnificationVisitor.State.create(
                     List.<UVariableDecl>nil(), unifier, null));
-    return states.thenOption(
+    return states.mapIfPresent(
         (PlaceholderUnificationVisitor.State<? extends JCExpression> state) -> {
           if (ImmutableSet.copyOf(state.seenParameters())
               .containsAll(placeholder().requiredParameters())) {
@@ -181,19 +180,19 @@ public abstract class UPlaceholderExpression extends UExpression {
             if (prevBinding != null) {
               return prevBinding.toString().equals(state.result().toString())
                   ? Optional.of(resultUnifier)
-                  : Optional.<Unifier>absent();
+                  : Optional.<Unifier>empty();
             }
             JCExpression result = state.result();
             if (!placeholder()
                 .matcher()
                 .matches(result, UMatches.makeVisitorState(expr, resultUnifier))) {
-              return Optional.absent();
+              return Optional.empty();
             }
             result.type = expr.type;
             resultUnifier.putBinding(placeholder().exprKey(), result);
             return Optional.of(resultUnifier);
           } else {
-            return Optional.absent();
+            return Optional.empty();
           }
         });
   }

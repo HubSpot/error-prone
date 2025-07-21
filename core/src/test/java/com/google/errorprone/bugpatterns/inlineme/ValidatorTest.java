@@ -17,6 +17,7 @@
 package com.google.errorprone.bugpatterns.inlineme;
 
 import com.google.errorprone.BugCheckerRefactoringTestHelper;
+import com.google.errorprone.BugCheckerRefactoringTestHelper.TestMode;
 import com.google.errorprone.CompilationTestHelper;
 import java.util.regex.Pattern;
 import org.junit.Test;
@@ -41,7 +42,7 @@ public class ValidatorTest {
 
             public final class Client {
               @InlineMe(
-                  replacement = "new Client();",
+                  replacement = "new Client()",
                   imports = {"com.google.foo.Client"})
               @Deprecated
               public static Client create() {
@@ -66,7 +67,7 @@ public class ValidatorTest {
             import com.google.errorprone.annotations.InlineMe;
 
             public final class Client {
-              @InlineMe(replacement = "new Client();", imports = "com.google.foo.Client")
+              @InlineMe(replacement = "new Client()", imports = "com.google.foo.Client")
               @Deprecated
               public static Client create() {
                 return new Client();
@@ -135,7 +136,7 @@ public class ValidatorTest {
             import java.util.function.Supplier;
 
             public final class Client {
-              @InlineMe(replacement = "this.after(string);")
+              @InlineMe(replacement = "this.after(string)")
               @Deprecated
               public void before(String string) {
                 after(/* string= */ string);
@@ -158,7 +159,7 @@ public class ValidatorTest {
             import java.util.function.Supplier;
 
             public final class Client {
-              @InlineMe(replacement = "this.after(/* name= */ name);")
+              @InlineMe(replacement = "this.after(/* name= */ name)")
               @Deprecated
               public void before(String name) {
                 after(/* name= */ name);
@@ -181,7 +182,7 @@ public class ValidatorTest {
             import java.util.function.Supplier;
 
             public final class Client {
-              @InlineMe(replacement = "this.after(/* name1= */ name1, /* name2= */ name2);")
+              @InlineMe(replacement = "this.after(/* name1= */ name1, /* name2= */ name2)")
               @Deprecated
               public void before(String name1, String name2) {
                 after(/* name1= */ name1, /* name2= */ name2);
@@ -204,7 +205,7 @@ public class ValidatorTest {
             import java.util.function.Supplier;
 
             public final class Client {
-              @InlineMe(replacement = "this.after(string);")
+              @InlineMe(replacement = "this.after(string)")
               @Deprecated
               public void before(String string) {
                 after( // string
@@ -325,7 +326,7 @@ public class ValidatorTest {
             import java.util.function.Function;
 
             public final class Client {
-              @InlineMe(replacement = "this.after(str -> Integer.parseInt(str));")
+              @InlineMe(replacement = "this.after(str -> Integer.parseInt(str))")
               @Deprecated
               public void before() {
                 after(str -> Integer.parseInt(str));
@@ -372,7 +373,7 @@ public class ValidatorTest {
             public final class Client {
               public final String str = null;
 
-              @InlineMe(replacement = "this.str;")
+              @InlineMe(replacement = "this.str")
               @Deprecated
               public String before() {
                 return str;
@@ -585,17 +586,13 @@ public class ValidatorTest {
             "RpcClient.java",
             """
             import com.google.errorprone.annotations.InlineMe;
-            import java.time.Duration;
 
             public final class RpcClient {
               @InlineMe(replacement = "")
               @Deprecated
-              // BUG: Diagnostic contains: cannot inline methods with more than 1 statement
+              // BUG: Diagnostic contains: only inline methods with exactly 1 statement
               public void setDeadline(org.joda.time.Duration deadline) {}
-
-              public void setDeadline(Duration deadline) {}
             }
-
             """)
         .doTest();
   }
@@ -611,7 +608,7 @@ public class ValidatorTest {
 
             public final class Client {
               @InlineMe(
-                  replacement = "this.after(Duration.ZERO);",
+                  replacement = "this.after(Duration.ZERO)",
                   imports = {"java.time.Duration"})
               @Deprecated
               public void before() {
@@ -637,7 +634,7 @@ public class ValidatorTest {
 
             public final class Client {
               @InlineMe(
-                  replacement = "this.after(ZERO);",
+                  replacement = "this.after(ZERO)",
                   staticImports = {"java.time.Duration.ZERO"})
               @Deprecated
               public void before() {
@@ -726,7 +723,7 @@ public class ValidatorTest {
             public final class Client {
               public static final class Builder {
                 @InlineMe(
-                    replacement = "this.setDeadline(Client.Builder.parseDuration(deadline));",
+                    replacement = "this.setDeadline(Client.Builder.parseDuration(deadline))",
                     imports = {"com.google.frobber.Client"})
                 @Deprecated
                 public void setDeadline(String deadline) {
@@ -779,7 +776,7 @@ public class ValidatorTest {
             public final class RpcClient {
               public String name;
 
-              @InlineMe(replacement = "this.name = name;")
+              @InlineMe(replacement = "this.name = name")
               @Deprecated
               public void setName(String name) {
                 this.name = name;
@@ -891,7 +888,7 @@ public class ValidatorTest {
   }
 
   @Test
-  public void emptyMethod() {
+  public void returnVoidMethod() {
     helper
         .addSourceLines(
             "Client.java",
@@ -901,7 +898,7 @@ public class ValidatorTest {
             public final class Client {
               @Deprecated
               @InlineMe(replacement = "return")
-              // BUG: Diagnostic contains: no-op
+              // BUG: Diagnostic contains: InlineMe cannot yet be applied to no-op void methods
               public void noOp() {
                 return;
               }
@@ -971,6 +968,7 @@ public class ValidatorTest {
             "Client.java",
             """
             import com.google.errorprone.annotations.InlineMe;
+
             public final class Client {
               @Deprecated
               @InlineMe(replacement = "this.after(arg0, arg1)")
@@ -978,11 +976,45 @@ public class ValidatorTest {
               public void before(int arg0, int arg1) {
                 after(arg0, arg1);
               }
-              public void after(int arg0, int arg1) {
-              }
+
+              public void after(int arg0, int arg1) {}
             }
             """)
         .doTest();
+  }
+
+  @Test
+  public void cleanupInlineMes_records() {
+    getHelperInCleanupMode()
+        .allowBreakingChanges()
+        .addInputLines(
+            "Client.java",
+            """
+            package com.google.frobber;
+
+            import com.google.errorprone.annotations.InlineMe;
+
+            public final class Client {
+              public record SomeRecord(long id) {
+                @InlineMe(replacement = "this.id()")
+                public long getId() {
+                  return id();
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Client.java",
+            """
+            package com.google.frobber;
+
+            import com.google.errorprone.annotations.InlineMe;
+
+            public final class Client {
+              public record SomeRecord(long id) {}
+            }
+            """)
+        .doTest(TestMode.TEXT_MATCH);
   }
 
   private BugCheckerRefactoringTestHelper getHelperInCleanupMode() {

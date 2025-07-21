@@ -16,7 +16,6 @@
 package com.google.errorprone.bugpatterns;
 
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
-import static com.google.common.collect.Streams.stream;
 import static com.google.errorprone.BugPattern.SeverityLevel.SUGGESTION;
 import static com.google.errorprone.matchers.Matchers.allOf;
 import static com.google.errorprone.matchers.Matchers.anyOf;
@@ -128,7 +127,7 @@ public final class ImmutableMemberCollection extends BugChecker implements Class
             .filter(member -> !EXCLUSIONS.matches(member, state))
             .filter(member -> !isSuppressed(member, state))
             .map(VariableTree.class::cast)
-            .flatMap(varTree -> stream(isReplaceable(varTree, state)))
+            .flatMap(varTree -> isReplaceable(varTree, state).stream())
             .collect(toImmutableMap(ReplaceableVar::symbol, var -> var));
     if (replaceableVars.isEmpty()) {
       return Description.NO_MATCH;
@@ -212,15 +211,9 @@ public final class ImmutableMemberCollection extends BugChecker implements Class
         .map(type -> ReplaceableVar.create(tree, type));
   }
 
-  @AutoValue
-  abstract static class ReplaceableType<M> {
-    abstract Class<M> interfaceType();
-
-    abstract Class<? extends M> immutableType();
-
+  record ReplaceableType<M>(Class<M> interfaceType, Class<? extends M> immutableType) {
     static <M> ReplaceableType<M> create(Class<M> interfaceType, Class<? extends M> immutableType) {
-      return new AutoValue_ImmutableMemberCollection_ReplaceableType<>(
-          interfaceType, immutableType);
+      return new ReplaceableType<>(interfaceType, immutableType);
     }
   }
 
@@ -259,8 +252,8 @@ public final class ImmutableMemberCollection extends BugChecker implements Class
     }
 
     private static Tree stripTypeParameters(Tree tree) {
-      return tree.getKind().equals(Kind.PARAMETERIZED_TYPE)
-          ? ((ParameterizedTypeTree) tree).getType()
+      return tree instanceof ParameterizedTypeTree parameterizedTypeTree
+          ? parameterizedTypeTree.getType()
           : tree;
     }
   }

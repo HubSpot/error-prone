@@ -61,10 +61,8 @@ public class ThreadJoinLoop extends BugChecker implements MethodInvocationTreeMa
   public Description matchMethodInvocation(
       MethodInvocationTree methodInvocationTree, VisitorState state) {
     String threadString;
-    if (methodInvocationTree.getMethodSelect() instanceof MemberSelectTree) {
-      threadString =
-          state.getSourceForNode(
-              ((MemberSelectTree) methodInvocationTree.getMethodSelect()).getExpression());
+    if (methodInvocationTree.getMethodSelect() instanceof MemberSelectTree memberSelectTree) {
+      threadString = state.getSourceForNode(memberSelectTree.getExpression());
     } else {
       threadString = "this";
     }
@@ -88,7 +86,7 @@ public class ThreadJoinLoop extends BugChecker implements MethodInvocationTreeMa
     boolean hasWhileLoopOneStatement = false;
     if (pathToLoop != null) {
       Tree statements = pathToLoop.getStatement();
-      if (statements instanceof BlockTree && ((BlockTree) statements).getStatements().size() == 1) {
+      if (statements instanceof BlockTree blockTree && blockTree.getStatements().size() == 1) {
         hasWhileLoopOneStatement = true;
       }
     }

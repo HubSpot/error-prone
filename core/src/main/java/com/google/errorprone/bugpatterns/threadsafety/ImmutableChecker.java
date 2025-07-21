@@ -25,11 +25,10 @@ import static com.google.errorprone.util.ASTHelpers.getReceiverType;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
-import static com.google.errorprone.util.ASTHelpers.isLocal;
 import static com.google.errorprone.util.ASTHelpers.isSameType;
 import static com.google.errorprone.util.ASTHelpers.isStatic;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
-import static com.google.errorprone.util.ASTHelpers.targetType;
+import static com.google.errorprone.util.TargetType.targetType;
 import static java.lang.String.format;
 import static java.util.stream.Collectors.joining;
 
@@ -320,7 +319,7 @@ public class ImmutableChecker extends BugChecker
                 describeClass(matched, sym, annotation, violation));
 
     Type superType = immutableSupertype(sym, state);
-    if (superType != null && isLocal(sym)) {
+    if (superType != null && sym.isDirectlyOrIndirectlyLocal()) {
       checkClosedTypes(tree, state, superType.tsym, analysis);
     }
 
@@ -440,9 +439,9 @@ public class ImmutableChecker extends BugChecker
         // If we're only seeing a field access, don't complain about the fact we closed around
         // `this`. This is special-case as it would otherwise be vexing to complain about accessing
         // a field of type ImmutableList.
-        if (tree.getExpression() instanceof IdentifierTree
+        if (tree.getExpression() instanceof IdentifierTree identifierTree
             && getSymbol(tree) instanceof VarSymbol
-            && ((IdentifierTree) tree.getExpression()).getName().contentEquals("this")) {
+            && identifierTree.getName().contentEquals("this")) {
           handleIdentifier(getSymbol(tree));
           return null;
         }
@@ -456,10 +455,10 @@ public class ImmutableChecker extends BugChecker
       }
 
       private void handleIdentifier(Symbol symbol) {
-        if (symbol instanceof VarSymbol
+        if (symbol instanceof VarSymbol varSymbol
             && !variablesOwnedByLambda.contains(symbol)
             && !isStatic(symbol)) {
-          variablesClosed.add((VarSymbol) symbol);
+          variablesClosed.add(varSymbol);
         }
       }
     }.scan(state.getPath(), null);

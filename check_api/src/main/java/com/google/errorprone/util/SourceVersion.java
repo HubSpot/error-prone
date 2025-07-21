@@ -38,12 +38,22 @@ public final class SourceVersion {
 
   /** Returns whether the compiler supports pattern-matching instanceofs. */
   public static boolean supportsPatternMatchingInstanceof(Context context) {
-    return sourceIsAtLeast(context, 21);
+    return sourceIsAtLeast(context, 17);
   }
 
   /** Returns true if the compiler source version level supports static inner classes. */
   public static boolean supportsStaticInnerClass(Context context) {
     return sourceIsAtLeast(context, 16);
+  }
+
+  /** Returns true if the compiler source version level supports pattern-matching switches. */
+  public static boolean supportsPatternMatchingSwitch(Context context) {
+    return sourceIsAtLeast(context, 21);
+  }
+
+  /** Returns true if the compiler source version level supports instance main methods. */
+  public static boolean supportsInstanceMainMethods(Context context) {
+    return sourceIsAtLeast(context, 25);
   }
 
   private static boolean sourceIsAtLeast(Context context, int version) {

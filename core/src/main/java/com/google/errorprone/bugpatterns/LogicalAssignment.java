@@ -71,14 +71,15 @@ public class LogicalAssignment extends BugChecker
   private static ExpressionTree skipOneParen(ExpressionTree tree) {
     // javac includes a ParenthesizedTree for the mandatory parens in if statement and loop
     // conditions, e.g. in `if (true) {}` the condition is a paren tree containing a literal.
-    return tree instanceof ParenthesizedTree ? ((ParenthesizedTree) tree).getExpression() : tree;
+    return tree instanceof ParenthesizedTree parenthesizedTree
+        ? parenthesizedTree.getExpression()
+        : tree;
   }
 
   private Description checkCondition(ExpressionTree condition, VisitorState state) {
-    if (!(condition instanceof AssignmentTree)) {
+    if (!(condition instanceof AssignmentTree assign)) {
       return NO_MATCH;
     }
-    AssignmentTree assign = (AssignmentTree) condition;
     return buildDescription(condition)
         .addFix(
             SuggestedFix.builder().prefixWith(condition, "(").postfixWith(condition, ")").build())

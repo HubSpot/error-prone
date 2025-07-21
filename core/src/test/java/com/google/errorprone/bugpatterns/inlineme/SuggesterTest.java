@@ -358,7 +358,7 @@ public class SuggesterTest {
             """)
         .addOutputLines(
             "Client.java",
-            """
+"""
 package com.google.frobber;
 
 import com.google.errorprone.annotations.InlineMe;
@@ -473,7 +473,7 @@ public final class Client {
             """)
         .addOutputLines(
             "Client.java",
-            """
+"""
 package com.google.frobber;
 
 import com.google.errorprone.annotations.InlineMe;
@@ -723,7 +723,7 @@ public final class Client {
             """)
         .addOutputLines(
             "Client.java",
-            """
+"""
 package com.google.frobber;
 
 import com.google.errorprone.annotations.InlineMe;
@@ -860,7 +860,7 @@ public final class Client {
     refactoringTestHelper
         .addInputLines(
             "Client.java",
-            """
+"""
 package com.google.frobber;
 
 import java.time.Duration;
@@ -875,7 +875,7 @@ public final class Client {
 """)
         .addOutputLines(
             "Client.java",
-            """
+"""
 package com.google.frobber;
 
 import com.google.errorprone.annotations.InlineMe;
@@ -920,7 +920,7 @@ public final class Client {
             """)
         .addOutputLines(
             "Client.java",
-            """
+"""
 package com.google.frobber;
 
 import com.google.errorprone.annotations.InlineMe;
@@ -962,7 +962,7 @@ public final class Client {
             """)
         .addOutputLines(
             "Client.java",
-            """
+"""
 package com.google.frobber;
 
 import static java.lang.String.format;
@@ -1187,9 +1187,10 @@ public final class Client {
             }
 
             """)
+        // TODO(b/202145711): MAGIC.get() should be Client.MAGIC.get()
         .addOutputLines(
             "Client.java",
-            """
+"""
 package com.google.frobber;
 
 import com.google.errorprone.annotations.InlineMe;
@@ -1350,8 +1351,8 @@ public class Client {
               public void before(int arg0, int arg1) {
                 after(arg0, arg1);
               }
-              public void after(int arg0, int arg1) {
-              }
+
+              public void after(int arg0, int arg1) {}
             }
             """)
         .expectUnchanged()
@@ -1369,24 +1370,42 @@ public class Client {
               public void before(int int0, int int1) {
                 after(int0, int1);
               }
-              public void after(int int0, int int1) {
-              }
+
+              public void after(int int0, int int1) {}
             }
             """)
         .addOutputLines(
             "Client.java",
             """
             import com.google.errorprone.annotations.InlineMe;
+
             public final class Client {
               @InlineMe(replacement = "this.after(int0, int1)")
               @Deprecated
               public void before(int int0, int int1) {
                 after(int0, int1);
               }
-              public void after(int int0, int int1) {
+
+              public void after(int int0, int int1) {}
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void deprecatedConstructorSuperCall() {
+    refactoringTestHelper
+        .addInputLines(
+            "ExecutionError.java",
+            """
+            public final class ExecutionError extends Error {
+              @Deprecated
+              public ExecutionError(String message) {
+                super(message);
               }
             }
             """)
+        .expectUnchanged()
         .doTest();
   }
 }

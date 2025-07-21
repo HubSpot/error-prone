@@ -21,7 +21,11 @@ import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
 import static com.google.errorprone.BugPattern.SeverityLevel.ERROR;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
+import static com.google.errorprone.util.ASTHelpers.canonicalConstructor;
+import static com.google.errorprone.util.ASTHelpers.getEnclosedElements;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
+import static com.google.errorprone.util.ASTHelpers.getSymbol;
+import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static java.lang.annotation.ElementType.FIELD;
 import static java.lang.annotation.ElementType.LOCAL_VARIABLE;
 import static java.lang.annotation.ElementType.METHOD;
@@ -34,7 +38,6 @@ import static org.mockito.Mockito.verify;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Verify;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.BugPattern;
@@ -42,7 +45,7 @@ import com.google.errorprone.BugPattern.SeverityLevel;
 import com.google.errorprone.CompilationTestHelper;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker;
-import com.google.errorprone.bugpatterns.BugChecker.IdentifierTreeMatcher;
+import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.MemberReferenceTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.MethodTreeMatcher;
@@ -53,16 +56,13 @@ import com.google.errorprone.matchers.CompilerBasedAbstractTest;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.matchers.Matchers;
-import com.google.errorprone.matchers.method.MethodMatchers;
 import com.google.errorprone.scanner.Scanner;
-import com.google.errorprone.util.ASTHelpers.TargetType;
-import com.google.errorprone.util.ASTHelpers.TargetTypeVisitor;
+import com.google.errorprone.util.TargetType.TargetTypeVisitor;
 import com.sun.source.tree.AnnotatedTypeTree;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
-import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
@@ -100,7 +100,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import javax.lang.model.element.ElementKind;
 import org.junit.After;
@@ -312,7 +311,8 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
                   new Matcher<ClassTree>() {
                     @Override
                     public boolean matches(ClassTree t, VisitorState state) {
-                      return ASTHelpers.hasAnnotation(t, InheritedAnnotation.class, state);
+                      return hasAnnotation(
+                          t, "com.google.errorprone.util.InheritedAnnotation", state);
                     }
                   });
               setAssertionsComplete();
@@ -333,9 +333,7 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
           @Override
           public Void visitClass(ClassTree tree, VisitorState state) {
             if (tree.getSimpleName().contentEquals("D")) {
-              assertThat(
-                      ASTHelpers.hasAnnotation(
-                          tree, "TestAnnotation", state.withPath(getCurrentPath())))
+              assertThat(hasAnnotation(tree, "TestAnnotation", state.withPath(getCurrentPath())))
                   .isFalse();
               setAssertionsComplete();
             }
@@ -371,7 +369,7 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
                   new Matcher<ClassTree>() {
                     @Override
                     public boolean matches(ClassTree t, VisitorState state) {
-                      return ASTHelpers.hasAnnotation(t, "TestAnnotation", state);
+                      return hasAnnotation(t, "TestAnnotation", state);
                     }
                   });
               setAssertionsComplete();
@@ -413,7 +411,7 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
                   tree,
                   state,
                   (MethodTree t, VisitorState s) ->
-                      ASTHelpers.hasAnnotation(t, InheritedAnnotation.class, s));
+                      hasAnnotation(t, "com.google.errorprone.util.InheritedAnnotation", s));
               setAssertionsComplete();
             }
             return super.visitMethod(tree, state);
@@ -454,8 +452,7 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
                   new Matcher<ClassTree>() {
                     @Override
                     public boolean matches(ClassTree t, VisitorState state) {
-                      return ASTHelpers.hasAnnotation(
-                          ASTHelpers.getSymbol(t), "test.Lib$MyAnnotation", state);
+                      return hasAnnotation(ASTHelpers.getSymbol(t), "test.Lib$MyAnnotation", state);
                     }
                   });
               setAssertionsComplete();
@@ -911,7 +908,7 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
           public Void visitMethodInvocation(MethodInvocationTree tree, VisitorState state) {
             if (ASTHelpers.getSymbol(tree).toString().equals("doIt()")) {
               setAssertionsComplete();
-              assertThat(ASTHelpers.hasAnnotation(tree, Deprecated.class, state)).isFalse();
+              assertThat(hasAnnotation(tree, Deprecated.class.getName(), state)).isFalse();
             }
             return super.visitMethodInvocation(tree, state);
           }
@@ -1116,7 +1113,9 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
             """
             abstract class Test {
               abstract <T> T get(T obj);
+
               abstract void target(Object param);
+
               private void test() {
                 // BUG: Diagnostic contains: java.lang.Integer
                 target(get(1));
@@ -1134,6 +1133,7 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
             """
             abstract class Test {
               abstract void target(int i);
+
               private void test(int j) {
                 // BUG: Diagnostic contains: int
                 target(j);
@@ -1151,6 +1151,7 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
             """
             abstract class Test {
               abstract void target(String s);
+
               private void test() {
                 // BUG: Diagnostic contains: java.lang.String
                 target(new String());
@@ -1168,6 +1169,7 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
             """
             abstract class Test {
               abstract void target(String s);
+
               private void test() {
                 // BUG: Diagnostic contains: <nulltype>
                 target(null);
@@ -1184,60 +1186,16 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
             "Test.java",
             """
             class GenericTest<T> {}
+
             abstract class Test {
               abstract void target(Object param);
+
               private void test() {
                 // BUG: Diagnostic contains: GenericTest<java.lang.String>
                 target(new GenericTest<String>());
               }
             }
             """)
-        .doTest();
-  }
-
-  /** A {@link BugChecker} that prints the target type of matched method invocations. */
-  @BugPattern(severity = SeverityLevel.ERROR, summary = "Prints the target type")
-  public static class TargetTypeChecker extends BugChecker
-      implements MethodInvocationTreeMatcher, IdentifierTreeMatcher {
-    private static final Matcher<ExpressionTree> METHOD_MATCHER =
-        MethodMatchers.staticMethod().anyClass().withNameMatching(Pattern.compile("^detect.*"));
-
-    private static final Matcher<IdentifierTree> LOCAL_VARIABLE_MATCHER =
-        ((identifierTree, state) -> {
-          Symbol symbol = ASTHelpers.getSymbol(identifierTree);
-          return symbol != null
-              && symbol.getKind() == ElementKind.LOCAL_VARIABLE
-              && identifierTree.getName().toString().matches("detect.*");
-        });
-
-    @Override
-    public Description matchMethodInvocation(MethodInvocationTree tree, VisitorState state) {
-      if (!METHOD_MATCHER.matches(tree, state)) {
-        return Description.NO_MATCH;
-      }
-      TargetType targetType = ASTHelpers.targetType(state);
-      return buildDescription(tree)
-          .setMessage(String.valueOf(targetType != null ? targetType.type() : null))
-          .build();
-    }
-
-    @Override
-    public Description matchIdentifier(IdentifierTree tree, VisitorState state) {
-      if (!LOCAL_VARIABLE_MATCHER.matches(tree, state)) {
-        return Description.NO_MATCH;
-      }
-      TargetType targetType = ASTHelpers.targetType(state);
-      return buildDescription(tree)
-          .setMessage(String.valueOf(targetType != null ? targetType.type() : null))
-          .build();
-    }
-  }
-
-  @Test
-  public void targetType() {
-    CompilationTestHelper.newInstance(TargetTypeChecker.class, getClass())
-        .addSourceFile("testdata/TargetTypeTest.java")
-        .setArgs(ImmutableList.of("-Xmaxerrs", "200", "-Xmaxwarns", "200"))
         .doTest();
   }
 
@@ -1251,7 +1209,7 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
 
     @Override
     public Description matchParameterizedType(ParameterizedTypeTree tree, VisitorState state) {
-      TargetType targetType = ASTHelpers.targetType(state);
+      TargetType targetType = TargetType.targetType(state);
       return buildDescription(tree)
           .setMessage(
               "Target type of "
@@ -1277,11 +1235,15 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
             "Test.java",
             """
             import java.util.ArrayList;
+
             class Foo {
-              // BUG: Diagnostic contains: Target type of ArrayList<Integer> is null
-              Object obj = new ArrayList<Integer>() {
-                int foo() { return 0; }
-              };
+              Object obj =
+                  // BUG: Diagnostic contains: Target type of ArrayList<Integer> is null
+                  new ArrayList<Integer>() {
+                    int foo() {
+                      return 0;
+                    }
+                  };
             }
             """)
         .expectResult(Result.ERROR)
@@ -1325,7 +1287,7 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
         JavacElements.instance(tool.getContext()).getTypeElement(Lib.class.getCanonicalName());
     VarSymbol field =
         (VarSymbol)
-            element.getEnclosedElements().stream()
+            getEnclosedElements(element).stream()
                 .filter(e -> e.getSimpleName().contentEquals("field"))
                 .findAny()
                 .get();
@@ -1336,7 +1298,7 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
 
     MethodSymbol method =
         (MethodSymbol)
-            element.getEnclosedElements().stream()
+            getEnclosedElements(element).stream()
                 .filter(e -> e.getSimpleName().contentEquals("method"))
                 .findAny()
                 .get();
@@ -1425,8 +1387,9 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
             """
             enum Test {
               VALUE {
+                @Override
                 // BUG: Diagnostic contains: Cannot be overridden
-                @Override void abstractCanBeOverridden() {}
+                void abstractCanBeOverridden() {}
 
                 // BUG: Diagnostic contains: Cannot be overridden
                 void declaredOnlyInValue() {}
@@ -1449,10 +1412,11 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
             "Test.java",
             """
             class Test {
-              Object obj = new Object() {
-                // BUG: Diagnostic contains: Cannot be overridden
-                void inAnonymousClass() {}
-              };
+              Object obj =
+                  new Object() {
+                    // BUG: Diagnostic contains: Cannot be overridden
+                    void inAnonymousClass() {}
+                  };
             }
             """)
         .doTest();
@@ -1557,7 +1521,8 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
               void test() throws Exception {
                 try {
                   throw new IllegalStateException();
-                } catch (Exception e) {}
+                } catch (Exception e) {
+                }
               }
             }
             """)
@@ -1613,7 +1578,8 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
                   test();
                 } catch (InterruptedException e) {
                   throw e;
-                } catch (Exception e) {}
+                } catch (Exception e) {
+                }
               }
             }
             """)
@@ -1625,10 +1591,11 @@ public class ASTHelpersTest extends CompilerBasedAbstractTest {
     replaceExceptionHelper
         .addSourceLines(
             "Test.java",
-            """
+"""
 import java.util.concurrent.Callable;
 import java.io.FileNotFoundException;
 import java.io.UnsupportedEncodingException;
+
 class Test {
   // BUG: Diagnostic contains: [FileNotFoundException UnsupportedEncodingException]
   void test(Callable<Void> c) throws FileNotFoundException, UnsupportedEncodingException {
@@ -1659,11 +1626,14 @@ class Test {
               void test() throws Exception {
                 try (var x = c()) {}
               }
+
               // BUG: Diagnostic contains:
               abstract C c();
+
               abstract class C implements AutoCloseable {
+                @Override
                 // BUG: Diagnostic contains:
-                @Override public abstract void close() throws InterruptedException;
+                public abstract void close() throws InterruptedException;
               }
             }
             """)
@@ -1682,11 +1652,14 @@ class Test {
                 var x = c();
                 try (x) {}
               }
+
               // BUG: Diagnostic contains:
               abstract C c();
+
               abstract class C implements AutoCloseable {
+                @Override
                 // BUG: Diagnostic contains:
-                @Override public abstract void close() throws InterruptedException;
+                public abstract void close() throws InterruptedException;
               }
             }
             """)
@@ -1749,6 +1722,7 @@ class Test {
             """
             class Test {
               private Test t;
+
               private void t() {
                 // BUG: Diagnostic contains: []
                 t();
@@ -1763,7 +1737,14 @@ class Test {
   /** Helper for testing {@link ASTHelpers#canBeRemoved}. */
   @BugPattern(summary = "", severity = WARNING)
   public static final class VisibleMembers extends BugChecker
-      implements MethodTreeMatcher, VariableTreeMatcher {
+      implements ClassTreeMatcher, MethodTreeMatcher, VariableTreeMatcher {
+
+    @Override
+    public Description matchClass(ClassTree tree, VisitorState state) {
+      return ASTHelpers.canBeRemoved(ASTHelpers.getSymbol(tree), state)
+          ? describeMatch(tree)
+          : Description.NO_MATCH;
+    }
 
     @Override
     public Description matchMethod(MethodTree tree, VisitorState state) {
@@ -1789,13 +1770,49 @@ class Test {
             class Test {
               // BUG: Diagnostic contains:
               private Test t;
+
+              public void foo() {
+                // BUG: Diagnostic contains:
+                class Foo {
+                  // BUG: Diagnostic contains:
+                  class Bar {}
+
+                  // BUG: Diagnostic contains:
+                  public void bar() {}
+                }
+              }
+
+              // BUG: Diagnostic contains:
               private class Inner {
                 // BUG: Diagnostic contains:
                 public Test t;
+
                 // BUG: Diagnostic contains:
                 public void test() {}
-                @Override public String toString() { return null; }
+
+                @Override
+                public String toString() {
+                  return null;
+                }
               }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void visibleMembers_anonymous() {
+    CompilationTestHelper.newInstance(VisibleMembers.class, getClass())
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              Test t =
+                  // BUG: Diagnostic contains:
+                  new Test() {
+                    // BUG: Diagnostic contains:
+                    public int foo = 42;
+                  };
             }
             """)
         .doTest();
@@ -1898,16 +1915,19 @@ class Test {
             "Test.java",
             """
             package p;
+
             import java.util.function.Function;
             import java.util.function.IntFunction;
             import java.util.stream.Stream;
+
             class Test {
               // BUG: Diagnostic contains: [java.util.function]
               Function<?, ?> f;
               // BUG: Diagnostic contains: [p]
               Test t;
+
               {
-              // BUG: Diagnostic contains: []
+                // BUG: Diagnostic contains: []
                 Stream.of().toArray(IntFunction[]::new);
               }
             }
@@ -1953,6 +1973,7 @@ class Test {
             import static java.lang.annotation.ElementType.METHOD;
             import static java.lang.annotation.ElementType.FIELD;
             import java.lang.annotation.Target;
+
             class Declaration {
               @Target({METHOD, FIELD})
               @interface Nullable {}
@@ -1963,6 +1984,7 @@ class Test {
             """
             import static java.lang.annotation.ElementType.TYPE_USE;
             import java.lang.annotation.Target;
+
             class TypeUse {
               @Target(TYPE_USE)
               @interface Nullable {}
@@ -1972,16 +1994,122 @@ class Test {
             "Test.java",
             """
             abstract class Test {
+              @Declaration.Nullable
               // BUG: Diagnostic contains:
-              @Declaration.Nullable public abstract Integer f();
+              public abstract Integer f();
+
               // BUG: Diagnostic contains:
               public abstract @TypeUse.Nullable Integer g();
+
               public abstract Integer i();
+
               // BUG: Diagnostic contains:
               @Declaration.Nullable public Integer x;
               // BUG: Diagnostic contains:
               public @TypeUse.Nullable Integer y;
               public Integer z;
+            }
+            """)
+        .doTest();
+  }
+
+  /** Helper for testing {@link ASTHelpers#getTypeSubstitution}. */
+  @BugPattern(summary = "", severity = WARNING)
+  public static final class GetTypeSubstitution extends BugChecker
+      implements MethodInvocationTreeMatcher {
+
+    @Override
+    public Description matchMethodInvocation(MethodInvocationTree tree, VisitorState state) {
+      return buildDescription(tree)
+          .setMessage(
+              ASTHelpers.getTypeSubstitution(
+                      ASTHelpers.getType(tree.getMethodSelect()).asMethodType(),
+                      ASTHelpers.getSymbol(tree))
+                  .toString())
+          .build();
+    }
+  }
+
+  @Test
+  public void getTypeSubstitution() {
+    CompilationTestHelper.newInstance(GetTypeSubstitution.class, getClass())
+        .addSourceLines(
+            "Test.java",
+            """
+            package p;
+
+            import java.util.List;
+
+            class Test {
+              <T> void f(T[] t) {}
+
+              <T> void g(List<T> t) {}
+
+              void test(Integer[] i, List<String> s) {
+                // BUG: Diagnostic contains: {T=[java.lang.Integer]}
+                f(i);
+                // BUG: Diagnostic contains: {T=[java.lang.String]}
+                g(s);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @BugPattern(summary = "", severity = WARNING)
+  public static final class CanonicalConstructorFinder extends BugChecker
+      implements MethodTreeMatcher {
+    @Override
+    public Description matchMethod(MethodTree tree, VisitorState state) {
+      return canonicalConstructor((ClassSymbol) getSymbol(tree).owner, state) == getSymbol(tree)
+          ? describeMatch(tree)
+          : Description.NO_MATCH;
+    }
+  }
+
+  @Test
+  public void canonicalConstructors_found() {
+    CompilationTestHelper.newInstance(CanonicalConstructorFinder.class, getClass())
+        .addSourceLines(
+            "Test.java",
+            """
+            import java.util.List;
+            import java.util.Set;
+
+            class Test {
+              record A(int x) {}
+
+              record B(long y) {
+                // BUG: Diagnostic contains:
+                B {}
+              }
+
+              record C(long y) {
+                // BUG: Diagnostic contains:
+                C {}
+
+                C(int z) {
+                  this((long) (z + 1));
+                }
+              }
+
+              record D(List<Integer> xs) {
+                // BUG: Diagnostic contains:
+                D {}
+
+                D(Set<Integer> s) {
+                  this(List.of(1));
+                }
+              }
+
+              record E() {
+                // BUG: Diagnostic contains:
+                E {}
+
+                E(int x) {
+                  this();
+                }
+              }
             }
             """)
         .doTest();

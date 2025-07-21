@@ -20,29 +20,38 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.errorprone.util.ASTHelpers.isConsideredFinal;
 import static com.google.errorprone.util.ASTHelpers.isStatic;
+import static com.google.errorprone.util.Reachability.canCompleteNormally;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.google.errorprone.VisitorState;
+import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CatchTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.ConditionalExpressionTree;
 import com.sun.source.tree.EnhancedForLoopTree;
+import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.ForLoopTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.IfTree;
 import com.sun.source.tree.ImportTree;
+import com.sun.source.tree.InstanceOfTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
+import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.Tree.Kind;
 import com.sun.source.tree.TryTree;
+import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.util.SimpleTreeVisitor;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.code.Kinds.KindSelector;
@@ -137,9 +146,9 @@ public final class FindIdentifiers {
         return null;
       }
       Tree leaf = parent.getLeaf();
-      if (leaf instanceof ClassTree
-          && ((ClassTree) leaf).getMembers().contains(treePath.getLeaf())) {
-        return (ClassTree) leaf;
+      if (leaf instanceof ClassTree classTree
+          && classTree.getMembers().contains(treePath.getLeaf())) {
+        return classTree;
       }
       treePath = parent;
     }
@@ -157,7 +166,35 @@ public final class FindIdentifiers {
    */
   public static ImmutableSet<VarSymbol> findAllIdents(VisitorState state) {
     ImmutableSet.Builder<VarSymbol> result = new ImmutableSet.Builder<>();
+
+    // If we're in a binary tree, scan up separately to find anything to the left that implies us.
     Tree prev = state.getPath().getLeaf();
+    loop:
+    for (Tree curr : state.getPath().getParentPath()) {
+      switch (curr.getKind()) {
+        case CONDITIONAL_AND -> {
+          BinaryTree binaryTree = (BinaryTree) curr;
+          if (prev == binaryTree.getRightOperand()) {
+            findBindingVariables(binaryTree.getLeftOperand(), result, /* startNegated= */ false);
+          }
+        }
+        case CONDITIONAL_OR -> {
+          BinaryTree binaryTree = (BinaryTree) curr;
+          if (prev == binaryTree.getRightOperand()) {
+            findBindingVariables(binaryTree.getLeftOperand(), result, /* startNegated= */ true);
+          }
+        }
+        default -> {
+          if (!(curr instanceof ExpressionTree)) {
+            break loop;
+          }
+        }
+      }
+
+      prev = curr;
+    }
+
+    prev = state.getPath().getLeaf();
     for (Tree curr : state.getPath().getParentPath()) {
       switch (curr.getKind()) {
         case BLOCK -> {
@@ -166,6 +203,9 @@ public final class FindIdentifiers {
               break;
             }
             addIfVariable(stmt, result);
+            if (stmt instanceof IfTree ifTree && !canCompleteNormally(ifTree.getThenStatement())) {
+              findBindingVariables(ifTree.getCondition(), result, /* startNegated= */ true);
+            }
           }
         }
         case LAMBDA_EXPRESSION -> {
@@ -200,7 +240,7 @@ public final class FindIdentifiers {
           for (Type type : superTypes) {
             Scope scope = type.tsym.members();
             ImmutableList.Builder<VarSymbol> varsList = ImmutableList.builder();
-            for (Symbol var : ASTHelpers.scope(scope).getSymbols(VarSymbol.class::isInstance)) {
+            for (Symbol var : scope.getSymbols(VarSymbol.class::isInstance)) {
               varsList.add((VarSymbol) var);
             }
             result.addAll(varsList.build().reverse());
@@ -231,12 +271,31 @@ public final class FindIdentifiers {
             addAllIfVariable(tryTree.getResources(), result);
           }
         }
+        case IF -> {
+          var ifTree = (IfTree) curr;
+          if (prev == ifTree.getThenStatement()) {
+            findBindingVariables(ifTree.getCondition(), result, /* startNegated= */ false);
+          }
+          if (prev == ifTree.getElseStatement()) {
+            findBindingVariables(ifTree.getCondition(), result, /* startNegated= */ true);
+          }
+        }
+        case CONDITIONAL_EXPRESSION -> {
+          ConditionalExpressionTree conditionalExpressionTree = (ConditionalExpressionTree) curr;
+          if (prev == conditionalExpressionTree.getTrueExpression()) {
+            findBindingVariables(
+                conditionalExpressionTree.getCondition(), result, /* startNegated= */ false);
+          }
+          if (prev == conditionalExpressionTree.getFalseExpression()) {
+            findBindingVariables(
+                conditionalExpressionTree.getCondition(), result, /* startNegated= */ true);
+          }
+        }
         case COMPILATION_UNIT -> {
           for (ImportTree importTree : ((CompilationUnitTree) curr).getImports()) {
             if (importTree.isStatic()
-                && importTree.getQualifiedIdentifier().getKind() == Kind.MEMBER_SELECT) {
-              MemberSelectTree memberSelectTree =
-                  (MemberSelectTree) importTree.getQualifiedIdentifier();
+                && importTree.getQualifiedIdentifier()
+                    instanceof MemberSelectTree memberSelectTree) {
               Scope scope =
                   state
                       .getTypes()
@@ -244,12 +303,10 @@ public final class FindIdentifiers {
                           ASTHelpers.getType(memberSelectTree.getExpression()),
                           /* skipInterface= */ false);
               for (Symbol var :
-                  ASTHelpers.scope(scope)
-                      .getSymbols(
-                          sym ->
-                              sym instanceof VarSymbol
-                                  && sym.getSimpleName()
-                                      .equals(memberSelectTree.getIdentifier()))) {
+                  scope.getSymbols(
+                      sym ->
+                          sym instanceof VarSymbol
+                              && sym.getSimpleName().equals(memberSelectTree.getIdentifier()))) {
                 result.add((VarSymbol) var);
               }
             }
@@ -266,6 +323,54 @@ public final class FindIdentifiers {
     return result.build().stream()
         .filter(variable -> isVisible(variable, state.getPath()))
         .collect(toImmutableSet());
+  }
+
+  private static void findBindingVariables(
+      Tree tree, ImmutableSet.Builder<VarSymbol> result, boolean startNegated) {
+    new SimpleTreeVisitor<Void, Void>() {
+      boolean negated = startNegated;
+
+      @Override
+      public Void visitInstanceOf(InstanceOfTree node, Void unused) {
+        if (!negated) {
+          new TreeScanner<Void, Void>() {
+            @Override
+            public Void visitVariable(VariableTree node, Void unused) {
+              addIfVariable(node, result);
+              return super.visitVariable(node, null);
+            }
+          }.scan(node.getPattern(), null);
+        }
+        return null;
+      }
+
+      @Override
+      public Void visitParenthesized(ParenthesizedTree node, Void unused) {
+        return visit(node.getExpression(), null);
+      }
+
+      @Override
+      public Void visitUnary(UnaryTree node, Void unused) {
+        if (node.getKind().equals(Kind.LOGICAL_COMPLEMENT)) {
+          negated = !negated;
+          return visit(node.getExpression(), null);
+        }
+        return null;
+      }
+
+      @Override
+      public Void visitBinary(BinaryTree node, Void unused) {
+        if (node.getKind().equals(Kind.CONDITIONAL_AND) && !negated) {
+          visit(node.getLeftOperand(), null);
+          visit(node.getRightOperand(), null);
+        }
+        if (node.getKind().equals(Kind.CONDITIONAL_OR) && negated) {
+          visit(node.getLeftOperand(), null);
+          visit(node.getRightOperand(), null);
+        }
+        return null;
+      }
+    }.visit(tree, null);
   }
 
   /**
@@ -325,8 +430,7 @@ public final class FindIdentifiers {
               if (scope == null) {
                 return ImmutableList.<VarSymbol>of().stream();
               }
-              return ImmutableList.copyOf(
-                      ASTHelpers.scope(scope).getSymbols(VarSymbol.class::isInstance))
+              return ImmutableList.copyOf(scope.getSymbols(VarSymbol.class::isInstance))
                   .reverse()
                   .stream()
                   .map(v -> (VarSymbol) v)
@@ -422,17 +526,17 @@ public final class FindIdentifiers {
         // in the enclosing class or a superclass).
         return modifiers.contains(Modifier.PUBLIC) || modifiers.contains(Modifier.PROTECTED);
       }
-      case PARAMETER, LOCAL_VARIABLE -> {
+      case PARAMETER, LOCAL_VARIABLE, BINDING_VARIABLE -> {
         // If we are in an anonymous inner class, lambda, or local class, any local variable or
         // method parameter we access that is defined outside the anonymous class/lambda must be
         // final or effectively final (JLS 8.1.3).
         if (lowerThan(
             path,
             (curr, parent) ->
-                curr.getKind() == Kind.LAMBDA_EXPRESSION
-                    || (curr.getKind() == Kind.NEW_CLASS
-                        && ((NewClassTree) curr).getClassBody() != null)
-                    || (curr.getKind() == Kind.CLASS && parent.getKind() == Kind.BLOCK),
+                curr instanceof LambdaExpressionTree
+                    || (curr instanceof NewClassTree newClassTree
+                        && newClassTree.getClassBody() != null)
+                    || (curr.getKind() == Kind.CLASS && parent instanceof BlockTree),
             (curr, unused) -> Objects.equals(var.owner, ASTHelpers.getSymbol(curr)))) {
           if (!isConsideredFinal(var)) {
             return false;
@@ -492,8 +596,8 @@ public final class FindIdentifiers {
   }
 
   private static void addIfVariable(Tree tree, ImmutableSet.Builder<VarSymbol> setBuilder) {
-    if (tree.getKind() == Kind.VARIABLE) {
-      setBuilder.add(ASTHelpers.getSymbol((VariableTree) tree));
+    if (tree instanceof VariableTree variableTree) {
+      setBuilder.add(ASTHelpers.getSymbol(variableTree));
     }
   }
 

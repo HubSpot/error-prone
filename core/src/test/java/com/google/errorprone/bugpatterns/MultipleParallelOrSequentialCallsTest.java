@@ -18,7 +18,6 @@ package com.google.errorprone.bugpatterns;
 import com.google.errorprone.BugCheckerRefactoringTestHelper;
 import com.google.errorprone.BugCheckerRefactoringTestHelper.TestMode;
 import com.google.errorprone.CompilationTestHelper;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -31,20 +30,15 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 public class MultipleParallelOrSequentialCallsTest {
 
-  CompilationTestHelper compilationTestHelper;
-
-  @Before
-  public void setup() {
-    compilationTestHelper =
-        CompilationTestHelper.newInstance(MultipleParallelOrSequentialCalls.class, getClass());
-  }
+  private final CompilationTestHelper compilationTestHelper =
+      CompilationTestHelper.newInstance(MultipleParallelOrSequentialCalls.class, getClass());
 
   @Test
   public void positiveCases() {
     compilationTestHelper
         .addSourceLines(
             "MultipleParallelOrSequentialCallsPositiveCases.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import java.util.Collection;
@@ -247,7 +241,7 @@ class MultipleParallelOrSequentialCallsPositiveCases {
     BugCheckerRefactoringTestHelper.newInstance(MultipleParallelOrSequentialCalls.class, getClass())
         .addInputLines(
             "MultipleParallelOrSequentialCallsPositiveCases.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import java.util.Collection;
@@ -383,7 +377,7 @@ class MultipleParallelOrSequentialCallsPositiveCases {
 """)
         .addOutputLines(
             "MultipleParallelOrSequentialCallsPositiveCases_expected.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import java.util.Collection;

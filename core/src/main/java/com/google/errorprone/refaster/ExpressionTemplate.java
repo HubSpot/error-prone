@@ -22,7 +22,6 @@ import static java.util.logging.Level.SEVERE;
 
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Function;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableClassToInstanceMap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -30,8 +29,8 @@ import com.google.errorprone.fixes.Fix;
 import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.refaster.annotation.AlsoNegation;
 import com.google.errorprone.refaster.annotation.UseImportPolicy;
+import com.sun.source.tree.ConditionalExpressionTree;
 import com.sun.source.tree.Tree;
-import com.sun.source.tree.Tree.Kind;
 import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.api.JavacTrees;
 import com.sun.tools.javac.code.Type;
@@ -57,6 +56,7 @@ import java.io.IOException;
 import java.io.StringWriter;
 import java.lang.annotation.Annotation;
 import java.util.Map;
+import java.util.Optional;
 import java.util.logging.Logger;
 import org.jspecify.annotations.Nullable;
 
@@ -125,7 +125,7 @@ public abstract class ExpressionTemplate extends Template<ExpressionTemplateMatc
   @Override
   public Iterable<ExpressionTemplateMatch> match(JCTree target, Context context) {
     if (target instanceof JCExpression targetExpr) {
-      Optional<Unifier> unifier = unify(targetExpr, new Unifier(context)).first();
+      Optional<Unifier> unifier = unify(targetExpr, new Unifier(context)).findFirst();
       if (unifier.isPresent()) {
         return ImmutableList.of(new ExpressionTemplateMatch(targetExpr, unifier.get()));
       }
@@ -151,10 +151,10 @@ public abstract class ExpressionTemplate extends Template<ExpressionTemplateMatc
 
         @Override
         public Boolean visitOther(Tree t, Unifier u) {
-          if (t instanceof UPlaceholderExpression) {
-            return ((UPlaceholderExpression) t).reverify(u);
-          } else if (t instanceof UPlaceholderStatement) {
-            return ((UPlaceholderStatement) t).reverify(u);
+          if (t instanceof UPlaceholderExpression uPlaceholderExpression) {
+            return uPlaceholderExpression.reverify(u);
+          } else if (t instanceof UPlaceholderStatement uPlaceholderStatement) {
+            return uPlaceholderStatement.reverify(u);
           } else {
             return super.visitOther(t, u);
           }
@@ -165,8 +165,8 @@ public abstract class ExpressionTemplate extends Template<ExpressionTemplateMatc
   public Choice<Unifier> unify(JCExpression target, Unifier unifier) {
     return expression()
         .unify(target, unifier)
-        .condition(u -> trueOrNull(PLACEHOLDER_VERIFIER.scan(expression(), u)))
-        .thenOption(
+        .filter(u -> trueOrNull(PLACEHOLDER_VERIFIER.scan(expression(), u)))
+        .mapIfPresent(
             new Function<Unifier, Optional<Unifier>>() {
 
               @Override
@@ -191,7 +191,7 @@ public abstract class ExpressionTemplate extends Template<ExpressionTemplateMatc
                     // they could be allowed, instead of the narrowest, where Refaster really wants
                     // the narrowest type possible.  We reconstruct that by taking the lub of the
                     // types from each branch.
-                    if (target.getKind() == Kind.CONDITIONAL_EXPRESSION) {
+                    if (target instanceof ConditionalExpressionTree) {
                       JCConditional cond = (JCConditional) target;
                       Type trueTy = cond.truepart.type;
                       Type falseTy = cond.falsepart.type;
@@ -209,7 +209,7 @@ public abstract class ExpressionTemplate extends Template<ExpressionTemplateMatc
                       unifier, inliner, new Warner(target), expectedTypes, actualTypes);
                 } catch (CouldNotResolveImportException e) {
                   logger.log(FINE, "Failure to resolve import", e);
-                  return Optional.absent();
+                  return Optional.empty();
                 }
               }
             });
@@ -264,7 +264,7 @@ public abstract class ExpressionTemplate extends Template<ExpressionTemplateMatc
 
     if (parent instanceof JCConditional conditional) {
       // This intentionally differs from Pretty, because Pretty appears buggy:
-      // http://mail.openjdk.java.net/pipermail/compiler-dev/2013-September/007303.html
+      // https://mail.openjdk.java.net/pipermail/compiler-dev/2013-September/007303.html
       return TreeInfo.condPrec + ((conditional.cond == leaf) ? 1 : 0);
     } else if (parent instanceof JCAssign assign) {
       return TreeInfo.assignPrec + ((assign.lhs == leaf) ? 1 : 0);

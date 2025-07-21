@@ -23,6 +23,7 @@ import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
+import static com.google.errorprone.util.ASTHelpers.streamSuperMethods;
 import static java.util.stream.Collectors.joining;
 
 import com.google.common.collect.HashMultimap;
@@ -32,7 +33,6 @@ import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
 import com.google.errorprone.matchers.Description;
-import com.google.errorprone.util.ASTHelpers;
 import com.google.errorprone.util.Signatures;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.MethodTree;
@@ -64,10 +64,9 @@ public class FunctionalInterfaceClash extends BugChecker implements ClassTreeMat
     SetMultimap<String, MethodSymbol> methodsByName = HashMultimap.create();
     for (Symbol sym :
         types.membersClosure(getType(tree), /* skipInterface= */ false).getSymbols()) {
-      if (!(sym instanceof MethodSymbol)) {
+      if (!(sym instanceof MethodSymbol msym)) {
         continue;
       }
-      MethodSymbol msym = (MethodSymbol) sym;
       if (msym.getParameters().stream()
           .noneMatch(p -> maybeFunctionalInterface(p.type, types, state))) {
         continue;
@@ -100,10 +99,10 @@ public class FunctionalInterfaceClash extends BugChecker implements ClassTreeMat
     // check if any declared members clash with another declared or inherited member
     // (don't report clashes between inherited members)
     for (Tree member : tree.getMembers()) {
-      if (!(member instanceof MethodTree)) {
+      if (!(member instanceof MethodTree methodTree)) {
         continue;
       }
-      MethodSymbol msym = getSymbol((MethodTree) member);
+      MethodSymbol msym = getSymbol(methodTree);
       if (msym.getParameters().stream()
           .noneMatch(p -> maybeFunctionalInterface(p.type, types, state))) {
         continue;
@@ -130,10 +129,12 @@ public class FunctionalInterfaceClash extends BugChecker implements ClassTreeMat
 
       if (!clash.isEmpty()) {
         // ignore if there are overridden clashing methodsBySignature in class
-        if (ASTHelpers.findSuperMethod(msym, types).isPresent()
+        if (streamSuperMethods(msym, types).anyMatch(t -> !t.owner.isInterface())
             && clash.stream()
                 .anyMatch(
-                    methodSymbol -> ASTHelpers.findSuperMethod(methodSymbol, types).isPresent())) {
+                    methodSymbol ->
+                        streamSuperMethods(methodSymbol, types)
+                            .anyMatch(t -> !t.owner.isInterface()))) {
           continue;
         }
 

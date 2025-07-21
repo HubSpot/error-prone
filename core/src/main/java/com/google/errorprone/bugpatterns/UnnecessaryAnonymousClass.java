@@ -23,6 +23,7 @@ import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.util.ASTHelpers.canBeRemoved;
+import static com.google.errorprone.util.ASTHelpers.enclosingClass;
 import static com.google.errorprone.util.ASTHelpers.getReceiver;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
@@ -72,22 +73,22 @@ public class UnnecessaryAnonymousClass extends BugChecker implements VariableTre
     if (tree.getInitializer() == null) {
       return NO_MATCH;
     }
-    if (!(tree.getInitializer() instanceof NewClassTree)) {
+    if (!(tree.getInitializer() instanceof NewClassTree classTree)) {
       return NO_MATCH;
     }
-    NewClassTree classTree = (NewClassTree) tree.getInitializer();
     if (classTree.getClassBody() == null) {
       return NO_MATCH;
     }
     ImmutableList<? extends Tree> members =
         classTree.getClassBody().getMembers().stream()
-            .filter(x -> !(x instanceof MethodTree && isGeneratedConstructor((MethodTree) x)))
+            .filter(
+                x -> !(x instanceof MethodTree methodTree && isGeneratedConstructor(methodTree)))
             .collect(toImmutableList());
     if (members.size() != 1) {
       return NO_MATCH;
     }
     Tree member = getOnlyElement(members);
-    if (!(member instanceof MethodTree)) {
+    if (!(member instanceof MethodTree implementation)) {
       return NO_MATCH;
     }
     VarSymbol varSym = getSymbol(tree);
@@ -96,7 +97,6 @@ public class UnnecessaryAnonymousClass extends BugChecker implements VariableTre
         || !varSym.getModifiers().contains(Modifier.FINAL)) {
       return NO_MATCH;
     }
-    MethodTree implementation = (MethodTree) member;
     Type type = getType(tree.getType());
     if (type == null || !state.getTypes().isFunctionalInterface(type)) {
       return NO_MATCH;
@@ -107,7 +107,7 @@ public class UnnecessaryAnonymousClass extends BugChecker implements VariableTre
       return NO_MATCH;
     }
     if (!methodSymbol.overrides(
-        descriptorSymbol, methodSymbol.owner.enclClass(), state.getTypes(), false)) {
+        descriptorSymbol, enclosingClass(methodSymbol), state.getTypes(), false)) {
       return NO_MATCH;
     }
     if (tree.getModifiers().getAnnotations().stream()
@@ -236,8 +236,8 @@ public class UnnecessaryAnonymousClass extends BugChecker implements VariableTre
     private @Nullable SuggestedFix replaceUseWithMethodReference(
         ExpressionTree node, VisitorState state) {
       Tree parent = state.getPath().getParentPath().getLeaf();
-      if (parent instanceof MemberSelectTree
-          && ((MemberSelectTree) parent).getExpression().equals(node)) {
+      if (parent instanceof MemberSelectTree memberSelectTree
+          && memberSelectTree.getExpression().equals(node)) {
         Symbol symbol = getSymbol(parent);
         // If anything other than the abstract method is used on this anonymous class, we can't hope
         // to generate a fix.
@@ -246,7 +246,7 @@ public class UnnecessaryAnonymousClass extends BugChecker implements VariableTre
           failed = true;
           return null;
         }
-        Tree receiver = node.getKind() == Tree.Kind.IDENTIFIER ? null : getReceiver(node);
+        Tree receiver = node instanceof IdentifierTree ? null : getReceiver(node);
         return SuggestedFix.replace(
             receiver != null ? state.getEndPosition(receiver) : getStartPosition(node),
             state.getEndPosition(parent),
@@ -256,7 +256,7 @@ public class UnnecessaryAnonymousClass extends BugChecker implements VariableTre
         return SuggestedFix.replace(
             node,
             String.format(
-                "%s::%s", isStatic(sym) ? sym.owner.enclClass().getSimpleName() : "this", newName));
+                "%s::%s", isStatic(sym) ? enclosingClass(sym).getSimpleName() : "this", newName));
       }
     }
 

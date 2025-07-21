@@ -24,6 +24,7 @@ import static com.google.errorprone.bugpatterns.javadoc.Utils.getDocTreePath;
 import static com.google.errorprone.bugpatterns.javadoc.Utils.getStartPosition;
 import static com.google.errorprone.bugpatterns.javadoc.Utils.replace;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
+import static com.google.errorprone.util.ErrorProneLog.deferredDiagnosticHandler;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
@@ -107,10 +108,9 @@ public final class InvalidLink extends BugChecker
       String body = erroneousTree.getBody();
       if (body.startsWith("{@link ")) {
         DocTree parent = getCurrentPath().getParentPath().getLeaf();
-        if (!(parent instanceof DCDocComment)) {
+        if (!(parent instanceof DCDocComment comment)) {
           return null;
         }
-        DCDocComment comment = (DCDocComment) parent;
         int nextIndex = comment.getFullBody().indexOf(erroneousTree) + 1;
         if (nextIndex >= comment.getFullBody().size()) {
           return null;
@@ -124,10 +124,9 @@ public final class InvalidLink extends BugChecker
         String reference = erroneousTree.getBody().replaceFirst("\\{@link ", "");
         String fixedLink = fixLink(reference, target);
         DCDocComment docComment = getDocComment(state, tree);
-        if (!(next instanceof DCText)) {
+        if (!(next instanceof DCText nextText)) {
           return null;
         }
-        DCText nextText = (DCText) next;
         int endPos = docComment.comment.getSourcePos(nextText.pos + nextText.text.indexOf("}") + 1);
         SuggestedFix fix =
             SuggestedFix.replace(getStartPosition(erroneousTree, state), endPos, fixedLink);
@@ -150,8 +149,7 @@ public final class InvalidLink extends BugChecker
       Log log = Log.instance(state.context);
       // Install a deferred diagnostic handler before calling DocTrees.getElement(DocTreePath)
       // TODO(cushon): revert if https://bugs.openjdk.java.net/browse/JDK-8248117 is fixed
-      Log.DeferredDiagnosticHandler deferredDiagnosticHandler =
-          new Log.DeferredDiagnosticHandler(log);
+      Log.DeferredDiagnosticHandler deferredDiagnosticHandler = deferredDiagnosticHandler(log);
       try {
         element =
             JavacTrees.instance(state.context)

@@ -83,7 +83,7 @@ public final class PrivateConstructorForUtilityClass extends BugChecker
         classTree.getMembers().stream()
             .filter(
                 tree ->
-                    !(tree.getKind().equals(METHOD) && isGeneratedConstructor((MethodTree) tree)))
+                    !(tree instanceof MethodTree methodTree && isGeneratedConstructor(methodTree)))
             .collect(toImmutableList());
     if (nonSyntheticMembers.isEmpty()
         || nonSyntheticMembers.stream().anyMatch(PrivateConstructorForUtilityClass::isInstance)) {
@@ -100,33 +100,18 @@ public final class PrivateConstructorForUtilityClass extends BugChecker
         .anyMatch(
             currentLeaf ->
                 // Checking instanceof rather than Kind given (e.g.) enums are ClassTrees.
-                currentLeaf instanceof ClassTree
-                    && ((ClassTree) currentLeaf).getModifiers().getFlags().contains(PRIVATE));
+                currentLeaf instanceof ClassTree classTree
+                    && classTree.getModifiers().getFlags().contains(PRIVATE));
   }
 
   private static boolean isInstance(Tree tree) {
-    switch (tree.getKind()) {
-      case CLASS -> {
-        return !((ClassTree) tree).getModifiers().getFlags().contains(STATIC);
-      }
-      case METHOD -> {
-        return !((MethodTree) tree).getModifiers().getFlags().contains(STATIC);
-      }
-      case VARIABLE -> {
-        return !((VariableTree) tree).getModifiers().getFlags().contains(STATIC);
-      }
-      case BLOCK -> {
-        return !((BlockTree) tree).isStatic();
-      }
-      case ENUM, ANNOTATION_TYPE, INTERFACE -> {
-        return false;
-      }
-      default -> {
-        if (tree.getKind().name().equals("RECORD")) {
-          return false;
-        }
-        throw new AssertionError("unknown member type:" + tree.getKind());
-      }
-    }
+    return switch (tree.getKind()) {
+      case CLASS -> !((ClassTree) tree).getModifiers().getFlags().contains(STATIC);
+      case METHOD -> !((MethodTree) tree).getModifiers().getFlags().contains(STATIC);
+      case VARIABLE -> !((VariableTree) tree).getModifiers().getFlags().contains(STATIC);
+      case BLOCK -> !((BlockTree) tree).isStatic();
+      case ENUM, ANNOTATION_TYPE, INTERFACE, RECORD -> false;
+      default -> throw new AssertionError("unknown member type:" + tree.getKind());
+    };
   }
 }

@@ -35,12 +35,12 @@ import static com.google.errorprone.matchers.Matchers.instanceMethod;
 import static com.google.errorprone.matchers.Matchers.staticMethod;
 import static com.google.errorprone.util.ASTHelpers.constValue;
 import static com.google.errorprone.util.ASTHelpers.findEnclosingMethod;
+import static com.google.errorprone.util.ASTHelpers.getEnclosedElements;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.isConsideredFinal;
 import static com.google.errorprone.util.ASTHelpers.methodCanBeOverridden;
 import static com.sun.source.tree.Tree.Kind.NULL_LITERAL;
-import static com.sun.source.tree.Tree.Kind.THROW;
 import static java.lang.Boolean.FALSE;
 import static java.util.regex.Pattern.compile;
 import static javax.lang.model.type.TypeKind.TYPEVAR;
@@ -63,6 +63,7 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.StatementTree;
+import com.sun.source.tree.ThrowTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePathScanner;
 import com.sun.tools.javac.code.Symbol;
@@ -303,7 +304,7 @@ public class ReturnMissingNullable extends BugChecker implements CompilationUnit
 
         if (tree.getBody() != null
             && tree.getBody().getStatements().size() == 1
-            && getOnlyElement(tree.getBody().getStatements()).getKind() == THROW) {
+            && getOnlyElement(tree.getBody().getStatements()) instanceof ThrowTree) {
           return;
         }
 
@@ -429,6 +430,6 @@ public class ReturnMissingNullable extends BugChecker implements CompilationUnit
 
   private static Stream<Symbol> streamElements(VisitorState state, String clazz) {
     Symbol symbol = state.getSymbolFromString(clazz);
-    return symbol == null ? Stream.empty() : symbol.getEnclosedElements().stream();
+    return symbol == null ? Stream.empty() : getEnclosedElements(symbol).stream();
   }
 }

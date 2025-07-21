@@ -22,7 +22,6 @@ import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.Tree;
-import com.sun.source.tree.Tree.Kind;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.tree.JCTree.JCExpression;
 import com.sun.tools.javac.tree.JCTree.JCFieldAccess;
@@ -90,8 +89,8 @@ public abstract class AccessPath {
     // methodSelect is always either a field access (e.g. `obj.foo()`) or identifier (e.g. `foo()`)
     JCExpression methodSelect = invocationTree.getMethodSelect();
     Type rcvrType =
-        (methodSelect instanceof JCFieldAccess)
-            ? ((JCFieldAccess) methodSelect).selected.type
+        methodSelect instanceof JCFieldAccess jCFieldAccess
+            ? jCFieldAccess.selected.type
             : ((JCIdent) methodSelect).sym.owner.type;
 
     return invocationTree.getArguments().isEmpty() // 0 arguments
@@ -125,7 +124,7 @@ public abstract class AccessPath {
         pathBuilder.add(TreeUtils.getMethodName(tree) + "()");
       }
 
-      if (tree.getKind() == Kind.IDENTIFIER) {
+      if (tree instanceof IdentifierTree) {
         // Implicit `this` receiver
         return AccessPath.create(/* base= */ null, pathBuilder.build());
       }
@@ -134,13 +133,12 @@ public abstract class AccessPath {
     }
 
     // Explicit `this` receiver
-    if (tree.getKind() == Kind.IDENTIFIER
-        && ((IdentifierTree) tree).getName().contentEquals("this")) {
+    if (tree instanceof IdentifierTree id && id.getName().contentEquals("this")) {
       return AccessPath.create(/* base= */ null, pathBuilder.build());
     }
 
     // Local variable receiver
-    if (tree.getKind() == Kind.IDENTIFIER) {
+    if (tree instanceof IdentifierTree) {
       return AccessPath.create(TreeUtils.elementFromTree(tree), pathBuilder.build());
     }
 
@@ -160,14 +158,14 @@ public abstract class AccessPath {
    * path and null otherwise
    */
   public static @Nullable AccessPath fromNodeIfTrackable(Node node) {
-    if (node instanceof LocalVariableNode) {
-      return fromLocalVariable((LocalVariableNode) node);
-    } else if (node instanceof VariableDeclarationNode) {
-      return fromVariableDecl((VariableDeclarationNode) node);
-    } else if (node instanceof FieldAccessNode) {
-      return fromFieldAccess((FieldAccessNode) node);
-    } else if (node instanceof AssignmentNode) {
-      return fromNodeIfTrackable(((AssignmentNode) node).getTarget());
+    if (node instanceof LocalVariableNode localVariableNode) {
+      return fromLocalVariable(localVariableNode);
+    } else if (node instanceof VariableDeclarationNode variableDeclarationNode) {
+      return fromVariableDecl(variableDeclarationNode);
+    } else if (node instanceof FieldAccessNode fieldAccessNode) {
+      return fromFieldAccess(fieldAccessNode);
+    } else if (node instanceof AssignmentNode assignmentNode) {
+      return fromNodeIfTrackable(assignmentNode.getTarget());
     }
     return null;
   }

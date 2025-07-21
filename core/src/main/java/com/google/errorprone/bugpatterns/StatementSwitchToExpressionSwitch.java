@@ -24,9 +24,8 @@ import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
+import static com.google.errorprone.util.ASTHelpers.hasImplicitType;
 import static com.google.errorprone.util.ASTHelpers.isSwitchDefault;
-import static com.sun.source.tree.Tree.Kind.BLOCK;
-import static com.sun.source.tree.Tree.Kind.BREAK;
 import static com.sun.source.tree.Tree.Kind.EXPRESSION_STATEMENT;
 import static com.sun.source.tree.Tree.Kind.RETURN;
 import static com.sun.source.tree.Tree.Kind.THROW;
@@ -34,16 +33,23 @@ import static java.util.stream.Collectors.joining;
 
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Joiner;
+import com.google.common.collect.BiMap;
+import com.google.common.collect.HashBiMap;
+import com.google.common.collect.ImmutableBiMap;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Streams;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.SwitchTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
+import com.google.errorprone.fixes.SuggestedFixes;
+import com.google.errorprone.matchers.CompileTimeConstantExpressionMatcher;
 import com.google.errorprone.matchers.Description;
-import com.google.errorprone.matchers.Matchers;
+import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.util.ASTHelpers;
 import com.google.errorprone.util.ErrorProneComment;
 import com.google.errorprone.util.Reachability;
@@ -56,13 +62,19 @@ import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.LabeledStatementTree;
+import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.SwitchTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.Tree.Kind;
+import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
+import com.sun.source.util.TreePathScanner;
+import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.code.Symbol;
+import com.sun.tools.javac.code.Symbol.VarSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.tree.JCTree.JCAssign;
 import com.sun.tools.javac.tree.JCTree.JCAssignOp;
@@ -80,13 +92,16 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import javax.inject.Inject;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.type.IntersectionType;
+import org.jspecify.annotations.Nullable;
 
-/** Checks for statement switches that can be expressed as an equivalent expression switch. */
+/** Checks for statement switches that can be converted into a new-style arrow (`->`) switch. */
 @BugPattern(
     severity = WARNING,
-    summary = "This statement switch can be converted to an equivalent expression switch")
+    summary = "This statement switch can be converted to a new-style arrow switch")
 public final class StatementSwitchToExpressionSwitch extends BugChecker
     implements SwitchTreeMatcher {
   // Braces are not required if there is exactly one statement on the right hand of the arrow, and
@@ -96,34 +111,50 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
   private static final ImmutableSet<Kind> KINDS_RETURN_OR_THROW = ImmutableSet.of(THROW, RETURN);
   private static final Pattern FALL_THROUGH_PATTERN =
       Pattern.compile("\\bfalls?.?(through|out)\\b", Pattern.CASE_INSENSITIVE);
-  // Default (negative) result for assignment switch conversion analysis. Note that the value is
-  // immutable.
+
+  /**
+   * Default (negative) result for assignment switch conversion analysis. Note that the value is
+   * immutable.
+   */
   private static final AssignmentSwitchAnalysisResult DEFAULT_ASSIGNMENT_SWITCH_ANALYSIS_RESULT =
       AssignmentSwitchAnalysisResult.of(
           /* canConvertToAssignmentSwitch= */ false,
+          /* precedingVariableDeclaration= */ Optional.empty(),
           /* assignmentTargetOptional= */ Optional.empty(),
           /* assignmentKindOptional= */ Optional.empty(),
           /* assignmentSourceCodeOptional= */ Optional.empty());
-  // Default (negative) result for overall analysis. Note that the value is immutable.
+
+  /** Default (negative) result for overall analysis. Note that the value is immutable. */
   private static final AnalysisResult DEFAULT_ANALYSIS_RESULT =
       AnalysisResult.of(
           /* canConvertDirectlyToExpressionSwitch= */ false,
           /* canConvertToReturnSwitch= */ false,
+          /* canRemoveDefault= */ false,
           DEFAULT_ASSIGNMENT_SWITCH_ANALYSIS_RESULT,
-          /* groupedWithNextCase= */ ImmutableList.of());
-  private static final String EQUALS_STRING = "=";
+          /* groupedWithNextCase= */ ImmutableList.of(),
+          /* symbolsToHoist= */ ImmutableBiMap.of());
 
-  // Tri-state to represent the fall-thru control flow of a particular case of a particular
-  // statement switch
-  private static enum CaseFallThru {
+  private static final String EQUALS_STRING = "=";
+  private static final Matcher<ExpressionTree> COMPILE_TIME_CONSTANT_MATCHER =
+      CompileTimeConstantExpressionMatcher.instance();
+  private static final String REMOVE_DEFAULT_CASE_SHORT_DESCRIPTION =
+      "Remove default case because all enum values handled";
+
+  /**
+   * Tri-state to represent the fall-thru control flow of a particular case of a particular
+   * statement switch
+   */
+  private enum CaseFallThru {
     DEFINITELY_DOES_NOT_FALL_THRU,
     MAYBE_FALLS_THRU,
     DEFINITELY_DOES_FALL_THRU
-  };
+  }
 
-  // Tri-state to represent whether cases within a single switch statement meet an (unspecified)
-  // qualification predicate
-  static enum CaseQualifications {
+  /**
+   * Tri-state to represent whether cases within a single switch statement meet an (unspecified)
+   * qualification predicate
+   */
+  enum CaseQualifications {
     NO_CASES_ASSESSED,
     ALL_CASES_QUALIFY,
     SOME_OR_ALL_CASES_DONT_QUALIFY
@@ -136,15 +167,15 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
   @Inject
   StatementSwitchToExpressionSwitch(ErrorProneFlags flags) {
     this.enableDirectConversion =
-        flags.getBoolean("StatementSwitchToExpressionSwitch:EnableDirectConversion").orElse(false);
+        flags.getBoolean("StatementSwitchToExpressionSwitch:EnableDirectConversion").orElse(true);
     this.enableReturnSwitchConversion =
         flags
             .getBoolean("StatementSwitchToExpressionSwitch:EnableReturnSwitchConversion")
-            .orElse(false);
+            .orElse(true);
     this.enableAssignmentSwitchConversion =
         flags
             .getBoolean("StatementSwitchToExpressionSwitch:EnableAssignmentSwitchConversion")
-            .orElse(false);
+            .orElse(true);
   }
 
   @Override
@@ -157,19 +188,62 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
 
     List<SuggestedFix> suggestedFixes = new ArrayList<>();
     if (enableReturnSwitchConversion && analysisResult.canConvertToReturnSwitch()) {
-      suggestedFixes.add(convertToReturnSwitch(switchTree, state, analysisResult));
+      suggestedFixes.add(
+          convertToReturnSwitch(switchTree, state, analysisResult, /* removeDefault= */ false));
+
+      if (analysisResult.canRemoveDefault()) {
+        suggestedFixes.add(
+            convertToReturnSwitch(switchTree, state, analysisResult, /* removeDefault= */ true));
+      }
     }
     if (enableAssignmentSwitchConversion
         && analysisResult.assignmentSwitchAnalysisResult().canConvertToAssignmentSwitch()) {
-      suggestedFixes.add(convertToAssignmentSwitch(switchTree, state, analysisResult));
+      suggestedFixes.add(
+          convertToAssignmentSwitch(switchTree, state, analysisResult, /* removeDefault= */ false));
+
+      if (analysisResult.canRemoveDefault()) {
+        suggestedFixes.add(
+            convertToAssignmentSwitch(
+                switchTree, state, analysisResult, /* removeDefault= */ true));
+      }
     }
     if (enableDirectConversion && analysisResult.canConvertDirectlyToExpressionSwitch()) {
-      suggestedFixes.add(convertDirectlyToExpressionSwitch(switchTree, state, analysisResult));
+      suggestedFixes.add(
+          convertDirectlyToExpressionSwitch(
+              switchTree, state, analysisResult, /* removeDefault= */ false));
+
+      if (analysisResult.canRemoveDefault()) {
+        suggestedFixes.add(
+            convertDirectlyToExpressionSwitch(
+                switchTree, state, analysisResult, /* removeDefault= */ true));
+      }
     }
 
     return suggestedFixes.isEmpty()
         ? NO_MATCH
         : buildDescription(switchTree).addAllFixes(suggestedFixes).build();
+  }
+
+  /**
+   * Extracts all variable symbols defined in the given list of statements. Note that this includes
+   * only declarations in the top-level list, not those nested within any subtrees. Returns a
+   * bidirectional mapping from variable symbol to its original variable declaration tree.
+   */
+  private static BiMap<VarSymbol, VariableTree> extractSymbolsDefinedInStatementBlock(
+      List<? extends StatementTree> statements) {
+    BiMap<VarSymbol, VariableTree> symbolsDefinedInStatementBlock = HashBiMap.create();
+    if (statements == null) {
+      return symbolsDefinedInStatementBlock;
+    }
+    for (StatementTree statement : statements) {
+      if (statement instanceof VariableTree variableTree) {
+        VarSymbol symbol = ASTHelpers.getSymbol(variableTree);
+        if (symbol != null) {
+          symbolsDefinedInStatementBlock.put(symbol, variableTree);
+        }
+      }
+    }
+    return symbolsDefinedInStatementBlock;
   }
 
   /**
@@ -182,6 +256,8 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     if (ASTHelpers.findEnclosingNode(state.getPath(), SwitchTree.class) != null) {
       return DEFAULT_ANALYSIS_RESULT;
     }
+    BiMap<VarSymbol, VariableTree> symbolsDefinedInPreviousCases = HashBiMap.create();
+    BiMap<VarSymbol, VariableTree> symbolsToHoist = HashBiMap.create();
 
     List<? extends CaseTree> cases = switchTree.getCases();
     // A given case is said to have definite control flow if we are sure it always or never falls
@@ -191,6 +267,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     // next case on the left hand side of the arrow when converted to an expression switch.  For
     // example "case A,B -> ..."
     List<Boolean> groupedWithNextCase = new ArrayList<>(Collections.nCopies(cases.size(), false));
+    List<Boolean> isNullCase = new ArrayList<>(Collections.nCopies(cases.size(), false));
 
     // Set of all enum values (names) explicitly listed in a case tree
     Set<String> handledEnumValues = new HashSet<>();
@@ -208,17 +285,55 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     // One-pass scan through each case in switch
     for (int caseIndex = 0; caseIndex < cases.size(); caseIndex++) {
       CaseTree caseTree = cases.get(caseIndex);
+      boolean hasCasePattern =
+          caseTree.getLabels().stream()
+              .anyMatch(
+                  caseLabelTree -> caseLabelTree.getKind().name().equals("PATTERN_CASE_LABEL"));
+      if (hasCasePattern) {
+        // Case patterns are not currently supported by the checker.
+        return DEFAULT_ANALYSIS_RESULT;
+      }
       boolean isDefaultCase = caseTree.getExpressions().isEmpty();
+      isNullCase.set(
+          caseIndex,
+          !isDefaultCase
+              && caseTree.getExpressions().stream()
+                  .anyMatch(expressionTree -> expressionTree.getKind() == Kind.NULL_LITERAL));
       hasDefaultCase |= isDefaultCase;
+
+      // Null case can never be grouped with a preceding case
+      if (caseIndex > 0 && groupedWithNextCase.get(caseIndex - 1) && isNullCase.get(caseIndex)) {
+        return DEFAULT_ANALYSIS_RESULT;
+      }
+
+      // Null case can never be grouped with a following case (except possibly default)
+      if (caseIndex > 0
+          && groupedWithNextCase.get(caseIndex - 1)
+          && isNullCase.get(caseIndex - 1)
+          && !isDefaultCase) {
+        return DEFAULT_ANALYSIS_RESULT;
+      }
+
+      // Grouping null with default requires Java 21+
+      if (caseIndex > 0
+          && isNullCase.get(caseIndex - 1)
+          && isDefaultCase
+          && !SourceVersion.supportsPatternMatchingSwitch(state.context)) {
+        return DEFAULT_ANALYSIS_RESULT;
+      }
+
       // Accumulate enum values included in this case
       handledEnumValues.addAll(
           caseTree.getExpressions().stream()
-              .filter(IdentifierTree.class::isInstance)
-              .map(expressionTree -> ((IdentifierTree) expressionTree).getName().toString())
+              .map(ASTHelpers::getSymbol)
+              .filter(x -> x != null)
+              .map(symbol -> symbol.getSimpleName().toString())
               .collect(toImmutableSet()));
       boolean isLastCaseInSwitch = caseIndex == cases.size() - 1;
 
-      List<? extends StatementTree> statements = getStatements(caseTree);
+      ImmutableList<StatementTree> statements = getStatements(caseTree);
+      BiMap<VarSymbol, VariableTree> symbolsDefinedInThisCase =
+          extractSymbolsDefinedInStatementBlock(statements);
       CaseFallThru caseFallThru = CaseFallThru.MAYBE_FALLS_THRU;
       if (statements == null) {
         // This case must be of kind CaseTree.CaseKind.RULE, and thus this is already an expression
@@ -238,19 +353,30 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
       }
       if (isDefaultCase) {
         // The "default" case has distinct semantics; don't allow anything to fall into or out of
-        // default case.  Exception: allowed to fall out of default case if it's the last case
+        // default case.  Exceptions: (1.) allowed to fall out of default case if it's the last case
+        // and (2.) allowed to fall into the default case if the preceding case is null and grouped
+        // with this one.
         boolean fallsIntoDefaultCase = (caseIndex > 0) && groupedWithNextCase.get(caseIndex - 1);
+        boolean precedingCaseIsNull = (caseIndex > 0) && isNullCase.get(caseIndex - 1);
         if (isLastCaseInSwitch) {
-          allCasesHaveDefiniteControlFlow &= !fallsIntoDefaultCase;
+          if (!precedingCaseIsNull) {
+            allCasesHaveDefiniteControlFlow &= !fallsIntoDefaultCase;
+          }
         } else {
           allCasesHaveDefiniteControlFlow &=
-              !fallsIntoDefaultCase
+              (precedingCaseIsNull || !fallsIntoDefaultCase)
                   && caseFallThru.equals(CaseFallThru.DEFINITELY_DOES_NOT_FALL_THRU);
         }
       } else {
         // Cases other than default
         allCasesHaveDefiniteControlFlow &= !caseFallThru.equals(CaseFallThru.MAYBE_FALLS_THRU);
       }
+
+      // Find any symbols referenced in this case that were defined in a previous case, and thus
+      // should be hoisted out of the switch block
+      symbolsDefinedInPreviousCases.keySet().stream()
+          .filter(symbol -> hasReadsOrWritesOfVariableInTree(symbol, caseTree))
+          .forEach(symbol -> symbolsToHoist.put(symbol, symbolsDefinedInPreviousCases.get(symbol)));
 
       // Analyze for return switch and assignment switch conversion
       returnSwitchCaseQualifications =
@@ -259,15 +385,22 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
       assignmentSwitchAnalysisState =
           analyzeCaseForAssignmentSwitch(
               assignmentSwitchAnalysisState, statements, isLastCaseInSwitch);
+      symbolsDefinedInPreviousCases.putAll(symbolsDefinedInThisCase);
     }
 
     boolean exhaustive =
         isSwitchExhaustive(
             hasDefaultCase, handledEnumValues, ASTHelpers.getType(switchTree.getExpression()));
+    boolean canRemoveDefault =
+        hasDefaultCase
+            && isSwitchExhaustiveWithoutDefault(
+                handledEnumValues, ASTHelpers.getType(switchTree.getExpression()));
 
     boolean canConvertToReturnSwitch =
         // All restrictions for direct conversion apply
         allCasesHaveDefiniteControlFlow
+            // Hoisting is currently not supported with return switches
+            && symbolsToHoist.isEmpty()
             // Does each case consist solely of returning a (non-void) expression?
             && returnSwitchCaseQualifications.equals(CaseQualifications.ALL_CASES_QUALIFY)
             // The switch must be exhaustive (at compile time)
@@ -275,24 +408,143 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     boolean canConvertToAssignmentSwitch =
         // All restrictions for direct conversion apply
         allCasesHaveDefiniteControlFlow
+            // Hoisting is currently not supported with assignment switches
+            && symbolsToHoist.isEmpty()
             // Does each case consist solely of a throw or the same symbol assigned in the same way?
             && assignmentSwitchAnalysisState
                 .assignmentSwitchCaseQualifications()
                 .equals(CaseQualifications.ALL_CASES_QUALIFY)
             // The switch must be exhaustive (at compile time)
             && exhaustive;
+    boolean canConvertDirectlyToExpressionSwitch =
+        allCasesHaveDefiniteControlFlow
+            // Hoisting currently not supported for arrays due to restrictions on using assignment
+            // expressions to initialize them
+            && symbolsToHoist.keySet().stream()
+                .noneMatch(symbol -> state.getTypes().isArray(symbol.type))
+            // Hoisting currently not supported for intersection types because the type is not
+            // denotable as an explicit type (see JLS 21 § 14.4.1.)
+            && symbolsToHoist.keySet().stream()
+                .noneMatch(symbol -> symbol.type instanceof IntersectionType);
+
+    ImmutableList<StatementTree> precedingStatements = getPrecedingStatementsInBlock(state);
+    Optional<ExpressionTree> assignmentTarget =
+        assignmentSwitchAnalysisState.assignmentTargetOptional();
+
+    // If present, the variable tree that can be combined with the switch block
+    Optional<VariableTree> combinableVariableTree =
+        canConvertToAssignmentSwitch
+            ? assignmentTarget.flatMap(
+                target -> findCombinableVariableTree(target, precedingStatements, state))
+            : Optional.empty();
 
     return AnalysisResult.of(
-        /* canConvertDirectlyToExpressionSwitch= */ allCasesHaveDefiniteControlFlow,
+        canConvertDirectlyToExpressionSwitch,
         canConvertToReturnSwitch,
+        canRemoveDefault,
         AssignmentSwitchAnalysisResult.of(
             canConvertToAssignmentSwitch,
+            combinableVariableTree,
             assignmentSwitchAnalysisState.assignmentTargetOptional(),
             assignmentSwitchAnalysisState.assignmentExpressionKindOptional(),
             assignmentSwitchAnalysisState
                 .assignmentTreeOptional()
                 .map(StatementSwitchToExpressionSwitch::renderJavaSourceOfAssignment)),
-        ImmutableList.copyOf(groupedWithNextCase));
+        ImmutableList.copyOf(groupedWithNextCase),
+        ImmutableBiMap.copyOf(symbolsToHoist));
+  }
+
+  private static Optional<VariableTree> findCombinableVariableTree(
+      ExpressionTree assignmentTarget,
+      ImmutableList<StatementTree> precedingStatements,
+      VisitorState state) {
+    // Don't try to combine when multiple variables are declared together
+    if (precedingStatements.isEmpty()
+        || !precedingTwoStatementsNotInSameVariableDeclaratorList(precedingStatements)) {
+      return Optional.empty();
+    }
+    if (!(getLast(precedingStatements) instanceof VariableTree variableTree)) {
+      return Optional.empty();
+    }
+    if (variableTree.getInitializer() != null
+        && !COMPILE_TIME_CONSTANT_MATCHER.matches(variableTree.getInitializer(), state)) {
+      return Optional.empty();
+    }
+    // If we are reading the initialized value in the switch block, we can't remove it
+    if (!noReadsOfVariable(ASTHelpers.getSymbol(variableTree), state)) {
+      return Optional.empty();
+    }
+    // The variable and the switch's assignment must be compatible
+    if (!isVariableCompatibleWithAssignment(assignmentTarget, variableTree)) {
+      return Optional.empty();
+    }
+    return Optional.of(variableTree);
+  }
+
+  /**
+   * Determines whether local variable {@code symbol} has no reads within the scope of the {@code
+   * VisitorState}. (Writes to the variable are ignored.)
+   */
+  private static boolean noReadsOfVariable(VarSymbol symbol, VisitorState state) {
+    Set<VarSymbol> referencedLocalVariables = new HashSet<>();
+    new TreePathScanner<Void, Void>() {
+
+      @Override
+      public Void visitAssignment(AssignmentTree tree, Void unused) {
+        // Only looks at the right-hand side of the assignment
+        return scan(tree.getExpression(), null);
+      }
+
+      @Override
+      public Void visitMemberSelect(MemberSelectTree memberSelect, Void unused) {
+        handle(memberSelect);
+        return super.visitMemberSelect(memberSelect, null);
+      }
+
+      @Override
+      public Void visitIdentifier(IdentifierTree identifier, Void unused) {
+        handle(identifier);
+        return super.visitIdentifier(identifier, null);
+      }
+
+      private void handle(Tree tree) {
+        var symbol = getSymbol(tree);
+        if (symbol instanceof VarSymbol varSymbol) {
+          referencedLocalVariables.add(varSymbol);
+        }
+      }
+    }.scan(state.getPath(), null);
+
+    return !referencedLocalVariables.contains(symbol);
+  }
+
+  /**
+   * Determines whether local variable {@code symbol} has reads or writes within the scope of the
+   * supplied {@code tree}.
+   */
+  private static boolean hasReadsOrWritesOfVariableInTree(VarSymbol symbol, Tree tree) {
+    Set<VarSymbol> referencedLocalVariables = new HashSet<>();
+    new TreeScanner<Void, Void>() {
+      @Override
+      public Void visitMemberSelect(MemberSelectTree memberSelect, Void unused) {
+        handle(memberSelect);
+        return super.visitMemberSelect(memberSelect, null);
+      }
+
+      @Override
+      public Void visitIdentifier(IdentifierTree identifier, Void unused) {
+        handle(identifier);
+        return super.visitIdentifier(identifier, null);
+      }
+
+      private void handle(Tree tree) {
+        var symbol = getSymbol(tree);
+        if (symbol instanceof VarSymbol varSymbol) {
+          referencedLocalVariables.add(varSymbol);
+        }
+      }
+    }.scan(tree, null);
+    return referencedLocalVariables.contains(symbol);
   }
 
   /**
@@ -334,13 +586,13 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     }
     StatementTree lastStatement = getLast(statements);
     if (!statements.subList(0, statements.size() - 1).stream()
-            .allMatch(statement -> statement.getKind().equals(EXPRESSION_STATEMENT))
+            .allMatch(statement -> statement instanceof ExpressionStatementTree)
         || !KINDS_RETURN_OR_THROW.contains(lastStatement.getKind())) {
       return CaseQualifications.SOME_OR_ALL_CASES_DONT_QUALIFY;
     }
 
     // For this analysis, cases that don't return something can be disregarded
-    if (!lastStatement.getKind().equals(RETURN)) {
+    if (!(lastStatement instanceof ReturnTree returnTree)) {
       return previousCaseQualifications;
     }
 
@@ -351,7 +603,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     }
 
     // This is the first value-returning case that we are examining
-    Type returnType = ASTHelpers.getType(((ReturnTree) lastStatement).getExpression());
+    Type returnType = ASTHelpers.getType(returnTree.getExpression());
     return returnType == null
         // Return of void does not qualify
         ? CaseQualifications.SOME_OR_ALL_CASES_DONT_QUALIFY
@@ -398,8 +650,8 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
         (statements.size() == 1 && KINDS_CONVERTIBLE_WITHOUT_BRACES.contains(firstStatementKind))
             || (KINDS_CONVERTIBLE_WITHOUT_BRACES.contains(firstStatementKind)
                 // If the second statement is a break, then there must be exactly two statements
-                && statements.get(1).getKind().equals(BREAK)
-                && ((BreakTree) statements.get(1)).getLabel() == null);
+                && statements.get(1) instanceof BreakTree breakTree
+                && breakTree.getLabel() == null);
     if (!expressionOrExpressionBreak) {
       // Conversion of this block is not supported
       return AssignmentSwitchAnalysisState.of(
@@ -409,12 +661,12 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
           assignmentTreeOptional);
     }
 
-    if (!firstStatement.getKind().equals(EXPRESSION_STATEMENT)) {
+    if (!(firstStatement instanceof ExpressionStatementTree expressionStatementTree)) {
       // Throws don't affect the assignment analysis
       return previousAssignmentSwitchAnalysisState;
     }
 
-    ExpressionTree expression = ((ExpressionStatementTree) firstStatement).getExpression();
+    ExpressionTree expression = expressionStatementTree.getExpression();
     Optional<ExpressionTree> caseAssignmentTargetOptional = Optional.empty();
     Optional<Tree.Kind> caseAssignmentKindOptional = Optional.empty();
     Optional<ExpressionTree> caseAssignmentTreeOptional = Optional.empty();
@@ -424,8 +676,8 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
       caseAssignmentTargetOptional = Optional.of(compoundAssignmentTree.getVariable());
       caseAssignmentKindOptional = Optional.of(compoundAssignmentTree.getKind());
       caseAssignmentTreeOptional = Optional.of(expression);
-    } else if (expression instanceof AssignmentTree) {
-      caseAssignmentTargetOptional = Optional.of(((AssignmentTree) expression).getVariable());
+    } else if (expression instanceof AssignmentTree assignmentTree) {
+      caseAssignmentTargetOptional = Optional.of(assignmentTree.getVariable());
       caseAssignmentKindOptional = Optional.of(Tree.Kind.ASSIGNMENT);
       caseAssignmentTreeOptional = Optional.of(expression);
     }
@@ -489,6 +741,19 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
   }
 
   /**
+   * Determines whether a variable definition is compatible with an assignment target (e.g. of a
+   * switch statement). Compatibility means that the assignment is being made to to the same
+   * variable that is being defined.
+   */
+  private static boolean isVariableCompatibleWithAssignment(
+      ExpressionTree assignmentTarget, VariableTree variableDefinition) {
+    Symbol assignmentTargetSymbol = getSymbol(assignmentTarget);
+    Symbol definedSymbol = ASTHelpers.getSymbol(variableDefinition);
+
+    return Objects.equals(assignmentTargetSymbol, definedSymbol);
+  }
+
+  /**
    * Determines whether the supplied case's {@code statements} are capable of being mapped to an
    * equivalent expression switch case (without repeating code), returning {@code true} if so.
    * Detection is based on an ad-hoc algorithm that is not guaranteed to detect every convertible
@@ -513,20 +778,127 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
   }
 
   /**
+   * Renders all comments of the supplied {@code variableTree} into a list of Strings, in code
+   * order.
+   */
+  private static ImmutableList<String> renderVariableTreeComments(
+      VariableTree variableTree, VisitorState state) {
+    return state.getTokensForNode(variableTree).stream()
+        .flatMap(errorProneToken -> errorProneToken.comments().stream())
+        .filter(comment -> !comment.getText().isEmpty())
+        .map(ErrorProneComment::getText)
+        .collect(toImmutableList());
+  }
+
+  /**
+   * Renders all annotations of the supplied {@code variableTree} into a list of Strings, in code
+   * order.
+   */
+  private static ImmutableList<String> renderVariableTreeAnnotations(
+      VariableTree variableTree, VisitorState state) {
+    return variableTree.getModifiers().getAnnotations().stream()
+        .map(state::getSourceForNode)
+        .collect(toImmutableList());
+  }
+
+  /**
+   * Renders the flags of the supplied variable declaration, such as "final", into a single
+   * space-separated String.
+   */
+  private static String renderVariableTreeFlags(VariableTree variableTree) {
+    StringBuilder flagsBuilder = new StringBuilder();
+    if (!variableTree.getModifiers().getFlags().isEmpty()) {
+      flagsBuilder.append(
+          variableTree.getModifiers().getFlags().stream()
+              .map(flag -> flag + " ")
+              .collect(joining("")));
+    }
+    return flagsBuilder.toString();
+  }
+
+  /**
+   * Renders the variable declarations that need to be hoisted above the switch statement. Each
+   * variable declaration is rendered on its own line, with comments preserved where possible.
+   *
+   * @return true if the generated switch statement needs to be wrapped in braces
+   */
+  private static boolean renderHoistedVariables(
+      StringBuilder renderTo,
+      AnalysisResult analysisResult,
+      SwitchTree switchTree,
+      VisitorState state) {
+
+    boolean wrapInBraces = false;
+    if (!analysisResult.symbolsToHoist().isEmpty()) {
+      // If the switch statement is part of a "LabeledStatement", we wrap the generated code in
+      // braces to transform it into into a "Statement" (a "LocalVariableDeclarationStatement" is
+      // not a "Statement"). See e.g. JLS 21 §14.4.2, 14.7.
+
+      // Fetch the lowest ancestor LabelledStatementTree (if any)
+      TreePath pathToEnclosing = state.findPathToEnclosing(LabeledStatementTree.class);
+      if (pathToEnclosing != null) {
+        Tree enclosing = pathToEnclosing.getLeaf();
+        // This cast should always succeed
+        if (enclosing instanceof LabeledStatementTree lst) {
+          // We only need to wrap in braces where the SwitchTree is the immediate child of the
+          // LabelledStatementTree
+          if (lst.getStatement().equals(switchTree)) {
+            wrapInBraces = true;
+          }
+        }
+      }
+    }
+
+    if (wrapInBraces) {
+      renderTo.append("{\n");
+    }
+
+    for (VariableTree variableTree : analysisResult.symbolsToHoist().values()) {
+      renderTo.append(
+          Streams.concat(
+                  renderVariableTreeComments(variableTree, state).stream(),
+                  renderVariableTreeAnnotations(variableTree, state).stream(),
+                  Stream.of(renderVariableTreeFlags(variableTree)))
+              .collect(joining("\n")));
+
+      VarSymbol varSymbol = analysisResult.symbolsToHoist().inverse().get(variableTree);
+      String sourceForType =
+          hasImplicitType(variableTree, state)
+              // If the variable is declared with "var", then we need to transform to an explicit
+              // type declaration because Java cannot infer the type of a var unless it has an
+              // initializer; hoisting an uninitialized "var" doesn't work.
+              ? SuggestedFixes.prettyType(varSymbol.type, state)
+              : state.getSourceForNode(variableTree.getType());
+
+      renderTo.append(sourceForType).append(" ").append(variableTree.getName()).append(";\n");
+    }
+    return wrapInBraces;
+  }
+
+  /**
    * Transforms the supplied statement switch into an expression switch directly. In this
    * conversion, each nontrivial statement block is mapped one-to-one to a new {@code Expression} or
-   * {@code StatementBlock} on the right-hand side. Comments are preserved where possible.
+   * {@code StatementBlock} on the right-hand side (the `default:` case is removed if {@code
+   * removeDefault} is true). Comments are preserved where possible.
    */
   private static SuggestedFix convertDirectlyToExpressionSwitch(
-      SwitchTree switchTree, VisitorState state, AnalysisResult analysisResult) {
+      SwitchTree switchTree,
+      VisitorState state,
+      AnalysisResult analysisResult,
+      boolean removeDefault) {
 
     List<? extends CaseTree> cases = switchTree.getCases();
     ImmutableList<ErrorProneComment> allSwitchComments =
         state.getTokensForNode(switchTree).stream()
             .flatMap(errorProneToken -> errorProneToken.comments().stream())
             .collect(toImmutableList());
-
     StringBuilder replacementCodeBuilder = new StringBuilder();
+
+    // Render the variable declarations that need to be hoisted above the switch statement
+    boolean insertClosingBrace =
+        renderHoistedVariables(replacementCodeBuilder, analysisResult, switchTree, state);
+
+    // Render the switch statement
     replacementCodeBuilder
         .append("switch ")
         .append(state.getSourceForNode(switchTree.getExpression()))
@@ -538,10 +910,16 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
       CaseTree caseTree = cases.get(caseIndex);
       boolean isDefaultCase = isSwitchDefault(caseTree);
 
+      if (removeDefault && isDefaultCase) {
+        // Skip default case
+        continue;
+      }
+
       // For readability, filter out trailing unlabelled break statement because these become a
       // No-Op when used inside expression switches
       ImmutableList<StatementTree> filteredStatements = filterOutRedundantBreak(caseTree);
-      String transformedBlockSource = transformBlock(caseTree, state, filteredStatements);
+      String transformedBlockSource =
+          transformBlock(caseTree, state, filteredStatements, analysisResult.symbolsToHoist());
 
       if (firstCaseInGroup) {
         groupedCaseCommentsAccumulator =
@@ -632,7 +1010,17 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     // Close the switch statement
     replacementCodeBuilder.append("\n}");
 
-    return SuggestedFix.builder().replace(switchTree, replacementCodeBuilder.toString()).build();
+    // Close the surrounding braces (if needed)
+    if (insertClosingBrace) {
+      replacementCodeBuilder.append("\n}");
+    }
+
+    SuggestedFix.Builder suggestedFixBuilder = SuggestedFix.builder();
+    if (removeDefault) {
+      suggestedFixBuilder.setShortDescription(REMOVE_DEFAULT_CASE_SHORT_DESCRIPTION);
+    }
+    suggestedFixBuilder.replace(switchTree, replacementCodeBuilder.toString());
+    return suggestedFixBuilder.build();
   }
 
   /**
@@ -643,9 +1031,12 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
    * conversion is possible.
    */
   private static SuggestedFix convertToReturnSwitch(
-      SwitchTree switchTree, VisitorState state, AnalysisResult analysisResult) {
+      SwitchTree switchTree,
+      VisitorState state,
+      AnalysisResult analysisResult,
+      boolean removeDefault) {
 
-    List<StatementTree> statementsToDelete = new ArrayList<>();
+    SuggestedFix.Builder suggestedFixBuilder = SuggestedFix.builder();
     List<? extends CaseTree> cases = switchTree.getCases();
     ImmutableList<ErrorProneComment> allSwitchComments =
         state.getTokensForNode(switchTree).stream()
@@ -662,6 +1053,10 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     for (int caseIndex = 0; caseIndex < cases.size(); caseIndex++) {
       CaseTree caseTree = cases.get(caseIndex);
       boolean isDefaultCase = isSwitchDefault(caseTree);
+      if (removeDefault && isDefaultCase) {
+        // Skip default case
+        continue;
+      }
 
       String transformedBlockSource =
           transformReturnOrThrowBlock(caseTree, state, getStatements(caseTree));
@@ -728,77 +1123,139 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     // Close the switch statement
     replacementCodeBuilder.append("\n};");
 
-    // Statements in the same block following the switch are currently reachable but will become
-    // unreachable, which would lead to a compile-time error. Therefore, suggest that they be
-    // removed.
-    statementsToDelete.addAll(followingStatementsInBlock(switchTree, state));
+    // The transformed code can cause other existing code to become dead code.  So, we must analyze
+    // and delete such dead code, otherwise the suggested autofix could fail to compile.
 
-    SuggestedFix.Builder suggestedFixBuilder =
-        SuggestedFix.builder().replace(switchTree, replacementCodeBuilder.toString());
-    // Delete trailing statements, leaving comments where feasible
-    statementsToDelete.forEach(deleteMe -> suggestedFixBuilder.replace(deleteMe, ""));
+    // The `return switch ...` will always return or throw
+    Tree cannotCompleteNormallyTree = switchTree;
+    // Search up the AST for enclosing statement blocks, marking any newly-dead code for deletion
+    // along the way
+    Tree prev = state.getPath().getLeaf();
+    for (Tree tree : state.getPath().getParentPath()) {
+      if (tree instanceof BlockTree blockTree) {
+        var statements = blockTree.getStatements();
+        int indexInBlock = statements.indexOf(prev);
+        // A single mock of the immediate child statement block (or switch) is sufficient to
+        // analyze reachability here; deeper-nested statements are not relevant.
+        boolean nextStatementReachable =
+            Reachability.canCompleteNormally(
+                statements.get(indexInBlock), ImmutableMap.of(cannotCompleteNormallyTree, false));
+        // If we continue to the ancestor statement block, it will be because the end of this
+        // statement block is not reachable
+        cannotCompleteNormallyTree = blockTree;
+        if (nextStatementReachable) {
+          break;
+        }
+
+        // If a next statement in this block exists, then it is not reachable.
+        if (indexInBlock < statements.size() - 1) {
+          String deletedRegion =
+              state
+                  .getSourceCode()
+                  .subSequence(
+                      state.getEndPosition(statements.get(indexInBlock)),
+                      state.getEndPosition(blockTree))
+                  .toString();
+          // If the region we would delete looks interesting, bail out and just delete the orphaned
+          // statements.
+          if (deletedRegion.contains("LINT.")) {
+            statements
+                .subList(indexInBlock + 1, statements.size())
+                .forEach(suggestedFixBuilder::delete);
+          } else {
+            // If the region doesn't seem to contain interesting comments, delete it along with
+            // comments: those comments are often just of the form "Unreachable code".
+            suggestedFixBuilder.replace(
+                state.getEndPosition(statements.get(indexInBlock)),
+                state.getEndPosition(blockTree),
+                "}");
+          }
+        }
+      }
+      prev = tree;
+    }
+
+    if (removeDefault) {
+      suggestedFixBuilder.setShortDescription(REMOVE_DEFAULT_CASE_SHORT_DESCRIPTION);
+    }
+    suggestedFixBuilder.replace(switchTree, replacementCodeBuilder.toString());
     return suggestedFixBuilder.build();
   }
 
-  /**
-   * Retrieves a list of all statements (if any) following the supplied {@code SwitchTree} in its
-   * lowest-ancestor statement block (if any).
-   */
-  private static List<StatementTree> followingStatementsInBlock(
-      SwitchTree switchTree, VisitorState state) {
-    List<StatementTree> followingStatements = new ArrayList<>();
-
-    // NOMUTANTS--for performance/early return only; correctness unchanged
-    if (!Matchers.nextStatement(Matchers.<StatementTree>anything()).matches(switchTree, state)) {
-      // No lowest-ancestor block or no following statements
-      return followingStatements;
+  /** Retrieves a list of all statements (if any) preceding the current path, if any. */
+  private static ImmutableList<StatementTree> getPrecedingStatementsInBlock(VisitorState state) {
+    TreePath path = state.getPath();
+    if (!(path.getParentPath().getLeaf() instanceof BlockTree blockTree)) {
+      return ImmutableList.of();
     }
-
-    // Fetch the lowest ancestor statement block
-    TreePath pathToEnclosing = state.findPathToEnclosing(BlockTree.class);
-    // NOMUTANTS--should early return above
-    if (pathToEnclosing != null) {
-      Tree enclosing = pathToEnclosing.getLeaf();
-      if (enclosing instanceof BlockTree blockTree) {
-        // Path from root -> switchTree
-        TreePath rootToSwitchPath = TreePath.getPath(pathToEnclosing, switchTree);
-
-        for (int i = findBlockStatementIndex(rootToSwitchPath, blockTree) + 1;
-            (i >= 0) && (i < blockTree.getStatements().size());
-            i++) {
-          followingStatements.add(blockTree.getStatements().get(i));
-        }
-      }
-    }
-    return followingStatements;
+    var statements = blockTree.getStatements();
+    return ImmutableList.copyOf(statements.subList(0, statements.indexOf(path.getLeaf())));
   }
 
   /**
-   * Search through the provided {@code BlockTree} to find which statement in that block tree lies
-   * along the supplied {@code TreePath}. Returns the index (zero-based) of the matching statement
-   * in the block tree, or -1 if not found.
+   * Determines whether the last two preceding statements are not variable declarations within the
+   * same VariableDeclaratorList, for example {@code int x, y;}. VariableDeclaratorLists are defined
+   * in e.g. JLS 21 § 14.4. Precondition: all preceding statements are taken from the same {@code
+   * BlockTree}.
    */
-  private static int findBlockStatementIndex(TreePath treePath, BlockTree blockTree) {
-    for (int i = 0; i < blockTree.getStatements().size(); i++) {
-      StatementTree thisStatement = blockTree.getStatements().get(i);
-      // Look for thisStatement along the path from the root to the switch tree
-      TreePath pathFromRootToThisStatement = TreePath.getPath(treePath, thisStatement);
-      if (pathFromRootToThisStatement != null) {
-        return i;
-      }
+  private static boolean precedingTwoStatementsNotInSameVariableDeclaratorList(
+      List<StatementTree> precedingStatements) {
+
+    if (precedingStatements.size() < 2) {
+      return true;
     }
-    return -1;
+
+    StatementTree secondToLastStatement = precedingStatements.get(precedingStatements.size() - 2);
+    StatementTree lastStatement = Iterables.getLast(precedingStatements);
+    if (!(secondToLastStatement instanceof VariableTree variableTree1)
+        || !(lastStatement instanceof VariableTree variableTree2)) {
+      return true;
+    }
+
+    // Start positions will vary if the variable declarations are in the same
+    // VariableDeclaratorList.
+    return getStartPosition(variableTree1) != getStartPosition(variableTree2);
   }
 
   /**
    * Transforms the supplied statement switch into an assignment switch style of expression switch.
    * In this conversion, each nontrivial statement block is mapped one-to-one to a new expression on
-   * the right-hand side of the arrow. Comments are preserved where possible. Precondition: the
-   * {@code AnalysisResult} for the {@code SwitchTree} must have deduced that this conversion is
-   * possible.
+   * the right-hand side of the arrow (if {@code removeDefault} is true, then the {@code default:}
+   * block is skipped). Comments are preserved where possible. Precondition: the {@code
+   * AnalysisResult} for the {@code SwitchTree} must have deduced that this conversion is possible.
    */
   private static SuggestedFix convertToAssignmentSwitch(
-      SwitchTree switchTree, VisitorState state, AnalysisResult analysisResult) {
+      SwitchTree switchTree,
+      VisitorState state,
+      AnalysisResult analysisResult,
+      boolean removeDefault) {
+
+    SuggestedFix.Builder suggestedFixBuilder = SuggestedFix.builder();
+    StringBuilder replacementCodeBuilder = new StringBuilder();
+
+    analysisResult
+        .assignmentSwitchAnalysisResult()
+        .precedingVariableDeclaration()
+        .ifPresent(
+            variableTree -> {
+              suggestedFixBuilder.delete(variableTree);
+
+              replacementCodeBuilder.append(
+                  Streams.concat(
+                          renderVariableTreeComments(variableTree, state).stream(),
+                          renderVariableTreeAnnotations(variableTree, state).stream(),
+                          Stream.of(renderVariableTreeFlags(variableTree)))
+                      .collect(joining("\n")));
+
+              // Local variables declared with "var" must unfortunately be handled as a special case
+              // because getSourceForNode() returns null for the source code of a "var" declaration.
+              String sourceForType =
+                  hasImplicitType(variableTree, state)
+                      ? "var"
+                      : state.getSourceForNode(variableTree.getType());
+
+              replacementCodeBuilder.append(sourceForType).append(" ");
+            });
 
     List<? extends CaseTree> cases = switchTree.getCases();
     ImmutableList<ErrorProneComment> allSwitchComments =
@@ -806,30 +1263,28 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
             .flatMap(errorProneToken -> errorProneToken.comments().stream())
             .collect(toImmutableList());
 
-    StringBuilder replacementCodeBuilder =
-        new StringBuilder(
-                state.getSourceForNode(
-                    analysisResult
-                        .assignmentSwitchAnalysisResult()
-                        .assignmentTargetOptional()
-                        .get()))
-            .append(" ")
-            // Invariant: always present when a finding exists
-            .append(
-                analysisResult
-                    .assignmentSwitchAnalysisResult()
-                    .assignmentSourceCodeOptional()
-                    .get())
-            .append(" ")
-            .append("switch ")
-            .append(state.getSourceForNode(switchTree.getExpression()))
-            .append(" {");
+    replacementCodeBuilder
+        .append(
+            state.getSourceForNode(
+                analysisResult.assignmentSwitchAnalysisResult().assignmentTargetOptional().get()))
+        .append(" ")
+        // Invariant: always present when a finding exists
+        .append(
+            analysisResult.assignmentSwitchAnalysisResult().assignmentSourceCodeOptional().get())
+        .append(" ")
+        .append("switch ")
+        .append(state.getSourceForNode(switchTree.getExpression()))
+        .append(" {");
 
     StringBuilder groupedCaseCommentsAccumulator = null;
     boolean firstCaseInGroup = true;
     for (int caseIndex = 0; caseIndex < cases.size(); caseIndex++) {
       CaseTree caseTree = cases.get(caseIndex);
       boolean isDefaultCase = isSwitchDefault(caseTree);
+      if (removeDefault && isDefaultCase) {
+        // Remove `default:` case (and its code, if any) from the SuggestedFix
+        continue;
+      }
       ImmutableList<StatementTree> filteredStatements = filterOutRedundantBreak(caseTree);
 
       String transformedBlockSource =
@@ -903,7 +1358,11 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     // Close the switch statement
     replacementCodeBuilder.append("\n};");
 
-    return SuggestedFix.builder().replace(switchTree, replacementCodeBuilder.toString()).build();
+    if (removeDefault) {
+      suggestedFixBuilder.setShortDescription(REMOVE_DEFAULT_CASE_SHORT_DESCRIPTION);
+    }
+    suggestedFixBuilder.replace(switchTree, replacementCodeBuilder.toString());
+    return suggestedFixBuilder.build();
   }
 
   /**
@@ -923,7 +1382,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
               .getSourceCode()
               .subSequence(
                   state.getEndPosition(getLast(filteredStatements)),
-                  getStartPosition(getStatements(caseTree).get(getStatements(caseTree).size() - 1)))
+                  getStartPosition(getLast(getStatements(caseTree))))
               .toString()
               .trim();
       if (!commentsAfterNewLastStatement.isEmpty()) {
@@ -938,43 +1397,85 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
    * redundant after transformation, then filter out the relevant {@code break} statement.
    */
   private static ImmutableList<StatementTree> filterOutRedundantBreak(CaseTree caseTree) {
+    var statements = getStatements(caseTree);
     boolean caseEndsWithUnlabelledBreak =
-        Streams.findLast(getStatements(caseTree).stream())
-            .filter(statement -> statement.getKind().equals(BREAK))
-            .filter(breakTree -> ((BreakTree) breakTree).getLabel() == null)
-            .isPresent();
-    return caseEndsWithUnlabelledBreak
-        ? getStatements(caseTree).stream()
-            .limit(getStatements(caseTree).size() - 1)
-            .collect(toImmutableList())
-        : ImmutableList.copyOf(getStatements(caseTree));
+        !statements.isEmpty()
+            && getLast(statements) instanceof BreakTree bt
+            && bt.getLabel() == null;
+    return caseEndsWithUnlabelledBreak ? statements.subList(0, statements.size() - 1) : statements;
   }
 
   /**
    * Returns the statements of a {@link CaseTree}. If the only statement is a block statement,
    * return the block's statements instead.
    */
-  private static List<? extends StatementTree> getStatements(CaseTree caseTree) {
+  private static @Nullable ImmutableList<StatementTree> getStatements(CaseTree caseTree) {
     List<? extends StatementTree> statements = caseTree.getStatements();
-    if (statements == null || statements.size() != 1) {
-      return statements;
+    if (statements == null) {
+      return null;
     }
-    StatementTree onlyStatement = getOnlyElement(statements);
-    if (!onlyStatement.getKind().equals(BLOCK)) {
-      return statements;
+    if (statements.size() != 1) {
+      return ImmutableList.copyOf(statements);
     }
-    return ((BlockTree) onlyStatement).getStatements();
+    return getOnlyElement(statements) instanceof BlockTree blockTree
+        ? ImmutableList.copyOf(blockTree.getStatements())
+        : ImmutableList.copyOf(statements);
   }
 
   /** Transforms code for this case into the code under an expression switch. */
   private static String transformBlock(
-      CaseTree caseTree, VisitorState state, ImmutableList<StatementTree> filteredStatements) {
+      CaseTree caseTree,
+      VisitorState state,
+      ImmutableList<StatementTree> filteredStatements,
+      ImmutableBiMap<VarSymbol, VariableTree> symbolsToHoist) {
 
     StringBuilder transformedBlockBuilder = new StringBuilder();
     int codeBlockStart = extractLhsComments(caseTree, state, transformedBlockBuilder);
+    int codeBlockEnd = codeBlockStart;
     if (!filteredStatements.isEmpty()) {
-      int codeBlockEnd = state.getEndPosition(getLast(filteredStatements));
-      transformedBlockBuilder.append(state.getSourceCode(), codeBlockStart, codeBlockEnd);
+      // One pass-algorithm:
+      // * For each statement, if it's a variable declaration and if it's a for a symbol that is
+      // being hoisted, then emit accumulated statements (if any), and transform the variable
+      // declaration into an assignment and also emit that.  Otherwise, just accumulate the
+      // statement.
+      // * Emit any remaining accumulated statements
+      for (int i = 0; i < filteredStatements.size(); i++) {
+        StatementTree statement = filteredStatements.get(i);
+        if (statement instanceof VariableTree variableTree) {
+          // Transform hoisted variable declaration
+          if (symbolsToHoist.containsValue(variableTree)) {
+            // Emit accumulated statements (if any)
+            if (codeBlockEnd > codeBlockStart) {
+              transformedBlockBuilder.append(state.getSourceCode(), codeBlockStart, codeBlockEnd);
+            }
+            codeBlockStart =
+                (i < filteredStatements.size() - 1)
+                    ? getStartPosition(filteredStatements.get(i + 1))
+                    : state.getEndPosition(statement);
+
+            // If the hoisted variable has an initializer, transform into an assignment
+            // For example `String hoisted = "foo";` becomes `hoisted = "foo";`.
+            if (variableTree.getInitializer() != null) {
+              transformedBlockBuilder.append(variableTree.getName()).append(" = ");
+              transformedBlockBuilder
+                  .append(
+                      state.getSourceCode(),
+                      getStartPosition(variableTree.getInitializer()),
+                      state.getEndPosition(variableTree.getInitializer()))
+                  .append(";\n");
+            }
+          }
+        }
+        codeBlockEnd =
+            (i < filteredStatements.size() - 1)
+                ? getStartPosition(filteredStatements.get(i + 1))
+                : state.getEndPosition(statement);
+      } // For each filtered statement
+
+      // Emit accumulated statements (if any)
+      if (codeBlockEnd > codeBlockStart) {
+        transformedBlockBuilder.append(state.getSourceCode(), codeBlockStart, codeBlockEnd);
+      }
     }
 
     return transformedBlockBuilder.toString();
@@ -989,10 +1490,9 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
       CaseTree caseTree, VisitorState state, StringBuilder stringBuilder) {
 
     int lhsStart = getStartPosition(caseTree);
+    ImmutableList<StatementTree> statements = getStatements(caseTree);
     int lhsEnd =
-        getStatements(caseTree).isEmpty()
-            ? state.getEndPosition(caseTree)
-            : getStartPosition(getStatements(caseTree).get(0));
+        statements.isEmpty() ? state.getEndPosition(caseTree) : getStartPosition(statements.get(0));
 
     // Accumulate comments into transformed block
     state.getOffsetTokens(lhsStart, lhsEnd).stream()
@@ -1077,12 +1577,12 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
 
     // Invariant: statements.size() == 1
     StatementTree onlyStatement = getOnlyElement(statements);
-    if (!onlyStatement.getKind().equals(BLOCK)) {
+    if (!(onlyStatement instanceof BlockTree blockTree)) {
       return state.getEndPosition(caseTree);
     }
 
     // The RHS of the case has a single enclosing block { ... }
-    List<? extends StatementTree> blockStatements = ((BlockTree) onlyStatement).getStatements();
+    List<? extends StatementTree> blockStatements = blockTree.getStatements();
     return blockStatements.isEmpty()
         ? state.getEndPosition(caseTree)
         : state.getEndPosition(blockStatements.get(blockStatements.size() - 1));
@@ -1146,7 +1646,16 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
       return true;
     }
 
-    // Handles switching on enum (map is bijective)
+    return isSwitchExhaustiveWithoutDefault(handledEnumValues, switchType);
+  }
+
+  /**
+   * Ad-hoc algorithm to search for a surjective map from (non-null) values of a {@code switch}'s
+   * expression to a {@code CaseTree}, not including a {@code default} case (if present).
+   */
+  private static boolean isSwitchExhaustiveWithoutDefault(
+      Set<String> handledEnumValues, Type switchType) {
+    // Handles switching on enum only (map is bijective)
     if (switchType.asElement().getKind() != ElementKind.ENUM) {
       // Give up on search
       return false;
@@ -1163,25 +1672,24 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
       CaseTree caseTree, VisitorState state, List<? extends StatementTree> statements) {
 
     StringBuilder transformedBlockBuilder = new StringBuilder();
-    int codeBlockEnd = state.getEndPosition(caseTree);
+    int codeBlockEnd = getBlockEnd(state, caseTree);
     if (statements.size() > 1) {
       transformedBlockBuilder.append("{\n");
       int codeBlockStart = extractLhsComments(caseTree, state, transformedBlockBuilder);
       int offset = transformedBlockBuilder.length();
       transformedBlockBuilder.append(state.getSourceCode(), codeBlockStart, codeBlockEnd);
       transformedBlockBuilder.append("\n}");
-      ReturnTree returnTree = (ReturnTree) getLast(statements);
-      int start = getStartPosition(returnTree);
-      transformedBlockBuilder.replace(
-          offset + start - codeBlockStart,
-          offset + start - codeBlockStart + "return".length(),
-          "yield");
-    } else if (statements.size() == 1 && statements.get(0).getKind().equals(RETURN)) {
+      if (getLast(statements) instanceof ReturnTree returnTree) {
+        int start = getStartPosition(returnTree);
+        transformedBlockBuilder.replace(
+            offset + start - codeBlockStart,
+            offset + start - codeBlockStart + "return".length(),
+            "yield");
+      }
+    } else if (statements.size() == 1 && statements.get(0) instanceof ReturnTree returnTree) {
       // For "return x;", we want to take source starting after the "return"
       int unused = extractLhsComments(caseTree, state, transformedBlockBuilder);
-      ReturnTree returnTree = (ReturnTree) statements.get(0);
       int codeBlockStart = getStartPosition(returnTree.getExpression());
-      codeBlockEnd = state.getEndPosition(Streams.findLast(statements.stream()).get());
       transformedBlockBuilder.append(state.getSourceCode(), codeBlockStart, codeBlockEnd);
     } else {
       int codeBlockStart = extractLhsComments(caseTree, state, transformedBlockBuilder);
@@ -1192,7 +1700,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
   }
 
   /**
-   * Transforms a assignment or throw into an expression statement suitable for use on the
+   * Transforms an assignment or throw into an expression statement suitable for use on the
    * right-hand-side of the arrow of an assignment switch. For example, {@code x >>= 2;} would be
    * transformed to {@code 2;}. Note that this method does not return the assignment operator (e.g.
    * {@code >>=}).
@@ -1207,15 +1715,16 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
             ? getBlockEnd(state, caseTree)
             : state.getEndPosition(Streams.findLast(statements.stream()).get());
 
-    if (!statements.isEmpty() && statements.get(0).getKind().equals(EXPRESSION_STATEMENT)) {
+    if (!statements.isEmpty()
+        && statements.get(0) instanceof ExpressionStatementTree expressionStatementTree) {
       // For "x = foo", we want to take source starting after the "x ="
       int unused = extractLhsComments(caseTree, state, transformedBlockBuilder);
-      ExpressionTree expression = ((ExpressionStatementTree) statements.get(0)).getExpression();
+      ExpressionTree expression = expressionStatementTree.getExpression();
       Optional<ExpressionTree> rhs = Optional.empty();
-      if (expression instanceof CompoundAssignmentTree) {
-        rhs = Optional.of(((CompoundAssignmentTree) expression).getExpression());
-      } else if (expression instanceof AssignmentTree) {
-        rhs = Optional.of(((AssignmentTree) expression).getExpression());
+      if (expression instanceof CompoundAssignmentTree compoundAssignmentTree) {
+        rhs = Optional.of(compoundAssignmentTree.getExpression());
+      } else if (expression instanceof AssignmentTree assignmentTree) {
+        rhs = Optional.of(assignmentTree.getExpression());
       }
       codeBlockStart = getStartPosition(rhs.get());
     } else {
@@ -1228,52 +1737,75 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
 
   @AutoValue
   abstract static class AnalysisResult {
-    // Whether the statement switch can be directly converted to an expression switch
+    /** Whether the statement switch can be directly converted to an expression switch */
     abstract boolean canConvertDirectlyToExpressionSwitch();
 
-    // Whether the statement switch can be converted to a return switch
+    /** Whether the statement switch can be converted to a return switch */
     abstract boolean canConvertToReturnSwitch();
 
-    // Results of the analysis for conversion to an assignment switch
+    /**
+     * Whether the assignment switch is exhaustive even in the absence of the default case that
+     * exists in the original switch statement
+     */
+    abstract boolean canRemoveDefault();
+
+    /** Results of the analysis for conversion to an assignment switch */
     abstract AssignmentSwitchAnalysisResult assignmentSwitchAnalysisResult();
 
-    // List of whether each case tree can be grouped with its successor in transformed source code
+    /**
+     * List of whether each case tree can be grouped with its successor in transformed source code
+     */
     abstract ImmutableList<Boolean> groupedWithNextCase();
+
+    /**
+     * Bidirectional map from symbols to hoist to the top of the switch statement to their
+     * declaration trees
+     */
+    abstract ImmutableBiMap<VarSymbol, VariableTree> symbolsToHoist();
 
     static AnalysisResult of(
         boolean canConvertDirectlyToExpressionSwitch,
         boolean canConvertToReturnSwitch,
+        boolean canRemoveDefault,
         AssignmentSwitchAnalysisResult assignmentSwitchAnalysisResult,
-        ImmutableList<Boolean> groupedWithNextCase) {
+        ImmutableList<Boolean> groupedWithNextCase,
+        ImmutableBiMap<VarSymbol, VariableTree> symbolsToHoist) {
       return new AutoValue_StatementSwitchToExpressionSwitch_AnalysisResult(
           canConvertDirectlyToExpressionSwitch,
           canConvertToReturnSwitch,
+          canRemoveDefault,
           assignmentSwitchAnalysisResult,
-          groupedWithNextCase);
+          groupedWithNextCase,
+          symbolsToHoist);
     }
   }
 
   @AutoValue
   abstract static class AssignmentSwitchAnalysisResult {
-    // Whether the statement switch can be converted to an assignment switch
+    /** Whether the statement switch can be converted to an assignment switch */
     abstract boolean canConvertToAssignmentSwitch();
 
-    // Target of the assignment switch, if any
+    /** The immediately preceding variable declaration if this switch can be combined with it. */
+    abstract Optional<VariableTree> precedingVariableDeclaration();
+
+    /** Target of the assignment switch, if any */
     abstract Optional<ExpressionTree> assignmentTargetOptional();
 
-    // Kind of assignment made by the assignment switch, if any
+    /** Kind of assignment made by the assignment switch, if any */
     abstract Optional<Tree.Kind> assignmentKindOptional();
 
-    // Java source code of the assignment switch's operator, e.g. "+="
+    /** Java source code of the assignment switch's operator, e.g. "+=" */
     abstract Optional<String> assignmentSourceCodeOptional();
 
     static AssignmentSwitchAnalysisResult of(
         boolean canConvertToAssignmentSwitch,
+        Optional<VariableTree> precedingVariableDeclaration,
         Optional<ExpressionTree> assignmentTargetOptional,
         Optional<Tree.Kind> assignmentKindOptional,
         Optional<String> assignmentSourceCodeOptional) {
       return new AutoValue_StatementSwitchToExpressionSwitch_AssignmentSwitchAnalysisResult(
           canConvertToAssignmentSwitch,
+          precedingVariableDeclaration,
           assignmentTargetOptional,
           assignmentKindOptional,
           assignmentSourceCodeOptional);
@@ -1282,16 +1814,16 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
 
   @AutoValue
   abstract static class AssignmentSwitchAnalysisState {
-    // Overall qualification of the switch statement for conversion to an assignment switch
+    /** Overall qualification of the switch statement for conversion to an assignment switch */
     abstract CaseQualifications assignmentSwitchCaseQualifications();
 
-    // Target of the first assignment seen, if any
+    /** Target of the first assignment seen, if any */
     abstract Optional<ExpressionTree> assignmentTargetOptional();
 
-    // Kind of the first assignment seen, if any
+    /** Kind of the first assignment seen, if any */
     abstract Optional<Tree.Kind> assignmentExpressionKindOptional();
 
-    // ExpressionTree of the first assignment seen, if any
+    /** ExpressionTree of the first assignment seen, if any */
     abstract Optional<ExpressionTree> assignmentTreeOptional();
 
     static AssignmentSwitchAnalysisState of(

@@ -62,17 +62,24 @@ TIP: `java.util.Date` is a legacy, bug-prone API. Prefer `java.time.Instant` or
 Prefer subtypes such as `ImmutableSet` or `ImmutableList`, which have
 well-defined `equals`.
 
+## For [`Future`]
+
+Prefer calling `#get` and checking the result, or using
+`assertThat(...).isSameInstanceAs()` or `assertThat(...).isNotSameInstanceAs()`
+for cases where the same/different instance is expected.
+
 [`Collection`]: https://docs.oracle.com/javase/8/docs/api/java/util/Collection.html
+[`Future`]: https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/Future.html
 [`Iterable`]: https://docs.oracle.com/javase/8/docs/api/java/lang/Iterable.html
 [`Iterables.elementsEqual`]: https://guava.dev/releases/snapshot/api/docs/com/google/common/collect/Iterables.html#elementsEqual-java.lang.Iterable-java.lang.Iterable-
-[`LinkedList`]: http://docs.oracle.com/javase/8/docs/api/java/util/LinkedList.html
+[`LinkedList`]: https://docs.oracle.com/javase/8/docs/api/java/util/LinkedList.html
 [`ListMultimap`]: https://guava.dev/releases/snapshot/api/docs/com/google/common/collect/ListMultimap.html
 [`LongSparseArray`]: https://developer.android.com/reference/android/util/LongSparseArray
 [`Multimap`]: https://guava.dev/releases/snapshot/api/docs/com/google/common/collect/Multimap.html
 [`Multiset`]: https://guava.dev/releases/snapshot/api/docs/com/google/common/collect/Multiset.html
 [`SetMultimap`]: https://guava.dev/releases/snapshot/api/docs/com/google/common/collect/SetMultimap.html
 [`SparseArray`]: https://developer.android.com/reference/android/util/SparseArray
-[`Queue`]: http://docs.oracle.com/javase/8/docs/api/java/util/Queue.html
-[`CharSequence`]: http://docs.oracle.com/javase/8/docs/api/java/lang/CharSequence.html
-[`java.util.Date`]: http://docs.oracle.com/javase/8/docs/api/java/util/Date.html
+[`Queue`]: https://docs.oracle.com/javase/8/docs/api/java/util/Queue.html
+[`CharSequence`]: https://docs.oracle.com/javase/8/docs/api/java/lang/CharSequence.html
+[`java.util.Date`]: https://docs.oracle.com/javase/8/docs/api/java/util/Date.html
 [`ImmutableCollection`]: https://guava.dev/releases/snapshot-jre/api/docs/com/google/common/collect/ImmutableCollection.html

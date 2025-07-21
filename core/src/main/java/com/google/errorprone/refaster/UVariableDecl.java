@@ -20,7 +20,6 @@ import static com.google.errorprone.refaster.Unifier.unifications;
 
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Function;
-import com.google.common.base.Optional;
 import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.ModifiersTree;
@@ -30,6 +29,7 @@ import com.sun.tools.javac.tree.JCTree.JCModifiers;
 import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
 import com.sun.tools.javac.tree.TreeMaker;
 import com.sun.tools.javac.util.Name;
+import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -73,9 +73,9 @@ public abstract class UVariableDecl extends USimpleStatement implements Variable
   @Override
   public Choice<Unifier> visitVariable(VariableTree decl, Unifier unifier) {
     return Choice.condition(unifier.getBinding(key()) == null, unifier)
-        .thenChoose(unifications(getType(), decl.getType()))
-        .thenChoose(unifications(getInitializer(), decl.getInitializer()))
-        .transform(
+        .flatMap(unifications(getType(), decl.getType()))
+        .flatMap(unifications(getInitializer(), decl.getInitializer()))
+        .map(
             new Function<Unifier, Unifier>() {
               @Override
               public Unifier apply(Unifier unifier) {

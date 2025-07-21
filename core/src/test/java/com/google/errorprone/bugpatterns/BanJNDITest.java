@@ -36,7 +36,7 @@ public class BanJNDITest {
     compilationHelper
         .addSourceLines(
             "BanJNDIPositiveCases.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import java.io.IOException;
@@ -179,7 +179,7 @@ class BanJNDIPositiveCases {
     compilationHelper
         .addSourceLines(
             "BanJNDINegativeCases.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import javax.naming.Name;
@@ -198,7 +198,7 @@ class BanJNDIPositiveCases {
   private void callsList() throws NamingException {
     FakeDirContext.list(((Name) new Object()));
   }
-}\
+}
 """)
         .doTest();
   }
@@ -208,7 +208,7 @@ class BanJNDIPositiveCases {
     refactoringHelper
         .addInputLines(
             "BanJNDINegativeCases.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import javax.naming.Name;
@@ -227,7 +227,7 @@ class BanJNDIPositiveCases {
   private void callsList() throws NamingException {
     FakeDirContext.list(((Name) new Object()));
   }
-}\
+}
 """)
         .expectUnchanged()
         .setArgs("-XepCompilingTestOnlyCode")

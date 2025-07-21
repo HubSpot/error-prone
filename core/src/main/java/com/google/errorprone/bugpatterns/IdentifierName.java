@@ -17,10 +17,13 @@
 package com.google.errorprone.bugpatterns;
 
 import static com.google.common.base.Ascii.isUpperCase;
+import static com.google.common.base.Ascii.toLowerCase;
+import static com.google.common.base.Ascii.toUpperCase;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.errorprone.BugPattern.LinkType.CUSTOM;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.fixes.SuggestedFix.emptyFix;
+import static com.google.errorprone.fixes.SuggestedFixes.renameClassWithUses;
 import static com.google.errorprone.fixes.SuggestedFixes.renameMethodWithInvocations;
 import static com.google.errorprone.fixes.SuggestedFixes.renameVariable;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
@@ -31,12 +34,13 @@ import static com.google.errorprone.util.ASTHelpers.findSuperMethods;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.isStatic;
+import static java.lang.Character.isDigit;
 import static java.util.stream.Collectors.joining;
+import static javax.lang.model.element.ElementKind.BINDING_VARIABLE;
 import static javax.lang.model.element.ElementKind.EXCEPTION_PARAMETER;
 import static javax.lang.model.element.ElementKind.LOCAL_VARIABLE;
 import static javax.lang.model.element.ElementKind.RESOURCE_VARIABLE;
 
-import com.google.common.base.Ascii;
 import com.google.common.base.CaseFormat;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableSet;
@@ -51,8 +55,8 @@ import com.google.errorprone.matchers.Description;
 import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MethodTree;
-import com.sun.source.tree.Tree.Kind;
 import com.sun.source.tree.VariableTree;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
@@ -128,7 +132,7 @@ public final class IdentifierName extends BugChecker
             fixable
                 ? diagnostic
                 : diagnostic + String.format("; did you" + " mean '%s'?", suggested))
-        .addFix(emptyFix())
+        .addFix(fixable ? renameClassWithUses(tree, suggested, state) : emptyFix())
         .build();
   }
 
@@ -191,10 +195,9 @@ public final class IdentifierName extends BugChecker
   public Description matchVariable(VariableTree tree, VisitorState state) {
     VarSymbol symbol = getSymbol(tree);
     String name = tree.getName().toString();
-    if (symbol.owner instanceof MethodSymbol
+    if (symbol.owner instanceof MethodSymbol methodSymbol
         && symbol.getKind() == ElementKind.PARAMETER
-        && state.getPath().getParentPath().getLeaf().getKind() != Kind.LAMBDA_EXPRESSION) {
-      var methodSymbol = (MethodSymbol) symbol.owner;
+        && !(state.getPath().getParentPath().getLeaf() instanceof LambdaExpressionTree)) {
       int index = methodSymbol.getParameters().indexOf(symbol);
       var maybeSuper = ASTHelpers.streamSuperMethods(methodSymbol, state.getTypes()).findFirst();
       if (maybeSuper.isPresent()) {
@@ -272,10 +275,13 @@ public final class IdentifierName extends BugChecker
   }
 
   private static final ImmutableSet<ElementKind> LOCAL_VARIABLE_KINDS =
-      ImmutableSet.of(LOCAL_VARIABLE, RESOURCE_VARIABLE, EXCEPTION_PARAMETER);
+      ImmutableSet.of(LOCAL_VARIABLE, RESOURCE_VARIABLE, EXCEPTION_PARAMETER, BINDING_VARIABLE);
 
   private static boolean isConformant(Symbol symbol, String name) {
     if (isStaticVariable(symbol) && isConformantStaticVariableName(name)) {
+      return true;
+    }
+    if (name.isEmpty()) {
       return true;
     }
     return isConformantLowerCamelName(name);
@@ -286,15 +292,30 @@ public final class IdentifierName extends BugChecker
   }
 
   private static boolean isConformantLowerCamelName(String name) {
-    return !name.contains("_")
+    return underscoresAreFlankedByDigits(name)
         && !isUpperCase(name.charAt(0))
         && !PROBABLE_INITIALISM.matcher(name).find();
   }
 
   private boolean isConformantTypeName(String name) {
-    return !name.contains("_")
+    return underscoresAreFlankedByDigits(name)
         && isUpperCase(name.charAt(0))
         && (allowInitialismsInTypeName || !PROBABLE_INITIALISM.matcher(name).find());
+  }
+
+  private static boolean underscoresAreFlankedByDigits(String name) {
+    if (name.startsWith("_") || name.endsWith("_")) {
+      return false;
+    }
+    for (int i = 1; i < name.length() - 1; i++) {
+      if (name.charAt(i) == '_') {
+        boolean flankedByDigits = isDigit(name.charAt(i - 1)) && isDigit(name.charAt(i + 1));
+        if (!flankedByDigits) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   private static boolean isStaticVariable(Symbol symbol) {
@@ -306,8 +327,8 @@ public final class IdentifierName extends BugChecker
   }
 
   private static String titleCase(String input) {
-    var lower = Ascii.toLowerCase(input);
-    return Ascii.toUpperCase(lower.charAt(0)) + lower.substring(1);
+    String lower = toLowerCase(input);
+    return toUpperCase(lower.charAt(0)) + lower.substring(1);
   }
 
   private static final Pattern LOWER_UNDERSCORE_PATTERN = Pattern.compile("[a-z0-9_]+");

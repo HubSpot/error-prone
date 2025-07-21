@@ -76,21 +76,20 @@ public class EqualsReference extends BugChecker implements MethodTreeMatcher {
           methodInvocationTree.getArguments().size() == 1
               && Objects.equals(
                   ASTHelpers.getSymbol(methodInvocationTree.getArguments().get(0)), varSymbol);
-      if (methodSelectTree instanceof MemberSelectTree) {
-        memberSelectTree = (MemberSelectTree) methodSelectTree;
+      if (methodSelectTree instanceof MemberSelectTree m) {
+        memberSelectTree = m;
         ExpressionTree e = memberSelectTree.getExpression();
         // this.equals(o)
         // not using o.equals(this) because all instances of this were false positives
         // (people checked to see if o was an instance of this class)
-        if (e instanceof IdentifierTree
-            && ((IdentifierTree) e).getName().contentEquals("this")
+        if (e instanceof IdentifierTree identifierTree
+            && identifierTree.getName().contentEquals("this")
             && Objects.equals(
                 ASTHelpers.getSymbol(methodTree), ASTHelpers.getSymbol(memberSelectTree))
             && hasParameterAndSameSymbol) {
           hasIllegalEquals = true;
         }
-      } else if (methodInvocationTree.getMethodSelect() instanceof IdentifierTree) {
-        IdentifierTree methodSelect = (IdentifierTree) methodInvocationTree.getMethodSelect();
+      } else if (methodInvocationTree.getMethodSelect() instanceof IdentifierTree methodSelect) {
         if (Objects.equals(ASTHelpers.getSymbol(methodTree), ASTHelpers.getSymbol(methodSelect))
             && hasParameterAndSameSymbol) {
           hasIllegalEquals = true;

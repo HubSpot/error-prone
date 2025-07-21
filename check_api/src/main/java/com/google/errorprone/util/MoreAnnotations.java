@@ -37,6 +37,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Stream;
+import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
@@ -120,43 +121,34 @@ public final class MoreAnnotations {
   }
 
   private static boolean targetTypeMatches(Symbol sym, TypeAnnotationPosition position) {
-    switch (sym.getKind()) {
-      case LOCAL_VARIABLE -> {
-        return position.type == TargetType.LOCAL_VARIABLE;
-      }
-      case FIELD, ENUM_CONSTANT -> {
-        // treated like a field
-        return position.type == TargetType.FIELD;
-      }
-      case CONSTRUCTOR, METHOD -> {
-        return position.type == TargetType.METHOD_RETURN;
-      }
-      case PARAMETER -> {
-        switch (position.type) {
-          case METHOD_FORMAL_PARAMETER:
-            int parameterIndex = position.parameter_index;
-            if (position.onLambda != null) {
-              com.sun.tools.javac.util.List<JCTree.JCVariableDecl> lambdaParams =
-                  position.onLambda.params;
-              return parameterIndex < lambdaParams.size()
-                  && lambdaParams.get(parameterIndex).sym.equals(sym);
-            } else {
-              return ((Symbol.MethodSymbol) sym.owner).getParameters().indexOf(sym)
-                  == parameterIndex;
+    return switch (sym.getKind()) {
+      case LOCAL_VARIABLE, BINDING_VARIABLE -> position.type == TargetType.LOCAL_VARIABLE;
+      // treated like a field
+      case FIELD, ENUM_CONSTANT -> position.type == TargetType.FIELD;
+      case CONSTRUCTOR, METHOD -> position.type == TargetType.METHOD_RETURN;
+      case PARAMETER ->
+          switch (position.type) {
+            case METHOD_FORMAL_PARAMETER -> {
+              int parameterIndex = position.parameter_index;
+              if (position.onLambda != null) {
+                com.sun.tools.javac.util.List<JCTree.JCVariableDecl> lambdaParams =
+                    position.onLambda.params;
+                yield parameterIndex < lambdaParams.size()
+                    && lambdaParams.get(parameterIndex).sym.equals(sym);
+              } else {
+                yield ((Symbol.MethodSymbol) sym.owner).getParameters().indexOf(sym)
+                    == parameterIndex;
+              }
             }
-          default:
-            return false;
-        }
-      }
-      case CLASS -> {
-        // There are no type annotations on the top-level type of the class being declared, only
-        // on other types in the signature (e.g. `class Foo extends Bar<@A Baz> {}`).
-        return false;
-      }
+            default -> false;
+          };
+      // There are no type annotations on the top-level type of the class being declared, only
+      // on other types in the signature (e.g. `class Foo extends Bar<@A Baz> {}`).
+      case CLASS -> false;
       default ->
           throw new AssertionError(
               "unsupported element kind in MoreAnnotation#isAnnotationOnType: " + sym.getKind());
-    }
+    };
   }
 
   /**
@@ -215,7 +207,7 @@ public final class MoreAnnotations {
     return Optional.ofNullable(a.accept(new Visitor(), null));
   }
 
-  /** Converts the given attribute to an enum value. */
+  /** Converts the given attribute to a type. */
   public static Optional<TypeMirror> asTypeValue(AnnotationValue a) {
     class Visitor extends SimpleAnnotationValueVisitor8<TypeMirror, Void> {
 
@@ -247,6 +239,24 @@ public final class MoreAnnotations {
   }
 
   /** Converts the given annotation value to one or more annotations. */
+  public static Stream<AnnotationMirror> asAnnotations(AnnotationValue v) {
+    return v.accept(
+        new SimpleAnnotationValueVisitor8<Stream<AnnotationMirror>, Void>(Stream.empty()) {
+          @Override
+          public Stream<AnnotationMirror> visitAnnotation(AnnotationMirror av, Void unused) {
+            return Stream.of(av);
+          }
+
+          @Override
+          public Stream<AnnotationMirror> visitArray(
+              List<? extends AnnotationValue> list, Void unused) {
+            return list.stream().flatMap(a -> a.accept(this, null));
+          }
+        },
+        null);
+  }
+
+  /** Converts the given annotation value to one or more types. */
   public static Stream<TypeMirror> asTypes(AnnotationValue v) {
     return asArray(v, MoreAnnotations::asTypeValue);
   }

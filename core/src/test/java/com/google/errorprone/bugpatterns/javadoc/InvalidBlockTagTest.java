@@ -34,12 +34,15 @@ public final class InvalidBlockTagTest {
 
   @Test
   public void typo() {
+    // common_typos_disable
     refactoring
         .addInputLines(
             "Test.java",
             """
             interface Test {
-              /** @return anything */
+              /**
+               * @returns anything
+               */
               void foo();
             }
             """)
@@ -47,11 +50,14 @@ public final class InvalidBlockTagTest {
             "Test.java",
             """
             interface Test {
-              /** @return anything */
+              /**
+               * @return anything
+               */
               void foo();
             }
             """)
         .doTest(TestMode.TEXT_MATCH);
+    // common_typos_enable
   }
 
   @Test
@@ -61,7 +67,9 @@ public final class InvalidBlockTagTest {
             "Test.java",
             """
             interface Test {
-              /** @returnFnargleBlargle anything */
+              /**
+               * @returnFnargleBlargle anything
+               */
               void foo();
             }
             """)
@@ -84,6 +92,7 @@ public final class InvalidBlockTagTest {
   }
 
   @Test
+  @SuppressWarnings("MisformattedTestData")
   public void inHtml() {
     refactoring
         .addInputLines(
@@ -152,6 +161,7 @@ public final class InvalidBlockTagTest {
   }
 
   @Test
+  @SuppressWarnings("MisformattedTestData")
   public void parameterBlockTag_finding() {
     helper
         .addSourceLines(
@@ -159,7 +169,7 @@ public final class InvalidBlockTagTest {
             """
             interface Test {
               /**
-               // BUG: Diagnostic contains: {@code a}
+               * // BUG: Diagnostic contains: {@code a}
                * @a blah
                */
               void foo(int a);
@@ -175,7 +185,9 @@ public final class InvalidBlockTagTest {
             "Test.java",
             """
             interface Test {
-              /** @inheritDoc */
+              /**
+               * @inheritDoc
+               */
               void frobnicate(String foo);
             }
             """)
@@ -197,10 +209,26 @@ public final class InvalidBlockTagTest {
             "Test.java",
             """
             /**
-              * @apiNote does nothing
-              * @implNote not implemented
-              */
+             * @apiNote does nothing
+             * @implNote not implemented
+             */
             class Test {}
+            """)
+        .doTest();
+  }
+
+  @Test
+  @SuppressWarnings("MisformattedTestData") // asserting the line the bug is on becomes inconvenient
+  public void returnOnClass() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            // BUG: Diagnostic contains:
+            /** @return anything */
+            interface Test {
+              void foo();
+            }
             """)
         .doTest();
   }

@@ -43,7 +43,6 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewArrayTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
-import com.sun.source.tree.Tree.Kind;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
@@ -128,12 +127,12 @@ public abstract class StronglyType {
           return;
         }
         Tree parent = getCurrentPath().getParentPath().getLeaf();
-        if (!(parent instanceof ExpressionTree)
-            || !factoryMatcher().matches((ExpressionTree) parent, state)) {
+        if (!(parent instanceof ExpressionTree expressionTree)
+            || !factoryMatcher().matches(expressionTree, state)) {
           fields.remove(symbol);
           return;
         }
-        usages.put((VarSymbol) symbol, (ExpressionTree) parent);
+        usages.put((VarSymbol) symbol, expressionTree);
       }
     }.scan(tree, null);
 
@@ -195,8 +194,8 @@ public abstract class StronglyType {
   private static String getWeakTypeIntitializerCode(VariableTree weakType, VisitorState state) {
     // If the new array type is missing, we need to add it.
     String prefix =
-        (weakType.getInitializer().getKind() == Kind.NEW_ARRAY
-                && ((NewArrayTree) weakType.getInitializer()).getType() == null)
+        (weakType.getInitializer() instanceof NewArrayTree newArrayTree
+                && newArrayTree.getType() == null)
             ? String.format("new %s ", state.getSourceForNode(weakType.getType()))
             : "";
 

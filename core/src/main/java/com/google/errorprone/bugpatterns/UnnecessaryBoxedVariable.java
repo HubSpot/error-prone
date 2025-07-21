@@ -34,12 +34,13 @@ import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.util.ASTHelpers;
-import com.google.errorprone.util.ASTHelpers.TargetType;
+import com.google.errorprone.util.TargetType;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.EnhancedForLoopTree;
+import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LambdaExpressionTree;
@@ -47,10 +48,10 @@ import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
-import com.sun.source.tree.Tree.Kind;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
@@ -114,6 +115,7 @@ public class UnnecessaryBoxedVariable extends BugChecker implements CompilationU
           return Optional.empty();
         }
         break;
+      case BINDING_VARIABLE: // Revisit if https://openjdk.org/jeps/488 happens.
       default:
         return Optional.empty();
     }
@@ -179,7 +181,7 @@ public class UnnecessaryBoxedVariable extends BugChecker implements CompilationU
       checkArgument(pathForTree.getLeaf() instanceof MethodInvocationTree);
       MethodInvocationTree methodInvocation = (MethodInvocationTree) pathForTree.getLeaf();
 
-      TargetType targetType = ASTHelpers.targetType(state.withPath(pathForTree));
+      TargetType targetType = TargetType.targetType(state.withPath(pathForTree));
       if (targetType == null) {
         // If the check is the only thing in a statement, remove the statement.
         StatementTree statementTree =
@@ -221,7 +223,7 @@ public class UnnecessaryBoxedVariable extends BugChecker implements CompilationU
       Type expressionType = ASTHelpers.getType(castInvocation);
 
       if (castPath.getParentPath() != null
-          && castPath.getParentPath().getLeaf().getKind() == Kind.EXPRESSION_STATEMENT) {
+          && castPath.getParentPath().getLeaf() instanceof ExpressionStatementTree) {
         // If we were to replace X.intValue(); with (int) x;, the code wouldn't compile because
         // that's not a statement. Instead, just delete.
         fixBuilder.delete(castPath.getParentPath().getLeaf());
@@ -257,10 +259,9 @@ public class UnnecessaryBoxedVariable extends BugChecker implements CompilationU
     ExpressionTree expression = tree.getInitializer();
     if (expression == null) {
       Tree leaf = state.getPath().getParentPath().getLeaf();
-      if (!(leaf instanceof EnhancedForLoopTree)) {
+      if (!(leaf instanceof EnhancedForLoopTree node)) {
         return true;
       }
-      EnhancedForLoopTree node = (EnhancedForLoopTree) leaf;
       Type expressionType = ASTHelpers.getType(node.getExpression());
       if (expressionType == null) {
         return false;
@@ -287,7 +288,8 @@ public class UnnecessaryBoxedVariable extends BugChecker implements CompilationU
 
   private static boolean canChangeMethodSignature(VisitorState state, MethodSymbol methodSymbol) {
     return !ASTHelpers.methodCanBeOverridden(methodSymbol)
-        && ASTHelpers.findSuperMethods(methodSymbol, state.getTypes()).isEmpty();
+        && ASTHelpers.findSuperMethods(methodSymbol, state.getTypes()).isEmpty()
+        && !ASTHelpers.isRecord(methodSymbol);
   }
 
   private static class FindBoxedUsagesScanner extends TreePathScanner<Void, Void> {
@@ -364,7 +366,7 @@ public class UnnecessaryBoxedVariable extends BugChecker implements CompilationU
       // Unless it's an invocation of Boxed.valueOf or new Boxed, in which case it doesn't need to
       // be kept boxed since we know the result of valueOf is non-null.
       return !VALUE_OF_MATCHER.matches(expression, state.withPath(getCurrentPath()))
-          && expression.getKind() != Kind.NEW_CLASS;
+          && !(expression instanceof NewClassTree);
     }
 
     @Override
@@ -373,7 +375,7 @@ public class UnnecessaryBoxedVariable extends BugChecker implements CompilationU
       if (isBoxed(nodeSymbol, state)) {
         dereferenced.add((VarSymbol) nodeSymbol);
         VisitorState identifierState = state.withPath(getCurrentPath());
-        TargetType targetType = ASTHelpers.targetType(identifierState);
+        TargetType targetType = TargetType.targetType(identifierState);
         if (targetType != null && !targetType.type().isPrimitive()) {
           boxedUsageFound.add((VarSymbol) nodeSymbol);
           return null;
@@ -444,7 +446,7 @@ public class UnnecessaryBoxedVariable extends BugChecker implements CompilationU
     @Override
     public Void visitMemberReference(MemberReferenceTree node, Void unused) {
       ExpressionTree qualifierExpression = node.getQualifierExpression();
-      if (qualifierExpression.getKind() == Kind.IDENTIFIER) {
+      if (qualifierExpression instanceof IdentifierTree) {
         Symbol symbol = getSymbol(qualifierExpression);
         if (isBoxed(symbol, state)) {
           boxedUsageFound.add((VarSymbol) symbol);

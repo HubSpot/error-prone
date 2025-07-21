@@ -21,7 +21,9 @@ import static com.google.errorprone.BugPattern.SeverityLevel.SUGGESTION;
 import static com.google.errorprone.fixes.SuggestedFixes.addModifiers;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.matchers.Matchers.SERIALIZATION_METHODS;
+import static com.google.errorprone.util.ASTHelpers.enclosingClass;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
+import static com.google.errorprone.util.ASTHelpers.streamSuperMethods;
 import static java.util.Collections.disjoint;
 import static javax.lang.model.element.Modifier.ABSTRACT;
 import static javax.lang.model.element.Modifier.DEFAULT;
@@ -54,6 +56,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import javax.inject.Inject;
 import javax.lang.model.element.Modifier;
@@ -135,7 +138,7 @@ public class MethodCanBeStatic extends BugChecker implements CompilationUnitTree
       }
     }.scan(state.getPath(), null);
 
-    propagateNonStaticness(nodes);
+    propagateNonStaticness(nodes, state);
     nodes
         .entrySet()
         .removeIf(
@@ -143,7 +146,8 @@ public class MethodCanBeStatic extends BugChecker implements CompilationUnitTree
     return generateDescription(nodes, state);
   }
 
-  private static void propagateNonStaticness(Map<MethodSymbol, MethodDetails> nodes) {
+  private static void propagateNonStaticness(
+      Map<MethodSymbol, MethodDetails> nodes, VisitorState state) {
     for (Map.Entry<MethodSymbol, MethodDetails> entry : nodes.entrySet()) {
       MethodSymbol sym = entry.getKey();
       MethodDetails methodDetails = entry.getValue();
@@ -177,6 +181,12 @@ public class MethodCanBeStatic extends BugChecker implements CompilationUnitTree
       }
       toVisit = nextVisit;
     }
+
+    nodes.keySet().stream()
+        .flatMap(ms -> streamSuperMethods(ms, state.getTypes()))
+        .map(nodes::get)
+        .filter(Objects::nonNull)
+        .forEach(sms -> sms.couldPossiblyBeStatic = false);
   }
 
   private Description generateDescription(
@@ -224,7 +234,7 @@ public class MethodCanBeStatic extends BugChecker implements CompilationUnitTree
 
       private void fixQualifier(Tree tree, ExpressionTree qualifierExpression) {
         if (sym.equals(ASTHelpers.getSymbol(tree))) {
-          builder.replace(qualifierExpression, sym.owner.enclClass().getSimpleName().toString());
+          builder.replace(qualifierExpression, enclosingClass(sym).getSimpleName().toString());
         }
       }
     }.scan(state.getPath().getCompilationUnit(), null);
@@ -239,11 +249,11 @@ public class MethodCanBeStatic extends BugChecker implements CompilationUnitTree
     if (!ASTHelpers.canBeRemoved(sym, state) || ASTHelpers.shouldKeep(tree)) {
       return true;
     }
-    switch (sym.owner.enclClass().getNestingKind()) {
+    switch (enclosingClass(sym).getNestingKind()) {
       case TOP_LEVEL -> {}
       case MEMBER -> {
         if (!SourceVersion.supportsStaticInnerClass(state.context)
-            && sym.owner.enclClass().hasOuterInstance()) {
+            && enclosingClass(sym).hasOuterInstance()) {
           return true;
         }
       }

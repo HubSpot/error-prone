@@ -28,11 +28,11 @@ import static com.google.errorprone.util.ASTHelpers.findMatchingMethods;
 import static com.google.errorprone.util.ASTHelpers.getReceiverType;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
+import static com.google.errorprone.util.AnnotationNames.FORMAT_METHOD_ANNOTATION;
+import static com.google.errorprone.util.AnnotationNames.FORMAT_STRING_ANNOTATION;
 
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
-import com.google.errorprone.annotations.FormatMethod;
-import com.google.errorprone.annotations.FormatString;
 import com.google.errorprone.bugpatterns.BugChecker.LiteralTreeMatcher;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
@@ -42,7 +42,6 @@ import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.Tree;
-import com.sun.source.tree.Tree.Kind;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
@@ -67,7 +66,7 @@ public class OrphanedFormatString extends BugChecker implements LiteralTreeMatch
                       .forClass(TypePredicates.isDescendantOf(s -> s.getSymtab().throwableType)),
                   (tree, state) -> {
                     Symbol sym = getSymbol(tree);
-                    return sym instanceof MethodSymbol && !((MethodSymbol) sym).isVarArgs();
+                    return sym instanceof MethodSymbol methodSymbol && !methodSymbol.isVarArgs();
                   }),
               instanceMethod()
                   .onDescendantOfAny("java.io.PrintStream", "java.io.PrintWriter")
@@ -89,9 +88,10 @@ public class OrphanedFormatString extends BugChecker implements LiteralTreeMatch
                       && !findMatchingMethods(
                               getSymbol(t).name,
                               ms ->
-                                  hasAnnotation(ms, FormatMethod.class, s)
+                                  hasAnnotation(ms, FORMAT_METHOD_ANNOTATION, s)
                                       || ms.getParameters().stream()
-                                          .anyMatch(vs -> hasAnnotation(vs, FormatString.class, s)),
+                                          .anyMatch(
+                                              vs -> hasAnnotation(vs, FORMAT_STRING_ANNOTATION, s)),
                               getReceiverType(t),
                               s.getTypes())
                           .isEmpty()));
@@ -99,10 +99,10 @@ public class OrphanedFormatString extends BugChecker implements LiteralTreeMatch
   @Override
   public Description matchLiteral(LiteralTree tree, VisitorState state) {
     Object value = tree.getValue();
-    if (!(value instanceof String)) {
+    if (!(value instanceof String string)) {
       return NO_MATCH;
     }
-    if (!missingFormatArgs((String) value)) {
+    if (!missingFormatArgs(string)) {
       return NO_MATCH;
     }
     Tree methodInvocation = state.getPath().getParentPath().getLeaf();
@@ -112,8 +112,8 @@ public class OrphanedFormatString extends BugChecker implements LiteralTreeMatch
 
     // If someone has added new API methods to a subtype of the commonly-misused classes, we can
     // check to see if they made it @FormatMethod and the format-string slots in correctly.
-    if (methodInvocation.getKind() == Kind.METHOD_INVOCATION
-        && literalIsFormatMethodArg(tree, (MethodInvocationTree) methodInvocation, state)) {
+    if (methodInvocation instanceof MethodInvocationTree methodInvocationTree
+        && literalIsFormatMethodArg(tree, methodInvocationTree, state)) {
       return NO_MATCH;
     }
 
@@ -123,7 +123,7 @@ public class OrphanedFormatString extends BugChecker implements LiteralTreeMatch
   private static boolean literalIsFormatMethodArg(
       LiteralTree tree, MethodInvocationTree methodInvocationTree, VisitorState state) {
     MethodSymbol symbol = getSymbol(methodInvocationTree);
-    if (hasAnnotation(symbol, FormatMethod.class, state)) {
+    if (hasAnnotation(symbol, FORMAT_METHOD_ANNOTATION, state)) {
       int indexOfParam = findIndexOfFormatStringParameter(state, symbol);
       if (indexOfParam != -1) {
         List<? extends ExpressionTree> args = methodInvocationTree.getArguments();
@@ -142,7 +142,7 @@ public class OrphanedFormatString extends BugChecker implements LiteralTreeMatch
     List<VarSymbol> params = symbol.params();
     for (int i = 0; i < params.size(); i++) {
       VarSymbol varSymbol = params.get(i);
-      if (hasAnnotation(varSymbol, FormatString.class, state)) {
+      if (hasAnnotation(varSymbol, FORMAT_STRING_ANNOTATION, state)) {
         return i;
       }
       if (indexOfFirstString == -1

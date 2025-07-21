@@ -21,15 +21,17 @@ import static com.google.common.collect.MoreCollectors.onlyElement;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.util.ASTHelpers.enclosingPackage;
 import static com.google.errorprone.util.ASTHelpers.getReceiver;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.hasDirectAnnotationWithSimpleName;
+import static com.google.errorprone.util.ASTHelpers.requiresParentheses;
 import static com.google.errorprone.util.ASTHelpers.stringContainsComments;
 import static com.google.errorprone.util.MoreAnnotations.getValue;
 import static com.google.errorprone.util.SideEffectAnalysis.hasSideEffect;
+import static java.lang.String.format;
+import static java.util.stream.Collectors.joining;
 
-import com.google.auto.value.AutoValue;
-import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
@@ -42,24 +44,37 @@ import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.BugChecker.MemberReferenceTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.NewClassTreeMatcher;
+import com.google.errorprone.fixes.AppliedFix;
 import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.fixes.SuggestedFixes;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.util.MoreAnnotations;
+import com.google.errorprone.util.OperatorPrecedence;
+import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
+import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberReferenceTree;
+import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.UnaryTree;
+import com.sun.source.tree.VariableTree;
+import com.sun.source.util.TreePath;
+import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.code.Attribute;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
-import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
-import java.util.HashMap;
-import java.util.Map;
+import com.sun.tools.javac.parser.JavacParser;
+import com.sun.tools.javac.parser.ParserFactory;
+import com.sun.tools.javac.tree.EndPosTable;
+import com.sun.tools.javac.tree.JCTree;
+import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.function.BiConsumer;
 import java.util.stream.Stream;
 import javax.inject.Inject;
 
@@ -104,12 +119,10 @@ public final class Inliner extends BugChecker
     if (!hasDirectAnnotationWithSimpleName(symbol, INLINE_ME)) {
       return Description.NO_MATCH;
     }
-    ImmutableList<String> callingVars =
-        tree.getArguments().stream().map(state::getSourceForNode).collect(toImmutableList());
 
     String receiverString = "new " + state.getSourceForNode(tree.getIdentifier());
 
-    return match(tree, symbol, callingVars, receiverString, null, state);
+    return match(tree, symbol, tree.getArguments(), receiverString, null, state);
   }
 
   @Override
@@ -118,8 +131,6 @@ public final class Inliner extends BugChecker
     if (!hasDirectAnnotationWithSimpleName(symbol, INLINE_ME)) {
       return Description.NO_MATCH;
     }
-    ImmutableList<String> callingVars =
-        tree.getArguments().stream().map(state::getSourceForNode).collect(toImmutableList());
 
     String receiverString = "";
 
@@ -140,12 +151,8 @@ public final class Inliner extends BugChecker
       }
     }
 
-    return match(tree, symbol, callingVars, receiverString, receiver, state);
+    return match(tree, symbol, tree.getArguments(), receiverString, receiver, state);
   }
-
-  private static final Pattern MEMBER_REFERENCE_PATTERN =
-      Pattern.compile(
-          "(return\\b+)?((?<qualifier>[^\b]+)\\.)?(?<identifier>\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*)\\(\\)");
 
   @Override
   public Description matchMemberReference(MemberReferenceTree tree, VisitorState state) {
@@ -174,15 +181,14 @@ public final class Inliner extends BugChecker
         && stringContainsComments(state.getSourceForNode(tree), state.context)) {
       return Description.NO_MATCH;
     }
-    Matcher matcher = MEMBER_REFERENCE_PATTERN.matcher(inlineMe.replacement());
-    if (!matcher.matches()) {
+    JavacParser parser = newParser(inlineMe.replacement(), state);
+    if (!(parser.parseExpression() instanceof MethodInvocationTree mit
+        && mit.getArguments().isEmpty()
+        && getReceiver(mit) instanceof IdentifierTree it
+        && it.getName().contentEquals("this"))) {
       return Description.NO_MATCH;
     }
-    String qualifier = matcher.group("qualifier");
-    if (!qualifier.equals("this")) {
-      return Description.NO_MATCH;
-    }
-    String identifier = matcher.group("identifier");
+    String identifier = ((MemberSelectTree) mit.getMethodSelect()).getIdentifier().toString();
     SuggestedFix fix =
         SuggestedFix.replace(
             state.getEndPosition(tree.getQualifierExpression()),
@@ -194,7 +200,7 @@ public final class Inliner extends BugChecker
   private Description match(
       ExpressionTree tree,
       MethodSymbol symbol,
-      ImmutableList<String> callingVars,
+      List<? extends ExpressionTree> callingVars,
       String receiverString,
       ExpressionTree receiver,
       VisitorState state) {
@@ -212,23 +218,12 @@ public final class Inliner extends BugChecker
         && stringContainsComments(state.getSourceForNode(tree), state.context)) {
       return Description.NO_MATCH;
     }
-
-    SuggestedFix.Builder builder = SuggestedFix.builder();
-
-    Map<String, String> typeNames = new HashMap<>();
-    for (String newImport : inlineMe.get().imports()) {
-      String typeName = Iterables.getLast(PACKAGE_SPLITTER.split(newImport));
-      String qualifiedTypeName = SuggestedFixes.qualifyType(state, builder, newImport);
-      typeNames.put(typeName, qualifiedTypeName);
-    }
-    for (String newStaticImport : inlineMe.get().staticImports()) {
-      builder.addStaticImport(newStaticImport);
-    }
-
     ImmutableList<String> varNames =
         symbol.getParameters().stream()
             .map(varSymbol -> varSymbol.getSimpleName().toString())
             .collect(toImmutableList());
+
+    ImmutableList<String> callingVarStrings;
 
     boolean varargsWithEmptyArguments = false;
     if (symbol.isVarArgs()) {
@@ -236,31 +231,69 @@ public final class Inliner extends BugChecker
       // reasonable position. If there are 0 arguments, we'll need to do more surgery
       if (callingVars.size() == varNames.size() - 1) {
         varargsWithEmptyArguments = true;
+        callingVarStrings =
+            callingVars.stream().map(state::getSourceForNode).collect(toImmutableList());
       } else {
-        ImmutableList<String> nonvarargs = callingVars.subList(0, varNames.size() - 1);
+        List<? extends ExpressionTree> nonvarargs = callingVars.subList(0, varNames.size() - 1);
         String varargsJoined =
-            Joiner.on(", ").join(callingVars.subList(varNames.size() - 1, callingVars.size()));
-        callingVars =
+            callingVars.subList(varNames.size() - 1, callingVars.size()).stream()
+                .map(state::getSourceForNode)
+                .collect(joining(", "));
+        callingVarStrings =
             ImmutableList.<String>builderWithExpectedSize(varNames.size())
-                .addAll(nonvarargs)
+                .addAll(nonvarargs.stream().map(state::getSourceForNode).collect(toImmutableList()))
                 .add(varargsJoined)
                 .build();
       }
+    } else {
+      callingVarStrings =
+          callingVars.stream().map(state::getSourceForNode).collect(toImmutableList());
     }
 
     String replacement = inlineMe.get().replacement();
-    int replacementStart = ((DiagnosticPosition) tree).getStartPosition();
+
+    JavacParser parser = newParser(replacement, state);
+    ExpressionTree replacementExpression = parser.parseExpression();
+    SuggestedFix.Builder replacementFixes = SuggestedFix.builder();
+
+    SuggestedFix.Builder fixBuilder = SuggestedFix.builder();
+
+    for (String newImport : inlineMe.get().imports()) {
+      String typeName = Iterables.getLast(PACKAGE_SPLITTER.split(newImport));
+      String qualifiedTypeName = SuggestedFixes.qualifyType(state, fixBuilder, newImport);
+
+      visitIdentifiers(
+          replacementExpression,
+          (node, unused) -> {
+            if (node.getName().contentEquals(typeName)) {
+              replacementFixes.replace(node, qualifiedTypeName);
+            }
+          });
+    }
+    for (String newStaticImport : inlineMe.get().staticImports()) {
+      fixBuilder.addStaticImport(newStaticImport);
+    }
+
+    int replacementStart = getStartPosition(tree);
     int replacementEnd = state.getEndPosition(tree);
 
     // Special case replacements starting with "this." so the receiver portion is not included in
     // the replacement. This avoids overlapping replacement regions for fluent chains.
-    if (replacement.startsWith("this.") && receiver != null) {
+    boolean removedThisPrefix = replacement.startsWith("this.") && receiver != null;
+    if (removedThisPrefix) {
+      replacementFixes.replace(0, "this".length(), "");
       replacementStart = state.getEndPosition(receiver);
-      replacement = replacement.substring("this".length());
     }
 
     if (Strings.isNullOrEmpty(receiverString)) {
-      replacement = replacement.replaceAll("\\bthis\\.\\b", "");
+      visitIdentifiers(
+          replacementExpression,
+          (node, unused) -> {
+            if (node.getName().contentEquals("this")) {
+              replacementFixes.replace(
+                  getStartPosition(node), parser.getEndPos((JCTree) node) + 1, "");
+            }
+          });
     } else {
       if (replacement.equals("this")) { // e.g.: foo.b() -> foo
         Tree parent = state.getPath().getParentPath().getLeaf();
@@ -271,18 +304,15 @@ public final class Inliner extends BugChecker
           return describe(parent, SuggestedFix.delete(parent), api);
         }
       }
-      replacement = replacement.replaceAll("\\bthis\\b", receiverString);
-    }
-
-    // Qualify imports first, then replace parameter values to avoid clobbering source from the
-    // inlined method.
-    for (Map.Entry<String, String> typeName : typeNames.entrySet()) {
-      // TODO(b/189535612): we'll need to be smarter about our replacements (to avoid clobbering
-      // inline parameter comments like /* paramName= */
-      replacement =
-          replacement.replaceAll(
-              "\\b" + Pattern.quote(typeName.getKey()) + "\\b",
-              Matcher.quoteReplacement(typeName.getValue()));
+      visitIdentifiers(
+          replacementExpression,
+          (node, unused) -> {
+            if ((!removedThisPrefix || getStartPosition(node) != 0)
+                && node.getName().contentEquals("this")) {
+              replacementFixes.replace(
+                  getStartPosition(node), parser.getEndPos((JCTree) node), receiverString);
+            }
+          });
     }
 
     for (int i = 0; i < varNames.size(); i++) {
@@ -293,34 +323,138 @@ public final class Inliner extends BugChecker
         return Description.NO_MATCH;
       }
 
-      // The replacement logic below assumes the existence of another token after the parameter
-      // in the replacement string (ex: a trailing parens, comma, dot, etc.). However, in the case
-      // where the replacement is _just_ one parameter, there isn't a trailing token. We just make
-      // the direct replacement here.
-      if (replacement.equals(varName)) {
-        replacement = callingVars.get(i);
-        break;
-      }
-
       // Ex: foo(int a, int... others) -> this.bar(a, others)
       // If caller passes 0 args in the varargs position, we want to remove the preceding comma to
       // make this.bar(a) (as opposed to "this.bar(a, )"
       boolean terminalVarargsReplacement = varargsWithEmptyArguments && i == varNames.size() - 1;
-      String capturePrefixForVarargs = terminalVarargsReplacement ? "(?:,\\s*)?" : "\\b";
-      // We want to avoid replacing a method invocation with the same name as the method.
-      var extractArgAndNextToken =
-          Pattern.compile(capturePrefixForVarargs + Pattern.quote(varName) + "\\b([^(])");
-      String replacementResult =
-          Matcher.quoteReplacement(terminalVarargsReplacement ? "" : callingVars.get(i)) + "$1";
-      Matcher matcher = extractArgAndNextToken.matcher(replacement);
-      replacement = matcher.replaceAll(replacementResult);
+      String replacementResult = terminalVarargsReplacement ? "" : callingVarStrings.get(i);
+      boolean mayRequireParens =
+          i < callingVars.size() && requiresParentheses(callingVars.get(i), state);
+
+      visitIdentifiers(
+          replacementExpression,
+          (node, path) -> {
+            if (!node.getName().contentEquals(varName)) {
+              return;
+            }
+            // Substituting into a method invocation never requires parens.
+            boolean outerNeverRequiresParens =
+                path.size() < 2 || getArguments(path.get(path.size() - 2)).contains(node);
+            if (terminalVarargsReplacement) {
+              var calledMethodArguments = getArguments(path.get(path.size() - 2));
+              replacementFixes.replace(
+                  calledMethodArguments.indexOf(node) == 0
+                      ? getStartPosition(node)
+                      : parser.getEndPos(
+                          (JCTree)
+                              calledMethodArguments.get(calledMethodArguments.indexOf(node) - 1)),
+                  parser.getEndPos((JCTree) node),
+                  replacementResult);
+            } else {
+              replacementFixes.replace(
+                  node,
+                  !outerNeverRequiresParens && mayRequireParens
+                      ? "(" + replacementResult + ")"
+                      : replacementResult);
+            }
+          });
     }
 
-    builder.replace(replacementStart, replacementEnd, replacement);
+    String fixedReplacement =
+        AppliedFix.applyReplacements(replacement, asEndPosTable(parser), replacementFixes.build());
 
-    SuggestedFix fix = builder.build();
+    fixBuilder.replace(
+        replacementStart,
+        replacementEnd,
+        inliningRequiresParentheses(state.getPath(), replacementExpression)
+            ? format("(%s)", fixedReplacement)
+            : fixedReplacement);
 
-    return maybeCheckFixCompiles(tree, state, fix, api);
+    return maybeCheckFixCompiles(tree, state, fixBuilder.build(), api);
+  }
+
+  private static JavacParser newParser(String replacement, VisitorState state) {
+    return ParserFactory.instance(state.context)
+        .newParser(
+            replacement,
+            /* keepDocComments= */ true,
+            /* keepEndPos= */ true,
+            /* keepLineMap= */ true);
+  }
+
+  private static List<? extends ExpressionTree> getArguments(Tree tree) {
+    return switch (tree.getKind()) {
+      case METHOD_INVOCATION -> ((MethodInvocationTree) tree).getArguments();
+      case NEW_CLASS -> ((NewClassTree) tree).getArguments();
+      default -> ImmutableList.of();
+    };
+  }
+
+  /**
+   * Checks whether an expression requires parentheses when substituting in.
+   *
+   * <p>{@code treePath} is the original path including the old tree at the tip; {@code replacement}
+   * is the proposed replacement tree.
+   *
+   * <p>This was originally from {@link com.google.errorprone.util.ASTHelpers#requiresParentheses}
+   * but is heavily specialised for this use case.
+   */
+  private static boolean inliningRequiresParentheses(
+      TreePath treePath, ExpressionTree replacement) {
+    var originalExpression = treePath.getLeaf();
+    var parent = treePath.getParentPath().getLeaf();
+
+    Optional<OperatorPrecedence> replacementPrecedence =
+        OperatorPrecedence.optionallyFrom(replacement.getKind());
+    Optional<OperatorPrecedence> parentPrecedence =
+        OperatorPrecedence.optionallyFrom(parent.getKind());
+    if (replacementPrecedence.isPresent() && parentPrecedence.isPresent()) {
+      return parentPrecedence.get().isHigher(replacementPrecedence.get());
+    }
+
+    // There are some locations, based on the parent path, where we never want to parenthesise.
+    // This list is likely not exhaustive.
+    switch (parent.getKind()) {
+      case RETURN, EXPRESSION_STATEMENT -> {
+        return false;
+      }
+      case VARIABLE -> {
+        if (Objects.equals(((VariableTree) parent).getInitializer(), originalExpression)) {
+          return false;
+        }
+      }
+      case ASSIGNMENT -> {
+        if (((AssignmentTree) parent).getExpression().equals(originalExpression)) {
+          return false;
+        }
+      }
+      case METHOD_INVOCATION, NEW_CLASS -> {
+        if (getArguments(parent).contains(originalExpression)) {
+          return false;
+        }
+      }
+      default -> {
+        // continue below
+      }
+    }
+    switch (replacement.getKind()) {
+      case IDENTIFIER,
+          MEMBER_SELECT,
+          METHOD_INVOCATION,
+          ARRAY_ACCESS,
+          PARENTHESIZED,
+          NEW_CLASS,
+          MEMBER_REFERENCE -> {
+        return false;
+      }
+      default -> {
+        // continue below
+      }
+    }
+    if (replacement instanceof UnaryTree) {
+      return parent instanceof MemberSelectTree;
+    }
+    return true;
   }
 
   private Description maybeCheckFixCompiles(
@@ -335,6 +469,30 @@ public final class Inliner extends BugChecker
     return describe(tree, fix, api);
   }
 
+  private static void visitIdentifiers(
+      Tree tree, BiConsumer<IdentifierTree, List<Tree>> identifierConsumer) {
+    new TreeScanner<Void, Void>() {
+      // It'd be nice to use a TreePathScanner, but we don't have CompilationUnit-rooted AST.
+      private final List<Tree> path = new ArrayList<>();
+
+      @Override
+      public Void scan(Tree tree, Void unused) {
+        if (tree != null) {
+          path.add(tree);
+          super.scan(tree, null);
+          path.remove(path.size() - 1);
+        }
+        return null;
+      }
+
+      @Override
+      public Void visitIdentifier(IdentifierTree node, Void unused) {
+        identifierConsumer.accept(node, path);
+        return super.visitIdentifier(node, null);
+      }
+    }.scan(tree, null);
+  }
+
   private static ImmutableList<String> getStrings(Attribute.Compound attribute, String name) {
     return getValue(attribute, name)
         .map(MoreAnnotations::asStrings)
@@ -346,8 +504,13 @@ public final class Inliner extends BugChecker
     return buildDescription(tree).setMessage(api.message()).addFix(fix).build();
   }
 
-  @AutoValue
-  abstract static class Api {
+  private record Api(
+      String className,
+      String methodName,
+      String packageName,
+      boolean isConstructor,
+      boolean isDeprecated,
+      String extraMessage) {
     private static final Splitter CLASS_NAME_SPLITTER = Splitter.on('.');
 
     static Api create(MethodSymbol method, VisitorState state) {
@@ -360,7 +523,7 @@ public final class Inliner extends BugChecker
         String reason = Iterables.getOnlyElement(getStrings(inlineMeValidationDisabled, "value"));
         extraMessage = " NOTE: this is an unvalidated inlining! Reasoning: " + reason;
       }
-      return new AutoValue_Inliner_Api(
+      return new Api(
           method.owner.getQualifiedName().toString(),
           method.getSimpleName().toString(),
           enclosingPackage(method).toString(),
@@ -368,18 +531,6 @@ public final class Inliner extends BugChecker
           hasAnnotation(method, "java.lang.Deprecated", state),
           extraMessage);
     }
-
-    abstract String className();
-
-    abstract String methodName();
-
-    abstract String packageName();
-
-    abstract boolean isConstructor();
-
-    abstract boolean isDeprecated();
-
-    abstract String extraMessage();
 
     final String message() {
       return "Migrate (via inlining) away from "
@@ -391,7 +542,7 @@ public final class Inliner extends BugChecker
 
     /** Returns {@code FullyQualifiedClassName#methodName}. */
     final String methodId() {
-      return String.format("%s#%s", className(), methodName());
+      return format("%s#%s", className(), methodName());
     }
 
     /**
@@ -400,7 +551,7 @@ public final class Inliner extends BugChecker
      */
     final String shortName() {
       String humanReadableClassName = className().replaceFirst(packageName() + ".", "");
-      return String.format("`%s.%s()`", humanReadableClassName, methodName());
+      return format("`%s.%s()`", humanReadableClassName, methodName());
     }
 
     /** Returns the simple class name (e.g., {@code ClassName}). */
@@ -419,5 +570,17 @@ public final class Inliner extends BugChecker
       }
     }
     return false;
+  }
+
+  private static EndPosTable asEndPosTable(JavacParser parser) {
+    return (EndPosTable)
+        Proxy.newProxyInstance(
+            EndPosTable.class.getClassLoader(),
+            new Class<?>[] {EndPosTable.class},
+            (proxy, method, args) ->
+                switch (method.getName()) {
+                  case "getEndPos" -> parser.getEndPos((JCTree) args[0]);
+                  default -> throw new AssertionError("Unexpected method: " + method.getName());
+                });
   }
 }

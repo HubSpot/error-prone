@@ -17,7 +17,6 @@
 package com.google.errorprone.bugpatterns;
 
 import com.google.errorprone.CompilationTestHelper;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -28,12 +27,8 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 public class EmptyCatchTest {
 
-  private CompilationTestHelper compilationHelper;
-
-  @Before
-  public void setUp() {
-    compilationHelper = CompilationTestHelper.newInstance(EmptyCatch.class, getClass());
-  }
+  private final CompilationTestHelper compilationHelper =
+      CompilationTestHelper.newInstance(EmptyCatch.class, getClass());
 
   @Test
   public void positiveCase() throws Exception {
@@ -85,7 +80,6 @@ public class EmptyCatchTest {
             "EmptyCatchNegativeCases.java",
             """
             package com.google.errorprone.bugpatterns;
-
 
             import java.io.FileNotFoundException;
 
@@ -194,7 +188,7 @@ public class EmptyCatchTest {
                   System.out.println("Caught an exception: " + t);
                 }
               }
-            }\
+            }
             """)
         .doTest();
   }
@@ -219,7 +213,7 @@ public class EmptyCatchTest {
               public void testNG() {
                 try {
                   System.err.println();
-                // BUG: Diagnostic contains:
+                  // BUG: Diagnostic contains:
                 } catch (Exception doNotCare) {
                 }
               }

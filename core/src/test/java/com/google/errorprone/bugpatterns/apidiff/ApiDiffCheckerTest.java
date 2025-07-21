@@ -66,7 +66,8 @@ public class ApiDiffCheckerTest {
   @Target({ANNOTATION_TYPE, CONSTRUCTOR, FIELD, METHOD, TYPE})
   public @interface RequiresNewApiVersion {}
 
-  private final CompilationTestHelper compilationHelper;
+  private final CompilationTestHelper compilationHelper =
+      CompilationTestHelper.newInstance(AnnotationOnlyApiDiffChecker.class, getClass());
 
   /** An {@link ApiDiffChecker} for testing. */
   @BugPattern(name = "SampleChecker", severity = SeverityLevel.ERROR, summary = "")
@@ -86,11 +87,6 @@ public class ApiDiffCheckerTest {
     public AnnotationOnlyApiDiffChecker() {
       super(ApiDiff.fromProto(Diff.getDefaultInstance()), RequiresNewApiVersion.class);
     }
-  }
-
-  public ApiDiffCheckerTest() {
-    compilationHelper =
-        CompilationTestHelper.newInstance(AnnotationOnlyApiDiffChecker.class, getClass());
   }
 
   @Test
@@ -477,7 +473,7 @@ public class ApiDiffCheckerTest {
     compilationHelper
         .addSourceLines(
             "Lib.java",
-            """
+"""
 package my.lib;
 
 import com.google.errorprone.bugpatterns.apidiff.ApiDiffCheckerTest.RequiresNewApiVersion;
@@ -503,7 +499,7 @@ public final class Lib {}
     compilationHelper
         .addSourceLines(
             "Lib.java",
-            """
+"""
 package my.lib;
 
 import com.google.errorprone.bugpatterns.apidiff.ApiDiffCheckerTest.RequiresNewApiVersion;
@@ -513,7 +509,7 @@ public final class Lib {}
 """)
         .addSourceLines(
             "Test.java",
-            """
+"""
 import com.google.errorprone.bugpatterns.apidiff.ApiDiffCheckerTest.RequiresNewApiVersion;
 import my.lib.Lib;
 
@@ -529,7 +525,7 @@ class Test {
     compilationHelper
         .addSourceLines(
             "Lib.java",
-            """
+"""
 package my.lib;
 
 import com.google.errorprone.bugpatterns.apidiff.ApiDiffCheckerTest.RequiresNewApiVersion;
@@ -559,7 +555,7 @@ public final class Lib {
     compilationHelper
         .addSourceLines(
             "Lib.java",
-            """
+"""
 package my.lib;
 
 import com.google.errorprone.bugpatterns.apidiff.ApiDiffCheckerTest.RequiresNewApiVersion;

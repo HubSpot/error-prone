@@ -547,7 +547,7 @@ public class MethodCanBeStaticTest {
     testHelper
         .addSourceLines(
             "Test.java",
-            """
+"""
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.ObjectStreamException;
@@ -677,6 +677,56 @@ class Test implements Serializable {
             class Test {
               @org.apache.beam.sdk.transforms.DoFn.ProcessElement
               private void foo() {}
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void privateMethod_overriddenWithinFile_cannotBeStatic() {
+    testHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              private static class A {
+                public int get() {
+                  return 0;
+                }
+              }
+
+              private static class B extends A {
+                private final int x = 1;
+
+                @Override
+                public int get() {
+                  return x;
+                }
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void privateMethod_overriddenWithinFile_bothDoNotReferenceInstanceState_cannotBeStatic() {
+    testHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              private static class A {
+                public int get() {
+                  return 0;
+                }
+              }
+
+              private static class B extends A {
+                @Override
+                public int get() {
+                  return 1;
+                }
+              }
             }
             """)
         .doTest();

@@ -137,11 +137,9 @@ public class CompileTimeConstantChecker extends BugChecker
    * non-final. Suggest making it final in the error message.
    */
   private Description handleMatch(ExpressionTree actualParam, VisitorState state) {
-    Symbol sym = ASTHelpers.getSymbol(actualParam);
-    if (!(sym instanceof VarSymbol)) {
+    if (!(ASTHelpers.getSymbol(actualParam) instanceof VarSymbol var)) {
       return describeMatch(actualParam);
     }
-    VarSymbol var = (VarSymbol) sym;
     if (!hasCompileTimeConstantAnnotation(state, var)) {
       return describeMatch(actualParam);
     }
@@ -213,6 +211,7 @@ public class CompileTimeConstantChecker extends BugChecker
       case FIELD:
         break; // continue below
       case LOCAL_VARIABLE: // disallowed by @Target meta-annotation
+      case BINDING_VARIABLE:
       default: // impossible
         throw new AssertionError(symbol.getKind());
     }

@@ -49,8 +49,6 @@ import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.hasDirectAnnotationWithSimpleName;
 import static com.google.errorprone.util.ASTHelpers.isGeneratedConstructor;
-import static com.google.errorprone.util.ASTHelpers.isLocal;
-import static com.sun.source.tree.Tree.Kind.METHOD;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -202,8 +200,8 @@ public class CheckReturnValue extends AbstractReturnValueIgnored
     // corresponding constructor of the supertype (e.g.: if I extend a class with a @CIRV
     // constructor that I delegate to, then my anonymous class's constructor should *also* be
     // considered @CIRV).
-    if (tree instanceof NewClassTree) {
-      ClassTree anonymousClazz = ((NewClassTree) tree).getClassBody();
+    if (tree instanceof NewClassTree newClassTree) {
+      ClassTree anonymousClazz = newClassTree.getClassBody();
       if (anonymousClazz != null) {
         // There should be a single defined constructor in the anonymous class body
         var constructor =
@@ -228,7 +226,7 @@ public class CheckReturnValue extends AbstractReturnValueIgnored
 
   private static Optional<MethodSymbol> methodSymbol(ExpressionTree tree) {
     Symbol sym = ASTHelpers.getSymbol(tree);
-    return sym instanceof MethodSymbol ? Optional.of((MethodSymbol) sym) : Optional.empty();
+    return sym instanceof MethodSymbol methodSymbol ? Optional.of(methodSymbol) : Optional.empty();
   }
 
   @Override
@@ -380,8 +378,11 @@ public class CheckReturnValue extends AbstractReturnValueIgnored
   }
 
   private String apiTrailer(MethodSymbol symbol, VisitorState state) {
-    // (isLocal returns true for both local classes and anonymous classes. That's good for us.)
-    if (isLocal(enclosingClass(symbol))) {
+    /*
+     * (isDirectlyOrIndirectlyLocal returns true for both local classes and anonymous classes.
+     * That's good for us.)
+     */
+    if (enclosingClass(symbol).isDirectlyOrIndirectlyLocal()) {
       /*
        * We don't have a defined format for members of local and anonymous classes. After all, their
        * generated class names can change easily as other such classes are introduced.
@@ -424,8 +425,8 @@ public class CheckReturnValue extends AbstractReturnValueIgnored
     // Skip fields declared in other compilation units since we can't make a fix for them here.
     if (declPath != null
         && declPath.getCompilationUnit() == state.getPath().getCompilationUnit()
-        && (declPath.getLeaf().getKind() == METHOD)) {
-      return (MethodTree) declPath.getLeaf();
+        && declPath.getLeaf() instanceof MethodTree methodTree) {
+      return methodTree;
     }
     return null;
   }

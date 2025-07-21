@@ -16,14 +16,15 @@
 
 package com.google.errorprone.bugpatterns.threadsafety;
 
+import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.isStatic;
+import static com.google.errorprone.util.AnnotationNames.LAZY_INIT_ANNOTATION;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.annotations.CheckReturnValue;
 import com.google.errorprone.annotations.ImmutableTypeParameter;
-import com.google.errorprone.annotations.concurrent.LazyInit;
 import com.google.errorprone.bugpatterns.threadsafety.ThreadSafety.Purpose;
 import com.google.errorprone.bugpatterns.threadsafety.ThreadSafety.Violation;
 import com.google.errorprone.fixes.SuggestedFix;
@@ -229,8 +230,7 @@ public final class ImmutableAnalysis {
     // javac gives us members in reverse declaration order
     // handling them in declaration order leads to marginally better diagnostics
     ImmutableList<Symbol> members =
-        ImmutableList.copyOf(ASTHelpers.scope(classSym.members()).getSymbols(instanceFieldFilter))
-            .reverse();
+        ImmutableList.copyOf(classSym.members().getSymbols(instanceFieldFilter)).reverse();
     for (Symbol member : members) {
       Optional<Tree> memberTree = Optional.ofNullable(declarations.get(member));
       Violation info =
@@ -255,7 +255,7 @@ public final class ImmutableAnalysis {
       return Violation.absent();
     }
     if (!var.getModifiers().contains(Modifier.FINAL)
-        && !ASTHelpers.hasAnnotation(var, LazyInit.class, state)) {
+        && !hasAnnotation(var, LAZY_INIT_ANNOTATION, state)) {
 
       Violation info =
           Violation.of(

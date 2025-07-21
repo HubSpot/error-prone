@@ -126,7 +126,7 @@ public class ThreeLetterTimeZoneID extends BugChecker implements MethodInvocatio
   }
 
   // American time zones for which the TLA doesn't observe daylight savings.
-  // http://www-01.ibm.com/support/docview.wss?uid=swg21250503#3char
+  // https://www-01.ibm.com/support/docview.wss?uid=swg21250503#3char
   // How we handle it depends upon whether we are in a JodaTime context or not.
   static Replacement handleNonDaylightSavingsZone(
       boolean inJodaTimeContext, String daylightSavingsZone, String fixedOffset, String message) {
@@ -165,8 +165,8 @@ public class ThreeLetterTimeZoneID extends BugChecker implements MethodInvocatio
   private static boolean isInJodaTimeContext(VisitorState state) {
     if (state.getPath().getParentPath() != null) {
       Tree parentLeaf = state.getPath().getParentPath().getLeaf();
-      if (parentLeaf instanceof ExpressionTree
-          && JODATIME_METHOD_MATCHER.matches((ExpressionTree) parentLeaf, state)) {
+      if (parentLeaf instanceof ExpressionTree expressionTree
+          && JODATIME_METHOD_MATCHER.matches(expressionTree, state)) {
         return true;
       }
     }

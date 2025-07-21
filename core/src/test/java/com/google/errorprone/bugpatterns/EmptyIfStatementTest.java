@@ -31,6 +31,7 @@ public class EmptyIfStatementTest {
       CompilationTestHelper.newInstance(EmptyIfStatement.class, getClass());
 
   @Test
+  @SuppressWarnings("MisformattedTestData") // intentional
   public void positiveCase() {
     compilationHelper
         .addSourceLines(
@@ -97,6 +98,7 @@ public class EmptyIfStatementTest {
             "EmptyIfStatementNegativeCases.java",
             """
             package com.google.errorprone.bugpatterns.testdata;
+
             /**
              * @author eaftan@google.com (Eddie Aftandilian)
              */
@@ -130,7 +132,7 @@ public class EmptyIfStatementTest {
                   ;
                 else System.out.println("not 10, 11, or 12");
               }
-            }\
+            }
             """)
         .doTest();
   }

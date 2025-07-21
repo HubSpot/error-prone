@@ -19,7 +19,7 @@ package com.google.errorprone.bugpatterns;
 import static com.google.errorprone.BugPattern.SeverityLevel.ERROR;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.util.ASTHelpers.getType;
-import static com.google.errorprone.util.ASTHelpers.hasExplicitSource;
+import static com.google.errorprone.util.ASTHelpers.hasImplicitType;
 import static com.google.errorprone.util.ASTHelpers.isSameType;
 
 import com.google.common.math.IntMath;
@@ -95,10 +95,10 @@ public class ConstantOverflow extends BugChecker implements BinaryTreeMatcher {
     }
     SuggestedFix.Builder fix = SuggestedFix.builder().postfixWith(expr, "L");
     Tree parent = state.getPath().getParentPath().getLeaf();
-    if (parent instanceof VariableTree && isSameType(getType(parent), intType, state)) {
-      Tree type = ((VariableTree) parent).getType();
-      if (hasExplicitSource(type, state)) {
-        fix.replace(type, "long");
+    if (parent instanceof VariableTree variableTree
+        && isSameType(getType(parent), intType, state)) {
+      if (!hasImplicitType(variableTree, state)) {
+        fix.replace(variableTree.getType(), "long");
       }
     }
     return fix.build();
@@ -173,10 +173,10 @@ public class ConstantOverflow extends BugChecker implements BinaryTreeMatcher {
           if (value == null) {
             return null;
           }
-          if (!(node.getType() instanceof PrimitiveTypeTree)) {
+          if (!(node.getType() instanceof PrimitiveTypeTree primitiveTypeTree)) {
             return null;
           }
-          TypeKind kind = ((PrimitiveTypeTree) node.getType()).getPrimitiveTypeKind();
+          TypeKind kind = primitiveTypeTree.getPrimitiveTypeKind();
           return cast(kind, value);
         }
 

@@ -101,7 +101,7 @@ public abstract class AbstractUseSwitch extends BugChecker implements IfTreeMatc
 
   @Override
   public Description matchIf(IfTree tree, VisitorState state) {
-    if (state.getPath().getParentPath().getLeaf().getKind() == Kind.IF) {
+    if (state.getPath().getParentPath().getLeaf() instanceof IfTree) {
       return NO_MATCH;
     }
     List<String> stringConstants = new ArrayList<>();
@@ -124,10 +124,9 @@ public abstract class AbstractUseSwitch extends BugChecker implements IfTreeMatc
       } else {
         return NO_MATCH;
       }
-      if (!(lhs instanceof IdentifierTree)) {
+      if (!(lhs instanceof IdentifierTree identifierTree)) {
         return NO_MATCH;
       }
-      IdentifierTree identifierTree = (IdentifierTree) lhs;
       if (var == null) {
         var = identifierTree;
         // This is the first if block, and identifierTree is the string variable
@@ -143,7 +142,7 @@ public abstract class AbstractUseSwitch extends BugChecker implements IfTreeMatc
         return NO_MATCH;
       }
       stringConstants.add(expressionForCase);
-      if (ifTree.getThenStatement().getKind() == Kind.BLOCK) {
+      if (ifTree.getThenStatement() instanceof BlockTree) {
         branches.add((JCBlock) ifTree.getThenStatement());
       } else {
         TreeMaker maker = TreeMaker.instance(state.context);
@@ -154,9 +153,7 @@ public abstract class AbstractUseSwitch extends BugChecker implements IfTreeMatc
       statementTree = ifTree.getElseStatement();
     } while (statementTree instanceof IfTree);
     Optional<JCBlock> defaultBranch =
-        (statementTree instanceof JCBlock)
-            ? Optional.of((JCBlock) statementTree)
-            : Optional.absent();
+        statementTree instanceof JCBlock jCBlock ? Optional.of(jCBlock) : Optional.absent();
     if (stringConstants.size() + defaultBranch.asSet().size() < MIN_BRANCHES) {
       return NO_MATCH;
     }

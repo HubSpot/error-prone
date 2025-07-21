@@ -154,8 +154,8 @@ public class DoubleBraceInitialization extends BugChecker implements NewClassTre
                   && symbol.getModifiers().contains(Modifier.FINAL)
                   && symbol.getKind() == ElementKind.FIELD;
         }
-        if (enclosing instanceof ReturnTree) {
-          toReplace = ((ReturnTree) enclosing).getExpression();
+        if (enclosing instanceof ReturnTree returnTree) {
+          toReplace = returnTree.getExpression();
           MethodTree enclosingMethod = ASTHelpers.findEnclosingNode(path, MethodTree.class);
           typeTree = enclosingMethod == null ? null : enclosingMethod.getReturnType();
         }
@@ -166,11 +166,10 @@ public class DoubleBraceInitialization extends BugChecker implements NewClassTre
       String replacement;
       if (immutableType.equals("ImmutableMap") && args.size() > 5) {
         String typeArguments =
-            tree.getIdentifier() instanceof ParameterizedTypeTree
-                ? ((ParameterizedTypeTree) tree.getIdentifier())
-                    .getTypeArguments().stream()
-                        .map(state::getSourceForNode)
-                        .collect(joining(", ", "<", ">"))
+            tree.getIdentifier() instanceof ParameterizedTypeTree parameterizedTypeTree
+                ? parameterizedTypeTree.getTypeArguments().stream()
+                    .map(state::getSourceForNode)
+                    .collect(joining(", ", "<", ">"))
                 : "";
         replacement =
             "ImmutableMap."
@@ -187,8 +186,8 @@ public class DoubleBraceInitialization extends BugChecker implements NewClassTre
       if (unmodifiable != null || constant) {
         // there's an enclosing unmodifiable* call, or we're in the initializer of a constant,
         // so rewrite the variable's type to be immutable and drop the unmodifiable* method
-        if (typeTree instanceof ParameterizedTypeTree) {
-          typeTree = ((ParameterizedTypeTree) typeTree).getType();
+        if (typeTree instanceof ParameterizedTypeTree parameterizedTypeTree) {
+          typeTree = parameterizedTypeTree.getType();
         }
         if (typeTree != null) {
           fix.replace(typeTree, immutableType);
@@ -216,16 +215,16 @@ public class DoubleBraceInitialization extends BugChecker implements NewClassTre
         body.getMembers().stream()
             .filter(
                 m ->
-                    !(m instanceof MethodTree && ASTHelpers.isGeneratedConstructor((MethodTree) m)))
+                    !(m instanceof MethodTree methodTree
+                        && ASTHelpers.isGeneratedConstructor(methodTree)))
             .collect(toImmutableList());
     if (members.size() != 1) {
       return NO_MATCH;
     }
     Tree member = Iterables.getOnlyElement(members);
-    if (!(member instanceof BlockTree)) {
+    if (!(member instanceof BlockTree block)) {
       return NO_MATCH;
     }
-    BlockTree block = (BlockTree) member;
     Optional<CollectionTypes> collectionType =
         Arrays.stream(CollectionTypes.values())
             .filter(type -> type.constructorMatcher.matches(tree, state))

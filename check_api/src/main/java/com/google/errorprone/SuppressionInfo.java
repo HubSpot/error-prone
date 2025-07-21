@@ -69,8 +69,8 @@ public class SuppressionInfo {
     this.inGeneratedCode = inGeneratedCode;
   }
 
-  private static boolean isGenerated(Symbol sym, VisitorState state) {
-    return !ASTHelpers.getGeneratedBy(sym, state).isEmpty();
+  private static boolean isGenerated(Symbol sym) {
+    return !ASTHelpers.getGeneratedBy(sym).isEmpty();
   }
 
   /**
@@ -121,7 +121,7 @@ public class SuppressionInfo {
       @Override
       public Void visitClass(ClassTree node, Void unused) {
         ClassSymbol symbol = ASTHelpers.getSymbol(node);
-        generated.compareAndSet(false, symbol != null && isGenerated(symbol, state));
+        generated.compareAndSet(false, symbol != null && isGenerated(symbol));
         return null;
       }
     }.visit(tree.getTypeDecls(), null);
@@ -149,7 +149,7 @@ public class SuppressionInfo {
     if (HubSpotUtils.isGeneratedCodeInspectionEnabled(state)) {
       newInGeneratedCode = inGeneratedCode || HubSpotUtils.isGenerated(state);
     } else {
-      newInGeneratedCode = inGeneratedCode || isGenerated(sym, state);
+      newInGeneratedCode = inGeneratedCode || isGenerated(sym);
     }
 
     boolean anyModification = newInGeneratedCode != inGeneratedCode;
@@ -178,8 +178,8 @@ public class SuppressionInfo {
         for (Pair<MethodSymbol, Attribute> value : attr.values) {
           if (value.fst.name.equals(valueName)) {
             if (value.snd
-                instanceof Attribute.Array) { // SuppressWarnings/SuppressLint take an array
-              for (Attribute suppress : ((Attribute.Array) value.snd).values) {
+                instanceof Attribute.Array array) { // SuppressWarnings/SuppressLint take an array
+              for (Attribute suppress : array.values) {
                 String suppressedWarning = (String) suppress.getValue();
                 if (!suppressWarningsStrings.contains(suppressedWarning)) {
                   anyModification = true;

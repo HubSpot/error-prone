@@ -16,6 +16,7 @@
 
 package com.google.errorprone.bugpatterns;
 
+import static com.google.common.truth.TruthJUnit.assume;
 import static com.google.errorprone.BugCheckerRefactoringTestHelper.TestMode.TEXT_MATCH;
 
 import com.google.errorprone.BugCheckerRefactoringTestHelper;
@@ -30,10 +31,12 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   private final CompilationTestHelper compilationHelper =
       CompilationTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass());
+  private final BugCheckerRefactoringTestHelper refactoringTestHelper =
+      BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass());
 
   @Test
   public void switchCannotComplete() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "in/Test.java",
             """
@@ -84,7 +87,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void switchCannotCompleteUnrecognized() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "in/Test.java",
             """
@@ -139,7 +142,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void emptyDefault() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "in/Test.java",
             """
@@ -188,7 +191,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void emptyDefaultUnrecognized() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "in/Test.java",
             """
@@ -241,7 +244,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void defaultBreak() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "in/Test.java",
             """
@@ -291,7 +294,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void defaultBreakUnrecognized() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "in/Test.java",
             """
@@ -345,7 +348,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void completes_noUnassignedVars_priorCaseExits() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "in/Test.java",
             """
@@ -397,7 +400,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void completes_noUnassignedVars_priorCaseExitsUnrecognized() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "in/Test.java",
             """
@@ -453,7 +456,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void completes_noUnassignedVars_priorCaseDoesntExit() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "in/Test.java",
             """
@@ -506,7 +509,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void completes_noUnassignedVars_priorCaseDoesntExitUnrecognized() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "in/Test.java",
             """
@@ -656,7 +659,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void notExhaustiveUnrecognized() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "Test.java",
             """
@@ -705,7 +708,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void notExhaustive2() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "Test.java",
             """
@@ -762,7 +765,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void notExhaustive2Unrecognized() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "Test.java",
             """
@@ -822,8 +825,146 @@ public class UnnecessaryDefaultInEnumSwitchTest {
   }
 
   @Test
+  public void defaultForSkew_switchStatement() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                THREE
+              }
+
+              boolean m(Case c) {
+                switch (c) {
+                  case ONE:
+                  case TWO:
+                  case THREE:
+                    return true;
+                  default: // in case of library skew
+                    return false;
+                }
+              }
+
+              boolean o(Case c) {
+                switch (c) {
+                  // in case of library skew
+                  default:
+                    return false;
+                  case ONE:
+                  case TWO:
+                  case THREE:
+                    return true;
+                }
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void defaultForSkew_switchStatement_body() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                THREE
+              }
+
+              boolean m(Case c) {
+                switch (c) {
+                  case ONE, TWO, THREE -> {
+                    return true;
+                  }
+                  // in case of library skew
+                  default -> {
+                    return false;
+                  }
+                }
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void defaultForSkew_switchStatement_noFollowingStatement() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                THREE
+              }
+
+              void m(Case c) {
+                switch (c) {
+                  case ONE:
+                  case TWO:
+                  case THREE:
+                    break;
+                  default: // skew
+                }
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void defaultForSkew_switchExpression() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                THREE
+              }
+
+              void m(Case c) {
+                boolean unused;
+                unused =
+                    switch (c) {
+                      case ONE, TWO -> true;
+                      case THREE -> false;
+                      // present for skew
+                      default -> false;
+                    };
+                unused =
+                    switch (c) {
+                      case ONE, TWO -> true;
+                      case THREE -> false;
+                      default -> // present for skew
+                          false;
+                    };
+                unused =
+                    switch (c) {
+                      // present for skew
+                      default -> false;
+                      case ONE, TWO -> true;
+                      case THREE -> false;
+                    };
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
   public void unrecognizedIgnore() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "Test.java",
             """
@@ -850,7 +991,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void defaultAboveCaseUnrecognized() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "in/Test.java",
             """
@@ -958,7 +1099,7 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void switchCompletesUnrecognized() {
-    BugCheckerRefactoringTestHelper.newInstance(UnnecessaryDefaultInEnumSwitch.class, getClass())
+    refactoringTestHelper
         .addInputLines(
             "in/Test.java",
             """
@@ -1058,8 +1199,8 @@ public class UnnecessaryDefaultInEnumSwitchTest {
 
   @Test
   public void defaultCaseKindRule() {
-    compilationHelper
-        .addSourceLines(
+    refactoringTestHelper
+        .addInputLines(
             "Test.java",
             """
             class Test {
@@ -1072,8 +1213,24 @@ public class UnnecessaryDefaultInEnumSwitchTest {
                 switch (c) {
                   case ONE -> {}
                   case TWO -> {}
-                  // BUG: Diagnostic contains: UnnecessaryDefaultInEnumSwitch
                   default -> {}
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO
+              }
+
+              void m(Case c) {
+                switch (c) {
+                  case ONE -> {}
+                  case TWO -> {}
                 }
               }
             }
@@ -1082,9 +1239,39 @@ public class UnnecessaryDefaultInEnumSwitchTest {
   }
 
   @Test
-  public void unrecognizedCaseKindRule() {
+  public void defaultCaseKindRule_initialisation() {
     compilationHelper
         .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO
+              }
+
+              void m(Case c) {
+                int x;
+                switch (c) {
+                  case ONE -> x = 1;
+                  case TWO -> x = 2;
+                  // Removing this would not compile.
+                  default -> throw new AssertionError();
+                }
+                System.out.println(x);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void unrecognizedCaseKindRule() {
+    // NOTE(ghm): This test is unhappy on 17 for test frameworky reasons.
+    assume().that(Runtime.version().feature()).isAtLeast(21);
+
+    refactoringTestHelper
+        .addInputLines(
             "Test.java",
             """
             class Test {
@@ -1098,8 +1285,26 @@ public class UnnecessaryDefaultInEnumSwitchTest {
                 switch (c) {
                   case ONE -> {}
                   case TWO -> {}
-                  // BUG: Diagnostic contains: UnnecessaryDefaultInEnumSwitch
                   default -> {}
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                UNRECOGNIZED
+              }
+
+              void m(Case c) {
+                switch (c) {
+                  case ONE -> {}
+                  case TWO -> {}
+                  case UNRECOGNIZED -> {}
                 }
               }
             }
@@ -1108,9 +1313,37 @@ public class UnnecessaryDefaultInEnumSwitchTest {
   }
 
   @Test
-  public void multipleLabels() {
+  public void unrecognizedCaseKindRule_initialization() {
     compilationHelper
         .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                UNRECOGNIZED
+              }
+
+              void m(Case c) {
+                int x;
+                switch (c) {
+                  case ONE -> x = 1;
+                  case TWO -> x = 2;
+                  // Removing this would not compile.
+                  default -> throw new AssertionError();
+                }
+                System.out.println(x);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void multipleLabels() {
+    refactoringTestHelper
+        .addInputLines(
             "Test.java",
             """
             class Test {
@@ -1127,9 +1360,114 @@ public class UnnecessaryDefaultInEnumSwitchTest {
                     System.out.println("Hi foo");
                   }
                   case BAR, BAZ -> {}
-                  // BUG: Diagnostic contains: UnnecessaryDefaultInEnumSwitch
                   default -> throw new AssertionError(type);
                 }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              enum Type {
+                FOO,
+                BAR,
+                BAZ,
+              }
+
+              public static void main(String[] args) {
+                var type = Type.valueOf(args[0]);
+                switch (type) {
+                  case FOO -> {
+                    System.out.println("Hi foo");
+                  }
+                  case BAR, BAZ -> {}
+                }
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void expressionSwitch() {
+    refactoringTestHelper
+        .addInputLines(
+            "in/Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+              }
+
+              boolean m(Case c) {
+                return switch (c) {
+                  case ONE -> true;
+                  case TWO -> false;
+                  default -> throw new AssertionError();
+                };
+              }
+            }
+            """)
+        .addOutputLines(
+            "out/Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+              }
+
+              boolean m(Case c) {
+                return switch (c) {
+                  case ONE -> true;
+                  case TWO -> false;
+                };
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void expressionSwitchUnrecognized() {
+    refactoringTestHelper
+        .addInputLines(
+            "in/Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                UNRECOGNIZED
+              }
+
+              boolean m(Case c) {
+                return switch (c) {
+                  case ONE -> true;
+                  case TWO -> false;
+                  default -> throw new AssertionError();
+                };
+              }
+            }
+            """)
+        .addOutputLines(
+            "out/Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                UNRECOGNIZED
+              }
+
+              boolean m(Case c) {
+                return switch (c) {
+                  case ONE -> true;
+                  case TWO -> false;
+                  case UNRECOGNIZED -> throw new AssertionError();
+                };
               }
             }
             """)

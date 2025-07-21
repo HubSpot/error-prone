@@ -20,28 +20,32 @@ import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.common.collect.Iterables.getLast;
 import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
+import static com.google.errorprone.bugpatterns.Switches.isDefaultCaseForSkew;
+import static com.google.errorprone.fixes.SuggestedFixes.compilesWithFix;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
+import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.isSwitchDefault;
 import static com.google.errorprone.util.Reachability.canCompleteNormally;
+import static com.google.errorprone.util.Reachability.canFallThrough;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Sets.SetView;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
+import com.google.errorprone.bugpatterns.BugChecker.SwitchExpressionTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.SwitchTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
-import com.google.errorprone.fixes.SuggestedFixes;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.util.ASTHelpers;
+import com.sun.source.tree.BreakTree;
 import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.StatementTree;
+import com.sun.source.tree.SwitchExpressionTree;
 import com.sun.source.tree.SwitchTree;
-import com.sun.source.tree.Tree;
 import com.sun.tools.javac.code.Symbol.TypeSymbol;
-import com.sun.tools.javac.tree.JCTree.JCSwitch;
 import java.util.List;
 import javax.lang.model.element.ElementKind;
 
@@ -51,7 +55,8 @@ import javax.lang.model.element.ElementKind;
         "Switch handles all enum values: an explicit default case is unnecessary and defeats error"
             + " checking for non-exhaustive switches.",
     severity = WARNING)
-public class UnnecessaryDefaultInEnumSwitch extends BugChecker implements SwitchTreeMatcher {
+public class UnnecessaryDefaultInEnumSwitch extends BugChecker
+    implements SwitchTreeMatcher, SwitchExpressionTreeMatcher {
 
   private static final String DESCRIPTION_MOVED_DEFAULT =
       "Switch handles all enum values: move code from the default case to execute after the "
@@ -69,9 +74,47 @@ public class UnnecessaryDefaultInEnumSwitch extends BugChecker implements Switch
           + "exhaustive";
 
   @Override
+  public Description matchSwitchExpression(SwitchExpressionTree tree, VisitorState state) {
+    TypeSymbol switchType = getType(tree.getExpression()).asElement();
+    if (switchType.getKind() != ElementKind.ENUM) {
+      return NO_MATCH;
+    }
+    CaseTree defaultCase =
+        tree.getCases().stream().filter(c -> isSwitchDefault(c)).findFirst().orElse(null);
+    if (defaultCase == null) {
+      return NO_MATCH;
+    }
+    if (isDefaultCaseForSkew(tree, defaultCase, state)) {
+      // default is explicitly commented as being present for skew, it can stay.
+      return NO_MATCH;
+    }
+    SetView<String> unhandledCases = unhandledCases(tree.getCases(), switchType);
+    if (unhandledCases.equals(ImmutableSet.of("UNRECOGNIZED"))) {
+      // switch handles all values of a proto-generated enum except for 'UNRECOGNIZED'.
+      return buildDescription(defaultCase)
+          .setMessage(DESCRIPTION_UNRECOGNIZED)
+          .addFix(
+              SuggestedFix.replace(
+                  getStartPosition(defaultCase),
+                  getStartPosition(defaultCase.getBody()),
+                  "case UNRECOGNIZED -> "))
+          .build();
+    }
+    if (unhandledCases.isEmpty()) {
+      // switch is exhaustive, remove the default if we can.
+      return buildDescription(defaultCase)
+          .setMessage(DESCRIPTION_REMOVED_DEFAULT)
+          .addFix(SuggestedFix.delete(defaultCase))
+          .build();
+    }
+    // switch is non-exhaustive, default can stay.
+    return NO_MATCH;
+  }
+
+  @Override
   public Description matchSwitch(SwitchTree switchTree, VisitorState state) {
     // Only look at enum switches.
-    TypeSymbol switchType = ((JCSwitch) switchTree).getExpression().type.tsym;
+    TypeSymbol switchType = getType(switchTree.getExpression()).asElement();
     if (switchType.getKind() != ElementKind.ENUM) {
       return NO_MATCH;
     }
@@ -93,23 +136,35 @@ public class UnnecessaryDefaultInEnumSwitch extends BugChecker implements Switch
 
     SetView<String> unhandledCases = unhandledCases(switchTree, switchType);
     if (unhandledCases.equals(ImmutableSet.of("UNRECOGNIZED"))) {
-      // switch handles all values of an proto-generated enum except for 'UNRECOGNIZED'.
+      // switch handles all values of a proto-generated enum except for 'UNRECOGNIZED'.
       return fixUnrecognized(switchTree, defaultCase, state);
     }
-    if (unhandledCases.isEmpty()) {
-      // switch is exhaustive, remove the default if we can.
-      return fixDefault(switchTree, caseBeforeDefault, defaultCase, state);
+
+    if (!unhandledCases.isEmpty()) {
+      // switch is non-exhaustive, default can stay.
+      return NO_MATCH;
     }
-    // switch is non-exhaustive, default can stay.
-    return NO_MATCH;
+
+    if (isDefaultCaseForSkew(switchTree, defaultCase, state)) {
+      // default is explicitly commented as being present for skew, it can stay.
+      return NO_MATCH;
+    }
+
+    // switch is exhaustive, remove the default if we can.
+    return fixDefault(switchTree, caseBeforeDefault, defaultCase, state);
   }
 
   private Description fixDefault(
       SwitchTree switchTree, CaseTree caseBeforeDefault, CaseTree defaultCase, VisitorState state) {
     List<? extends StatementTree> defaultStatements = defaultCase.getStatements();
     if (defaultStatements == null) {
-      // TODO(b/177258673): provide fixes for `case -> ...`
-      return buildDescription(defaultCase).setMessage(DESCRIPTION_REMOVED_DEFAULT).build();
+      SuggestedFix fix = SuggestedFix.delete(defaultCase);
+      return compilesWithFix(fix, state)
+          ? buildDescription(defaultCase)
+              .setMessage(DESCRIPTION_REMOVED_DEFAULT)
+              .addFix(fix)
+              .build()
+          : NO_MATCH;
     }
     if (trivialDefault(defaultStatements)) {
       // deleting `default:` or `default: break;` is a no-op
@@ -162,11 +217,11 @@ public class UnnecessaryDefaultInEnumSwitch extends BugChecker implements Switch
     //  Try deleting the code entirely.  If it fails to compile, we've broken (3) -> no match.
     //  Try lifting the code to the prior case statement.  If it fails to compile, we had (2)
     //  and the code is unreachable -- so use (2) as the strategy.  Otherwise, use (1).
-    if (!SuggestedFixes.compilesWithFix(SuggestedFix.delete(defaultCase), state)) {
+    if (!compilesWithFix(SuggestedFix.delete(defaultCase), state)) {
       return NO_MATCH; // case (3)
     }
-    if (!canCompleteNormally(caseBeforeDefault)) {
-      // case (2) -- If the case before the default can't complete normally,
+    if (!canFallThrough(caseBeforeDefault)) {
+      // case (2) -- If the case before the default can't fall through,
       // it's OK to to delete the default.
       return buildDescription(defaultCase)
           .setMessage(DESCRIPTION_REMOVED_DEFAULT)
@@ -188,8 +243,8 @@ public class UnnecessaryDefaultInEnumSwitch extends BugChecker implements Switch
     Description.Builder unrecognizedDescription =
         buildDescription(defaultCase).setMessage(DESCRIPTION_UNRECOGNIZED);
     if (defaultStatements == null) {
-      // TODO(b/177258673): provide fixes for `case -> ...`
-      return unrecognizedDescription.build();
+      SuggestedFix fix = SuggestedFix.replace(defaultCase.getLabels().get(0), "case UNRECOGNIZED");
+      return compilesWithFix(fix, state) ? unrecognizedDescription.addFix(fix).build() : NO_MATCH;
     }
     if (trivialDefault(defaultStatements)) {
       // the default case is empty or contains only `break` -- replace it with `case UNRECOGNIZED:`
@@ -211,7 +266,7 @@ public class UnnecessaryDefaultInEnumSwitch extends BugChecker implements Switch
     }
 
     SuggestedFix fix = SuggestedFix.replace(defaultCase, "case UNRECOGNIZED:" + defaultContents);
-    if (!SuggestedFixes.compilesWithFix(fix, state)) {
+    if (!compilesWithFix(fix, state)) {
       // code in the default case can't be deleted -- no fix available.
       return NO_MATCH;
     }
@@ -226,12 +281,17 @@ public class UnnecessaryDefaultInEnumSwitch extends BugChecker implements Switch
       return true;
     }
     return (defaultStatements.size() == 1
-        && getOnlyElement(defaultStatements).getKind() == Tree.Kind.BREAK);
+        && getOnlyElement(defaultStatements) instanceof BreakTree);
   }
 
   private static SetView<String> unhandledCases(SwitchTree tree, TypeSymbol switchType) {
+    return unhandledCases(tree.getCases(), switchType);
+  }
+
+  private static SetView<String> unhandledCases(
+      List<? extends CaseTree> cases, TypeSymbol switchType) {
     ImmutableSet<String> handledCases =
-        tree.getCases().stream()
+        cases.stream()
             .flatMap(e -> e.getExpressions().stream())
             .filter(IdentifierTree.class::isInstance)
             .map(p -> ((IdentifierTree) p).getName().toString())

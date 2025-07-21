@@ -307,7 +307,7 @@ public class JUnit4TestNotRunTest {
   }
 
   @Test
-  public void noTestKeyword_notATest() {
+  public void noAssertions_isATestAnyway() {
     compilationHelper
         .addSourceLines(
             "Test.java",
@@ -318,6 +318,7 @@ public class JUnit4TestNotRunTest {
 
             @RunWith(JUnit4.class)
             public class Test {
+              // BUG: Diagnostic contains:
               public void shouldDoSomething() {
                 Collections.sort(Collections.<Integer>emptyList());
               }
@@ -573,6 +574,33 @@ public class JUnit4TestNotRunTest {
   }
 
   @Test
+  public void helperMethodUsedViaMemberReference() {
+    compilationHelper
+        .addSourceLines(
+            "TestStuff.java",
+            """
+            import org.junit.runner.RunWith;
+            import org.junit.runners.JUnit4;
+            import org.junit.Test;
+
+            @RunWith(JUnit4.class)
+            public class TestStuff {
+              public void shouldDoSomething() {
+                verify();
+              }
+
+              @Test
+              public void testDoesSomething() {
+                Runnable r = this::shouldDoSomething;
+              }
+
+              void verify() {}
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
   public void helperMethodCallFoundInNestedInvocation() {
     compilationHelper
         .addSourceLines(
@@ -689,7 +717,7 @@ public class JUnit4TestNotRunTest {
     compilationHelper
         .addSourceLines(
             "JUnit4TestNotRunNegativeCase3.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import org.junit.*;
@@ -701,9 +729,6 @@ import org.junit.runners.JUnit4;
  */
 @RunWith(JUnit4.class)
 public class JUnit4TestNotRunNegativeCase3 {
-  // Doesn't begin with "test", and doesn't contain any assertion-like method invocations.
-  public void thisIsATest() {}
-
   // Isn't public.
   void testTest1() {}
 
@@ -740,7 +765,7 @@ public class JUnit4TestNotRunNegativeCase3 {
     compilationHelper
         .addSourceLines(
             "JUnit4TestNotRunNegativeCase4.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import junit.framework.TestCase;
@@ -793,7 +818,7 @@ public class JUnit4TestNotRunNegativeCase4 extends TestCase {
             """)
         .addSourceLines(
             "JUnit4TestNotRunNegativeCase5.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import org.junit.runner.RunWith;
@@ -921,6 +946,52 @@ public class JUnit4TestNotRunNegativeCase5 extends JUnit4TestNotRunBaseClass {
             public class T {
               // BUG: Diagnostic contains:
               public void givenFoo_thenBar() {}
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void annotatedWithParameters_isATest() {
+    compilationHelper
+        .addSourceLines(
+            "T.java",
+            """
+            import com.google.testing.junit.testparameterinjector.TestParameters;
+            import org.junit.runner.RunWith;
+            import org.junit.runners.JUnit4;
+
+            @RunWith(JUnit4.class)
+            public class T {
+              @TestParameters("foo")
+              // BUG: Diagnostic contains:
+              public void givenFooThenBar(String foo) {}
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void enumParameter_couldWellBeATest() {
+    compilationHelper
+        .addSourceLines(
+            "T.java",
+            """
+            import org.junit.runner.RunWith;
+            import org.junit.runners.JUnit4;
+
+            @RunWith(JUnit4.class)
+            public class T {
+              enum E {
+                A
+              }
+
+              // BUG: Diagnostic contains:
+              public void givenFooThenBar(E e) {
+                verify();
+              }
+
+              private void verify() {}
             }
             """)
         .doTest();

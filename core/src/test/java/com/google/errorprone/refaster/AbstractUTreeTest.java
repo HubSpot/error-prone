@@ -60,7 +60,7 @@ public abstract class AbstractUTreeTest {
   public void assertUnifies(String expression, UTree<?> template) {
     assertWithMessage(
             String.format("Expected template %s to unify with expression %s", template, expression))
-        .that(template.unify(parseExpression(expression), unifier).first())
+        .that(template.unify(parseExpression(expression), unifier).findFirst())
         .isPresent();
   }
 
@@ -116,7 +116,7 @@ public abstract class AbstractUTreeTest {
 
           @Override
           public boolean matchesSafely(JCExpression item) {
-            return item instanceof JCIdent && ((JCIdent) item).getName().contentEquals(name);
+            return item instanceof JCIdent jCIdent && jCIdent.getName().contentEquals(name);
           }
         });
   }

@@ -24,12 +24,9 @@ import static com.google.errorprone.util.ASTHelpers.hasDirectAnnotationWithSimpl
 import static com.google.errorprone.util.ASTHelpers.isStatic;
 import static com.google.errorprone.util.MoreAnnotations.getValue;
 
-import com.google.auto.value.AutoValue;
-import com.google.common.base.CharMatcher;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.VisitorState;
-import com.google.errorprone.util.ASTHelpers;
 import com.google.errorprone.util.MoreAnnotations;
 import com.google.errorprone.util.SourceCodeEscapers;
 import com.sun.source.tree.ClassTree;
@@ -66,9 +63,9 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Stream;
 
-@AutoValue
-abstract class InlineMeData {
-
+record InlineMeData(
+    // TODO(glorioso): be tolerant of trailing semicolon in replacement
+    String replacement, ImmutableSet<String> imports, ImmutableSet<String> staticImports) {
   private static final String INLINE_ME = "InlineMe";
 
   /** Builds the {@code @InlineMe} annotation as it would be found in source code. */
@@ -101,13 +98,6 @@ abstract class InlineMeData {
     return "{" + quoted + "}";
   }
 
-  // TODO(glorioso): be tolerant of trailing semicolon
-  abstract String replacement();
-
-  abstract ImmutableSet<String> imports();
-
-  abstract ImmutableSet<String> staticImports();
-
   static Optional<InlineMeData> createFromSymbol(MethodSymbol symbol) {
     // if the API doesn't have the @InlineMe annotation, then return no match
     if (!hasDirectAnnotationWithSimpleName(symbol, INLINE_ME)) {
@@ -127,13 +117,12 @@ abstract class InlineMeData {
 
     return getValue(inlineMe, "replacement")
         .flatMap(MoreAnnotations::asStringValue)
-        .map(InlineMeData::trimTrailingSemicolons)
         .map(replacement -> create(replacement, imports, staticImports));
   }
 
   private static InlineMeData create(
       String replacement, Iterable<String> imports, Iterable<String> staticImports) {
-    return new AutoValue_InlineMeData(
+    return new InlineMeData(
         replacement, ImmutableSet.copyOf(imports), ImmutableSet.copyOf(staticImports));
   }
 
@@ -293,7 +282,7 @@ abstract class InlineMeData {
         return super.visitIdentifier(identifierTree, null);
       }
       Symbol symbol = getSymbol(identifierTree);
-      if (symbol == null || ASTHelpers.isLocal(symbol)) {
+      if (symbol == null || symbol.isDirectlyOrIndirectlyLocal()) {
         return super.visitIdentifier(identifierTree, null);
       }
 
@@ -359,11 +348,5 @@ abstract class InlineMeData {
         .map(MoreAnnotations::asStrings)
         .orElse(Stream.empty())
         .collect(toImmutableSet());
-  }
-
-  private static final CharMatcher SEMICOLON = CharMatcher.is(';');
-
-  private static String trimTrailingSemicolons(String s) {
-    return SEMICOLON.trimTrailingFrom(s);
   }
 }

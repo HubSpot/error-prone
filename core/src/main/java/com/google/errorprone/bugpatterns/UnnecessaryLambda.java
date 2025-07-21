@@ -18,10 +18,13 @@ package com.google.errorprone.bugpatterns;
 
 import static com.google.common.base.CaseFormat.LOWER_CAMEL;
 import static com.google.common.base.CaseFormat.UPPER_UNDERSCORE;
+import static com.google.common.base.CharMatcher.inRange;
+import static com.google.common.base.CharMatcher.is;
 import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.fixes.SuggestedFixes.prettyType;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
+import static com.google.errorprone.util.ASTHelpers.enclosingClass;
 import static com.google.errorprone.util.ASTHelpers.enclosingPackage;
 import static com.google.errorprone.util.ASTHelpers.getModifiers;
 import static com.google.errorprone.util.ASTHelpers.getReceiver;
@@ -32,6 +35,7 @@ import static com.google.errorprone.util.ASTHelpers.isStatic;
 import static com.sun.tools.javac.util.Position.NOPOS;
 import static java.util.stream.Collectors.joining;
 
+import com.google.common.base.CharMatcher;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Streams;
 import com.google.errorprone.BugPattern;
@@ -54,7 +58,6 @@ import com.sun.source.tree.ModifiersTree;
 import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.Tree;
-import com.sun.source.tree.Tree.Kind;
 import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SimpleTreeVisitor;
@@ -109,8 +112,8 @@ public class UnnecessaryLambda extends BugChecker
 
         if (Objects.equals(getSymbol(node), sym)) {
           Tree parent = getCurrentPath().getParentPath().getLeaf();
-          if (parent instanceof EnhancedForLoopTree
-              && ((EnhancedForLoopTree) parent).getExpression().equals(node)) {
+          if (parent instanceof EnhancedForLoopTree enhancedForLoopTree
+              && enhancedForLoopTree.getExpression().equals(node)) {
             usedInEnhancedForLoop[0] = true;
           } else {
             replaceUseWithMethodReference(fix, node, name, state.withPath(getCurrentPath()));
@@ -125,6 +128,8 @@ public class UnnecessaryLambda extends BugChecker
     lambdaToMethod(state, lambda, fix, name, type);
     return describeMatch(tree, fix.build());
   }
+
+  private static final CharMatcher UPPER_CASE = inRange('A', 'Z').or(is('_')).or(inRange('0', '9'));
 
   @Override
   public Description matchVariable(VariableTree tree, VisitorState state) {
@@ -152,15 +157,18 @@ public class UnnecessaryLambda extends BugChecker
       return NO_MATCH;
     }
     SuggestedFix.Builder fix = SuggestedFix.builder();
-    String name =
-        isStatic(sym)
-            ? UPPER_UNDERSCORE.converterTo(LOWER_CAMEL).convert(tree.getName().toString())
-            : tree.getName().toString();
+    String varName = tree.getName().toString();
+    // NOTE: if https://github.com/google/guava/issues/2212 gets resolved, we could use it here.
+    String methodName =
+        (isStatic(sym) && UPPER_CASE.matchesAllOf(varName))
+            ? UPPER_UNDERSCORE.converterTo(LOWER_CAMEL).convert(varName)
+            : varName;
+
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitMemberSelect(MemberSelectTree node, Void unused) {
         if (Objects.equals(getSymbol(node), sym)) {
-          replaceUseWithMethodReference(fix, node, name, state.withPath(getCurrentPath()));
+          replaceUseWithMethodReference(fix, node, methodName, state.withPath(getCurrentPath()));
         }
         return super.visitMemberSelect(node, null);
       }
@@ -168,13 +176,13 @@ public class UnnecessaryLambda extends BugChecker
       @Override
       public Void visitIdentifier(IdentifierTree node, Void unused) {
         if (Objects.equals(getSymbol(node), sym)) {
-          replaceUseWithMethodReference(fix, node, name, state.withPath(getCurrentPath()));
+          replaceUseWithMethodReference(fix, node, methodName, state.withPath(getCurrentPath()));
         }
         return super.visitIdentifier(node, null);
       }
     }.scan(state.getPath().getCompilationUnit(), null);
     SuggestedFixes.removeModifiers(tree, state, Modifier.FINAL).ifPresent(fix::merge);
-    lambdaToMethod(state, lambda, fix, name, type);
+    lambdaToMethod(state, lambda, fix, methodName, type);
     return describeMatch(tree, fix.build());
   }
 
@@ -235,10 +243,10 @@ public class UnnecessaryLambda extends BugChecker
 
       private void check(MethodInvocationTree node) {
         ExpressionTree lhs = node.getMethodSelect();
-        if (!(lhs instanceof MemberSelectTree)) {
+        if (!(lhs instanceof MemberSelectTree memberSelectTree)) {
           return;
         }
-        ExpressionTree receiver = ((MemberSelectTree) lhs).getExpression();
+        ExpressionTree receiver = memberSelectTree.getExpression();
         if (!Objects.equals(sym, getSymbol(receiver))) {
           return;
         }
@@ -273,7 +281,7 @@ public class UnnecessaryLambda extends BugChecker
                 (t, p) -> String.format("%s %s", prettyType(state, fix, t), p.getName()))
             .collect(joining(", ")));
     replacement.append(")");
-    if (lambda.getBody().getKind() == Kind.BLOCK) {
+    if (lambda.getBody() instanceof BlockTree) {
       replacement.append(state.getSourceForNode(lambda.getBody()));
     } else {
       replacement.append("{");
@@ -294,9 +302,9 @@ public class UnnecessaryLambda extends BugChecker
   private static void replaceUseWithMethodReference(
       SuggestedFix.Builder fix, ExpressionTree node, String newName, VisitorState state) {
     Tree parent = state.getPath().getParentPath().getLeaf();
-    if (parent instanceof MemberSelectTree
-        && ((MemberSelectTree) parent).getExpression().equals(node)) {
-      Tree receiver = node.getKind() == Tree.Kind.IDENTIFIER ? null : getReceiver(node);
+    if (parent instanceof MemberSelectTree memberSelectTree
+        && memberSelectTree.getExpression().equals(node)) {
+      Tree receiver = node instanceof IdentifierTree ? null : getReceiver(node);
       fix.replace(
           receiver != null ? state.getEndPosition(receiver) : getStartPosition(node),
           state.getEndPosition(parent),
@@ -307,7 +315,7 @@ public class UnnecessaryLambda extends BugChecker
       if (node instanceof MethodInvocationTree && getReceiver(node) != null) {
         receiverCode = state.getSourceForNode(getReceiver(node));
       } else {
-        receiverCode = isStatic(sym) ? sym.owner.enclClass().getSimpleName().toString() : "this";
+        receiverCode = isStatic(sym) ? enclosingClass(sym).getSimpleName().toString() : "this";
       }
       fix.replace(node, String.format("%s::%s", receiverCode, newName));
     }

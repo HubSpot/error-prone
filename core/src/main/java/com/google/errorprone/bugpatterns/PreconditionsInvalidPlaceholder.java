@@ -56,10 +56,9 @@ public class PreconditionsInvalidPlaceholder extends BugChecker
 
   private static boolean secondParameterIsString(ExpressionTree tree, VisitorState state) {
     Symbol symbol = getSymbol(tree);
-    if (!(symbol instanceof MethodSymbol)) {
+    if (!(symbol instanceof MethodSymbol methodSymbol)) {
       return false;
     }
-    MethodSymbol methodSymbol = (MethodSymbol) symbol;
     return methodSymbol.getParameters().size() >= 2
         && isSubtype(methodSymbol.getParameters().get(1).type, state.getSymtab().stringType, state);
   }
@@ -67,10 +66,8 @@ public class PreconditionsInvalidPlaceholder extends BugChecker
   @Override
   public Description matchMethodInvocation(MethodInvocationTree tree, VisitorState state) {
     if (PRECONDITIONS_CHECK.matches(tree, state)
-        && tree.getArguments().get(1) instanceof LiteralTree) {
-      LiteralTree formatStringTree = (LiteralTree) tree.getArguments().get(1);
-      if (formatStringTree.getValue() instanceof String) {
-        String formatString = (String) formatStringTree.getValue();
+        && tree.getArguments().get(1) instanceof LiteralTree formatStringTree) {
+      if (formatStringTree.getValue() instanceof String formatString) {
         int expectedArgs = expectedArguments(formatString);
         if (expectedArgs < tree.getArguments().size() - 2
             && BAD_PLACEHOLDER_REGEX.matcher(formatString).find()) {

@@ -27,106 +27,98 @@ import org.junit.runners.JUnit4;
 /** Unit test for {@link RestrictedApiChecker} */
 @RunWith(JUnit4.class)
 public class RestrictedApiCheckerTest {
-  private final CompilationTestHelper helper;
-  private final BugCheckerRefactoringTestHelper refactoringTest;
+  private final CompilationTestHelper helper =
+      CompilationTestHelper.newInstance(RestrictedApiChecker.class, RestrictedApiCheckerTest.class)
+          .addSourceLines(
+              "Allowlist.java",
+              """
+              package com.google.errorprone.bugpatterns.testdata;
 
-  public RestrictedApiCheckerTest() {
-    this(RestrictedApiChecker.class);
-  }
+              import java.lang.annotation.ElementType;
+              import java.lang.annotation.Target;
 
-  protected RestrictedApiCheckerTest(Class<? extends BugChecker> checker) {
-    helper =
-        CompilationTestHelper.newInstance(checker, RestrictedApiCheckerTest.class)
-            .addSourceLines(
-                "Allowlist.java",
-                """
-                package com.google.errorprone.bugpatterns.testdata;
+              @Target({ElementType.METHOD, ElementType.CONSTRUCTOR})
+              public @interface Allowlist {}\
+              """)
+          .addSourceLines(
+              "RestrictedApiMethods.java",
+              """
+              package com.google.errorprone.bugpatterns.testdata;
 
-                import java.lang.annotation.ElementType;
-                import java.lang.annotation.Target;
+              import com.google.errorprone.annotations.RestrictedApi;
+              import java.lang.annotation.ElementType;
+              import java.lang.annotation.Target;
 
-                @Target({ElementType.METHOD, ElementType.CONSTRUCTOR})
-                public @interface Allowlist {}\
-                """)
-            .addSourceLines(
-                "RestrictedApiMethods.java",
-                """
-package com.google.errorprone.bugpatterns.testdata;
+              /** Example for {@link com.google.errorprone.bugpatterns.RestrictedApiCheckerTest}. */
+              public class RestrictedApiMethods implements IFaceWithRestriction {
 
-import com.google.errorprone.annotations.RestrictedApi;
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Target;
+                public int normalMethod() {
+                  return 0;
+                }
 
-/** Example for {@link com.google.errorprone.bugpatterns.RestrictedApiCheckerTest}. */
-public class RestrictedApiMethods implements IFaceWithRestriction {
+                @RestrictedApi(
+                    explanation = "lorem",
+                    allowlistAnnotations = {Allowlist.class},
+                    allowlistWithWarningAnnotations = {AllowlistWithWarning.class},
+                    link = "")
+                public RestrictedApiMethods() {}
 
-  public int normalMethod() {
-    return 0;
-  }
+                @RestrictedApi(
+                    explanation = "lorem",
+                    allowlistAnnotations = {Allowlist.class},
+                    allowlistWithWarningAnnotations = {AllowlistWithWarning.class},
+                    link = "")
+                public RestrictedApiMethods(int restricted) {}
 
-  @RestrictedApi(
-      explanation = "lorem",
-      allowlistAnnotations = {Allowlist.class},
-      allowlistWithWarningAnnotations = {AllowlistWithWarning.class},
-      link = "")
-  public RestrictedApiMethods() {}
+                @RestrictedApi(
+                    explanation = "lorem",
+                    allowlistAnnotations = {Allowlist.class},
+                    allowlistWithWarningAnnotations = {AllowlistWithWarning.class},
+                    link = "",
+                    allowedOnPath = ".*testsuite/.*")
+                public int restrictedMethod() {
+                  return 1;
+                }
 
-  @RestrictedApi(
-      explanation = "lorem",
-      allowlistAnnotations = {Allowlist.class},
-      allowlistWithWarningAnnotations = {AllowlistWithWarning.class},
-      link = "")
-  public RestrictedApiMethods(int restricted) {}
+                @RestrictedApi(
+                    explanation = "lorem",
+                    allowlistAnnotations = {Allowlist.class},
+                    allowlistWithWarningAnnotations = {AllowlistWithWarning.class},
+                    link = "")
+                public static int restrictedStaticMethod() {
+                  return 2;
+                }
 
-  @RestrictedApi(
-      explanation = "lorem",
-      allowlistAnnotations = {Allowlist.class},
-      allowlistWithWarningAnnotations = {AllowlistWithWarning.class},
-      link = "",
-      allowedOnPath = ".*testsuite/.*")
-  public int restrictedMethod() {
-    return 1;
-  }
+                @Override
+                public void dontCallMe() {}
 
-  @RestrictedApi(
-      explanation = "lorem",
-      allowlistAnnotations = {Allowlist.class},
-      allowlistWithWarningAnnotations = {AllowlistWithWarning.class},
-      link = "")
-  public static int restrictedStaticMethod() {
-    return 2;
-  }
+                public static class Subclass extends RestrictedApiMethods {
+                  @Allowlist
+                  public Subclass(int restricted) {
+                    super(restricted);
+                  }
 
-  @Override
-  public void dontCallMe() {}
+                  @Override
+                  public int restrictedMethod() {
+                    return 42;
+                  }
+                }
 
-  public static class Subclass extends RestrictedApiMethods {
-    @Allowlist
-    public Subclass(int restricted) {
-      super(restricted);
-    }
+                public static void accept(Runnable r) {}
+              }
 
-    @Override
-    public int restrictedMethod() {
-      return 42;
-    }
-  }
+              interface IFaceWithRestriction {
+                @RestrictedApi(explanation = "ipsum", link = "nothing")
+                void dontCallMe();
+              }
 
-  public static void accept(Runnable r) {}
-}
-
-interface IFaceWithRestriction {
-  @RestrictedApi(explanation = "ipsum", link = "nothing")
-  void dontCallMe();
-}
-
-@Target({ElementType.METHOD, ElementType.CONSTRUCTOR})
-@interface AllowlistWithWarning {}\
-""")
-            .matchAllDiagnostics();
-    refactoringTest =
-        BugCheckerRefactoringTestHelper.newInstance(checker, RestrictedApiCheckerTest.class);
-  }
+              @Target({ElementType.METHOD, ElementType.CONSTRUCTOR})
+              @interface AllowlistWithWarning {}
+              """)
+          .matchAllDiagnostics();
+  private final BugCheckerRefactoringTestHelper refactoringTest =
+      BugCheckerRefactoringTestHelper.newInstance(
+          RestrictedApiChecker.class, RestrictedApiCheckerTest.class);
 
   @Test
   public void normalCallAllowed() {
@@ -483,4 +475,101 @@ interface IFaceWithRestriction {
         .expectResult(Result.OK)
         .doTest();
   }
+
+  @Test
+  public void restrictedApiOnRecordComponent() {
+    helper
+        .addSourceLines(
+            "Allowlist.java",
+            """
+            import java.lang.annotation.ElementType;
+            import java.lang.annotation.Target;
+
+            @Target({ElementType.METHOD, ElementType.CONSTRUCTOR})
+            @interface Allowlist {}
+            """)
+        .addSourceLines(
+            "User.java",
+            """
+            import com.google.errorprone.annotations.RestrictedApi;
+
+            public record User(
+                String name,
+                @RestrictedApi(
+                        explanation = "test",
+                        allowlistAnnotations = {Allowlist.class},
+                        link = "foo")
+                    String password) {}
+            """)
+        .addSourceLines(
+            "Testcase.java",
+            """
+            class Testcase {
+              void ctorAllowed() {
+                new User("kak", "Hunter2");
+              }
+
+              @Allowlist
+              void accessorAllowed(User user) {
+                user.password();
+              }
+
+              void accessorRestricted(User user) {
+                // BUG: Diagnostic contains: RestrictedApi
+                user.password();
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void restrictedApiOnRecordConstructor() {
+    helper
+        .addSourceLines(
+            "Allowlist.java",
+            """
+            import java.lang.annotation.ElementType;
+            import java.lang.annotation.Target;
+
+            @Target({ElementType.METHOD, ElementType.CONSTRUCTOR})
+            @interface Allowlist {}
+            """)
+        .addSourceLines(
+            "User.java",
+            """
+            import com.google.errorprone.annotations.RestrictedApi;
+
+            public record User(String name, String password) {
+
+              @RestrictedApi(
+                  explanation = "test",
+                  allowlistAnnotations = {Allowlist.class},
+                  link = "foo")
+              public User {}
+            }
+            """)
+        .addSourceLines(
+            "Testcase.java",
+            """
+            class Testcase {
+              void ctorRestricted() {
+                // BUG: Diagnostic contains: RestrictedApi
+                new User("kak", "Hunter2");
+              }
+
+              @Allowlist
+              void ctorAllowed(User user) {
+                new User("kak", "Hunter2");
+              }
+
+              void accessorAllowed(User user) {
+                user.password();
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  // NOTE: @RestrictedApi cannot be applied to an entire record declaration
 }

@@ -41,7 +41,6 @@ import static com.google.errorprone.util.ASTHelpers.isSubtype;
 import static com.google.errorprone.util.ASTHelpers.methodCanBeOverridden;
 import static com.google.errorprone.util.ASTHelpers.shouldKeep;
 
-import com.google.auto.value.AutoValue;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -280,8 +279,8 @@ public final class PreferredInterfaceType extends BugChecker implements Compilat
         !isImmutable(targetType(symbol)) && isImmutable(newType)
             ? IMMUTABLE_MESSAGE
             : NON_IMMUTABLE_MESSAGE;
-    if (symbol instanceof MethodSymbol) {
-      if (!findSuperMethods((MethodSymbol) symbol, state.getTypes()).isEmpty()) {
+    if (symbol instanceof MethodSymbol methodSymbol) {
+      if (!findSuperMethods(methodSymbol, state.getTypes()).isEmpty()) {
         return "Method return" + messageBase + OVERRIDE_NOTE;
       } else {
         return "Method return" + messageBase;
@@ -292,7 +291,7 @@ public final class PreferredInterfaceType extends BugChecker implements Compilat
   }
 
   private static Type targetType(Symbol symbol) {
-    return symbol instanceof MethodSymbol ? ((MethodSymbol) symbol).getReturnType() : symbol.type;
+    return symbol instanceof MethodSymbol methodSymbol ? methodSymbol.getReturnType() : symbol.type;
   }
 
   private static boolean isImmutable(Type type) {
@@ -327,15 +326,9 @@ public final class PreferredInterfaceType extends BugChecker implements Compilat
                     .findFirst());
   }
 
-  @AutoValue
-  abstract static class BetterTypes {
-    abstract TypePredicate predicate();
-
-    abstract ImmutableSet<String> betterTypes();
-
+  private record BetterTypes(TypePredicate predicate, ImmutableSet<String> betterTypes) {
     private static BetterTypes of(TypePredicate predicate, String... betterTypes) {
-      return new AutoValue_PreferredInterfaceType_BetterTypes(
-          predicate, ImmutableSet.copyOf(betterTypes));
+      return new BetterTypes(predicate, ImmutableSet.copyOf(betterTypes));
     }
   }
 }

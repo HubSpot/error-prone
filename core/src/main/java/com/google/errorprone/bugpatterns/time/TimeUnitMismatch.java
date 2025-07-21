@@ -40,7 +40,6 @@ import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
-import com.google.auto.value.AutoValue;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableBiMap;
 import com.google.common.collect.ImmutableList;
@@ -264,11 +263,10 @@ public final class TimeUnitMismatch extends BugChecker
   @CanIgnoreReturnValue
   private boolean checkTimeUnitToUnit(
       MethodInvocationTree tree, MethodSymbol methodSymbol, VisitorState state) {
-    if (tree.getMethodSelect().getKind() != MEMBER_SELECT) {
+    if (!(tree.getMethodSelect() instanceof MemberSelectTree memberSelect)) {
       return false;
     }
 
-    MemberSelectTree memberSelect = (MemberSelectTree) tree.getMethodSelect();
     Symbol receiverSymbol = getSymbol(memberSelect.getExpression());
     if (receiverSymbol == null) {
       return false;
@@ -515,22 +513,17 @@ public final class TimeUnitMismatch extends BugChecker
    * TreeAndTimeUnit#innermostTree()} refers to {@code getFooSeconds()}, {@link
    * TreeAndTimeUnit#outermostUnit()} is MILLISECONDS, and {@link TreeAndTimeUnit#innermostUnit()}
    * is SECONDS.
+   *
+   * @param innermostTree The innermost tree expressing a unit, ignoring any conversions around it.
+   * @param outermostUnit The effective unit of the expression we started from.
+   * @param innermostUnit The underlying unit of {@link #innermostTree()}.
    */
-  @AutoValue
-  abstract static class TreeAndTimeUnit {
+  private record TreeAndTimeUnit(
+      ExpressionTree innermostTree, TimeUnit outermostUnit, TimeUnit innermostUnit) {
     public static TreeAndTimeUnit of(
         ExpressionTree tree, TimeUnit timeUnit, TimeUnit underlyingUnit) {
-      return new AutoValue_TimeUnitMismatch_TreeAndTimeUnit(tree, timeUnit, underlyingUnit);
+      return new TreeAndTimeUnit(tree, timeUnit, underlyingUnit);
     }
-
-    /** The innermost tree expressing a unit, ignoring any conversions around it. */
-    abstract ExpressionTree innermostTree();
-
-    /** The effective unit of the expression we started from. */
-    abstract TimeUnit outermostUnit();
-
-    /** The underlying unit of {@link #innermostTree()}. */
-    abstract TimeUnit innermostUnit();
   }
 
   private @Nullable TreeAndTimeUnit unitSuggestedWithConversion(
@@ -561,14 +554,14 @@ public final class TimeUnitMismatch extends BugChecker
 
   private static @Nullable Long conversionFactor(ExpressionTree tree) {
     var constValue = constValue(tree);
-    if (constValue instanceof Long) {
+    if (constValue instanceof Long l) {
       // Don't count 0 to be a valid conversion factor, because it _does_ show up as a conversion
       // factor if you're doing integer division (i.e. 1 millisecond = 0 seconds, so the conversion
       // factor naively looks like 0).
-      return (Long) constValue == 0L ? null : (Long) constValue;
+      return l == 0L ? null : l;
     }
-    if (constValue instanceof Integer) {
-      return (Integer) constValue == 0 ? null : ((Integer) constValue).longValue();
+    if (constValue instanceof Integer integer) {
+      return integer == 0 ? null : integer.longValue();
     }
     return null;
   }
@@ -582,7 +575,7 @@ public final class TimeUnitMismatch extends BugChecker
       return null;
     }
 
-    // http://grepcode.com/file/repo1.maven.org/maven2/mysql/mysql-connector-java/5.1.33/com/mysql/jdbc/TimeUtil.java#336
+    // https://grepcode.com/file/repo1.maven.org/maven2/mysql/mysql-connector-java/5.1.33/com/mysql/jdbc/TimeUtil.java#336
     if (name.equals("secondsPart")) {
       return NANOSECONDS;
     }

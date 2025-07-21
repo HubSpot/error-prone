@@ -45,6 +45,7 @@ import com.google.errorprone.annotations.CheckReturnValue;
 import com.google.errorprone.util.ASTHelpers;
 import com.google.errorprone.util.MoreAnnotations;
 import com.sun.source.tree.BlockTree;
+import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MemberReferenceTree;
@@ -117,7 +118,7 @@ public final class UnusedReturnValueMatcher implements Matcher<ExpressionTree> {
    */
   public static boolean isReturnValueUnused(ExpressionTree tree, VisitorState state) {
     Symbol sym = getSymbol(tree);
-    if (!(sym instanceof MethodSymbol) || isVoidMethod((MethodSymbol) sym)) {
+    if (!(sym instanceof MethodSymbol methodSymbol) || isVoidMethod(methodSymbol)) {
       return false;
     }
     if (tree instanceof MemberReferenceTree) {
@@ -125,11 +126,11 @@ public final class UnusedReturnValueMatcher implements Matcher<ExpressionTree> {
       return implementsVoidMethod(tree, state);
     }
     Tree parent = state.getPath().getParentPath().getLeaf();
-    return parent instanceof LambdaExpressionTree
+    return parent instanceof LambdaExpressionTree lambdaExpressionTree
         // Runnable r = () -> foo.getBar();
-        ? implementsVoidMethod((LambdaExpressionTree) parent, state)
+        ? implementsVoidMethod(lambdaExpressionTree, state)
         // foo.getBar();
-        : parent.getKind() == Kind.EXPRESSION_STATEMENT;
+        : parent instanceof ExpressionStatementTree;
   }
 
   /**
@@ -150,8 +151,8 @@ public final class UnusedReturnValueMatcher implements Matcher<ExpressionTree> {
   }
 
   private static boolean returnsJavaLangVoid(ExpressionTree tree, VisitorState state) {
-    return tree instanceof MemberReferenceTree
-        ? returnsJavaLangVoid((MemberReferenceTree) tree, state)
+    return tree instanceof MemberReferenceTree memberReferenceTree
+        ? returnsJavaLangVoid(memberReferenceTree, state)
         : isVoidType(getResultType(tree), state);
   }
 
@@ -255,10 +256,9 @@ public final class UnusedReturnValueMatcher implements Matcher<ExpressionTree> {
    * doReturn(val).when(t)}.
    */
   public static boolean mockitoInvocation(Tree tree, VisitorState state) {
-    if (!(tree instanceof JCMethodInvocation)) {
+    if (!(tree instanceof JCMethodInvocation invocation)) {
       return false;
     }
-    JCMethodInvocation invocation = (JCMethodInvocation) tree;
     if (!(invocation.getMethodSelect() instanceof JCFieldAccess)) {
       return false;
     }

@@ -25,6 +25,7 @@ import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.matchers.Matchers.instanceMethod;
 import static com.google.errorprone.matchers.Matchers.staticMethod;
 import static com.google.errorprone.util.ASTHelpers.canBeRemoved;
+import static com.google.errorprone.util.ASTHelpers.enclosingClass;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.isInStaticInitializer;
@@ -125,8 +126,8 @@ public final class ConstantPatternCompile extends BugChecker implements ClassTre
             return Optional.empty();
           }
           Tree parent = state.getPath().getParentPath().getLeaf();
-          if (parent instanceof VariableTree) {
-            return handleVariable((VariableTree) parent, state);
+          if (parent instanceof VariableTree variableTree) {
+            return handleVariable(variableTree, state);
           }
 
           return Optional.of(handleInlineExpression(tree, state, nameUniquifier));
@@ -184,7 +185,7 @@ public final class ConstantPatternCompile extends BugChecker implements ClassTre
     }
     MethodSymbol methodSymbol = getSymbol(outerMethodTree);
     boolean canUseStatic =
-        methodSymbol.owner.enclClass().getNestingKind() == NestingKind.TOP_LEVEL
+        enclosingClass(methodSymbol).getNestingKind() == NestingKind.TOP_LEVEL
             || outerMethodTree.getModifiers().getFlags().contains(Modifier.STATIC);
     String replacement =
         String.format(
@@ -308,10 +309,10 @@ public final class ConstantPatternCompile extends BugChecker implements ClassTre
    */
   private static @Nullable String fromInitializer(VariableTree tree) {
     ExpressionTree regex = ((MethodInvocationTree) tree.getInitializer()).getArguments().get(0);
-    if (!(regex instanceof IdentifierTree)) {
+    if (!(regex instanceof IdentifierTree identifierTree)) {
       return null;
     }
-    String name = ((IdentifierTree) regex).getName().toString();
+    String name = identifierTree.getName().toString();
     if (name.endsWith("_REGEX")) {
       name = name.substring(0, name.length() - "_REGEX".length());
     }
@@ -354,19 +355,18 @@ public final class ConstantPatternCompile extends BugChecker implements ClassTre
    */
   private static @Nullable String findNameFromMatcherArgument(VisitorState state, TreePath use) {
     Tree grandParent = use.getParentPath().getParentPath().getLeaf();
-    if (!(grandParent instanceof ExpressionTree)) {
+    if (!(grandParent instanceof ExpressionTree expressionTree)) {
       return null;
     }
-    if (!MATCHER_MATCHER.matches((ExpressionTree) grandParent, state)) {
+    if (!MATCHER_MATCHER.matches(expressionTree, state)) {
       return null;
     }
     ExpressionTree matchTree = ((MethodInvocationTree) grandParent).getArguments().get(0);
-    if (matchTree instanceof IdentifierTree) {
-      return convertToConstantName(((IdentifierTree) matchTree).getName().toString());
+    if (matchTree instanceof IdentifierTree identifierTree) {
+      return convertToConstantName(identifierTree.getName().toString());
     }
-    if (matchTree instanceof MethodInvocationTree) {
-      return convertToConstantName(
-          getSymbol((MethodInvocationTree) matchTree).getSimpleName().toString());
+    if (matchTree instanceof MethodInvocationTree methodInvocationTree) {
+      return convertToConstantName(getSymbol(methodInvocationTree).getSimpleName().toString());
     }
     return null;
   }

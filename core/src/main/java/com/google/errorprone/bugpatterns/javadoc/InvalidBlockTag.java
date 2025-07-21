@@ -32,6 +32,7 @@ import com.google.errorprone.bugpatterns.BugChecker.MethodTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.VariableTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
+import com.sun.source.doctree.BlockTagTree;
 import com.sun.source.doctree.DocTree;
 import com.sun.source.doctree.EndElementTree;
 import com.sun.source.doctree.ErroneousTree;
@@ -42,7 +43,6 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.DocTreePath;
 import com.sun.source.util.DocTreePathScanner;
-import com.sun.tools.javac.tree.DCTree.DCBlockTag;
 import com.sun.tools.javac.tree.DCTree.DCDocComment;
 import com.sun.tools.javac.tree.DCTree.DCErroneous;
 import com.sun.tools.javac.util.JCDiagnostic;
@@ -215,13 +215,12 @@ public final class InvalidBlockTag extends BugChecker
         return false;
       }
       DocTree parentDoc = getCurrentPath().getParentPath().getLeaf();
-      if (!(parentDoc instanceof DCDocComment)) {
+      if (!(parentDoc instanceof DCDocComment dcDocComment)) {
         return false;
       }
-      DCDocComment dcDocComment = (DCDocComment) parentDoc;
       return dcDocComment.getFullBody().stream()
           .anyMatch(
-              dc -> dc instanceof DCErroneous && ((DCErroneous) dc).body.startsWith("{@code"));
+              dc -> dc instanceof DCErroneous dCErroneous && dCErroneous.body.startsWith("{@code"));
     }
 
     private void reportUnknownTag(DocTree docTree, JavadocTag tag) {
@@ -260,10 +259,10 @@ public final class InvalidBlockTag extends BugChecker
       if (fixedTags.contains(docTree)) {
         return null;
       }
-      if (!(docTree instanceof DCBlockTag)) {
+      if (!(docTree instanceof BlockTagTree blockTagTree)) {
         return null;
       }
-      JavadocTag tag = blockTag(((DCBlockTag) docTree).getTagName());
+      JavadocTag tag = blockTag(blockTagTree.getTagName());
       if (validTags.contains(tag) || JavadocTag.KNOWN_OTHER_TAGS.contains(tag)) {
         return null;
       }

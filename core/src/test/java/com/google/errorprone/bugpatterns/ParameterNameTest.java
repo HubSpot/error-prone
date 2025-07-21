@@ -41,9 +41,14 @@ public class ParameterNameTest {
             """
             class Test {
               void f(int foo, int bar) {}
+
               {
                 f(/* bar= */ 1, /* foo= */ 2);
-                f(/** bar= */ 3, /** foo= */ 4);
+                f(
+                    /** bar= */
+                    3,
+                    /** foo= */
+                    4);
               }
             }
             """)
@@ -52,6 +57,7 @@ public class ParameterNameTest {
             """
             class Test {
               void f(int foo, int bar) {}
+
               {
                 f(/* foo= */ 1, /* bar= */ 2);
                 f(/* foo= */ 3, /* bar= */ 4);
@@ -69,6 +75,7 @@ public class ParameterNameTest {
             """
             class Test {
               void f(int foo, int bar) {}
+
               {
                 f(/* foo= */ 1, 2);
               }
@@ -84,7 +91,9 @@ public class ParameterNameTest {
             "a/Baz.java",
             """
             package a.b;
+
             import a.AbstractFoo;
+
             class Baz extends AbstractFoo {
               @Override
               protected String getFoo() {
@@ -96,18 +105,24 @@ public class ParameterNameTest {
             "a/AbstractFoo.java",
             """
             package a;
+
             import java.util.function.Function;
+
             class Bar {
               private final Function<String, String> args;
+
               public Bar(Function<String, String> args) {
                 this.args = args;
               }
             }
+
             public abstract class AbstractFoo {
               protected abstract String getFoo();
+
               private String getCommandArguments(String parameters) {
                 return null;
               }
+
               public AbstractFoo() {
                 new Bar(this::getCommandArguments);
               }
@@ -123,22 +138,23 @@ public class ParameterNameTest {
             "a/Foo.java",
             """
             package a;
-            class Bar {
-            }
+
+            class Bar {}
+
             public class Foo {
-              public void setInteger(Integer i) {
-              }
+              public void setInteger(Integer i) {}
+
               public void callSetInteger() {
                 setInteger(0);
-             }
+              }
             }
             """)
         .addSourceLines(
             "a/Baz.java",
             """
             package a;
-            public class Baz extends Foo {
-            }
+
+            public class Baz extends Foo {}
             """)
         .doTest();
   }
@@ -151,6 +167,7 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object param1, Object param2);
+
               void test(Object arg1, Object arg2) {
                 target(arg1, arg2);
               }
@@ -167,9 +184,10 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object param1, Object param2);
+
               void test(Object arg1, Object arg2) {
-                // BUG: Diagnostic contains: 'target(/* param1= */arg1, arg2);'
-                target(/* param2= */arg1, arg2);
+                // BUG: Diagnostic contains: 'target(/* param1= */ arg1, arg2);'
+                target(/* param2= */ arg1, arg2);
               }
             }
             """)
@@ -184,9 +202,10 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object $param$);
+
               void test(Object arg) {
-                // BUG: Diagnostic contains: 'target(/* $param$= */arg);'
-                target(/* param= */arg);
+                // BUG: Diagnostic contains: 'target(/* $param$= */ arg);'
+                target(/* param= */ arg);
               }
             }
             """)
@@ -201,9 +220,10 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object param1, Object param2);
+
               void test(Object arg1, Object arg2) {
-                // BUG: Diagnostic contains: 'target(/* param1= */arg2
-                target(/* param2= */arg2, /* param1= */arg1);
+                // BUG: Diagnostic contains: 'target(/* param1= */ arg2
+                target(/* param2= */ arg2, /* param1= */ arg1);
               }
             }
             """)
@@ -218,9 +238,10 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object param1, Object param2);
+
               void test(Object arg1, Object arg2) {
-                // BUG: Diagnostic contains: 'target(/* param1= */arg2, arg1);'
-                target(/* param2= */arg2, arg1);
+                // BUG: Diagnostic contains: 'target(/* param1= */ arg2, arg1);'
+                target(/* param2= */ arg2, arg1);
               }
             }
             """)
@@ -235,8 +256,9 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object param);
+
               void test(Object arg) {
-                target(/*note param = */arg);
+                target(/*note param = */ arg);
               }
             }
             """)
@@ -251,8 +273,9 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object param);
+
               void test(Object arg) {
-                target(/*param*/arg);
+                target(/*param*/ arg);
               }
             }
             """)
@@ -267,8 +290,9 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object param);
+
               void test(Object arg) {
-                target(arg/*param*/);
+                target(arg /*param*/);
               }
             }
             """)
@@ -283,8 +307,9 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object param);
+
               void test(Object arg) {
-                target(arg/*imprecise match for param*/);
+                target(arg /*imprecise match for param*/);
               }
             }
             """)
@@ -299,8 +324,9 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object param);
+
               void test(Object arg) {
-                target(arg); //param
+                target(arg); // param
               }
             }
             """)
@@ -320,8 +346,8 @@ public class ParameterNameTest {
             """
             class Test {
               void test(Object x) {
-                test(/* y= */ /* x= */ x);
-                test(/* x= */ /* y= */ x);
+                test(/* y= *//* x= */ x);
+                test(/* x= *//* y= */ x);
               }
             }
             """)
@@ -337,7 +363,7 @@ public class ParameterNameTest {
             class Test {
               void test(Object x) {
                 // BUG: Diagnostic contains: does not match
-                test(/* y= */ /* z= */ x);
+                test(/* y= *//* z= */ x);
               }
             }
             """)
@@ -352,6 +378,7 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object param);
+
               void test(Object arg) {
                 target(arg); // some_other_comment
               }
@@ -368,10 +395,12 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object param1, Object param2);
+
               void test(Object arg1, Object arg2) {
-                target(arg1,
-                /* ---- param1 <-> param2 ---- */
-                       arg2);
+                target(
+                    arg1,
+                    /* ---- param1 <-> param2 ---- */
+                    arg2);
               }
             }
             """)
@@ -387,9 +416,9 @@ public class ParameterNameTest {
             class Test {
               void test(int x) {
                 test(
-                  // newX =
-                  //   (x ^ 2)
-                  x * x);
+                    // newX =
+                    //   (x ^ 2)
+                    x * x);
               }
             }
             """)
@@ -404,8 +433,9 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object param);
+
               void test(Object arg) {
-                target(/* some_other_comment */arg);
+                target(/* some_other_comment */ arg);
               }
             }
             """)
@@ -420,8 +450,9 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object... param);
+
               void test(Object arg) {
-                target(/* param.!.= */arg);
+                target(/* param.!.= */ arg);
               }
             }
             """)
@@ -436,9 +467,11 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract Test getTest(Object param);
+
               abstract void target(Object param2);
+
               void test(Object arg, Object arg2) {
-                getTest(/* param= */arg).target(arg2);
+                getTest(/* param= */ arg).target(arg2);
               }
             }
             """)
@@ -453,11 +486,12 @@ public class ParameterNameTest {
             """
             abstract class Test {
               abstract void target(Object param1, Object param2);
+
               void test(Object arg1, Object arg2) {
                 // BUG: Diagnostic contains:
-                // target(/* param1= */arg1, arg2)
+                // target(/* param1= */ arg1, arg2)
                 // `/* notMatching= */` does not match formal parameter name `param1`
-                target(/* notMatching= */arg1, arg2);
+                target(/* notMatching= */ arg1, arg2);
               }
             }
             """)
@@ -553,8 +587,10 @@ public class ParameterNameTest {
             class Test {
               public static class AnnotatedParametersTestClass {
                 public @interface Annotated {}
+
                 public static void target(@Annotated int foo) {}
               }
+
               void test() {
                 AnnotatedParametersTestClass.target(/* foo= */ 1);
               }
@@ -572,8 +608,10 @@ public class ParameterNameTest {
             class Test {
               public static class AnnotatedParametersTestClass {
                 public @interface Annotated {}
+
                 public static void target(@Annotated int foo) {}
               }
+
               void test() {
                 // BUG: Diagnostic contains: target(/* foo= */ 1)
                 AnnotatedParametersTestClass.target(/* bar= */ 1);
@@ -653,7 +691,7 @@ public class ParameterNameTest {
 
               void bar() {
                 foo(/* first= */ 1);
-             // BUG: Diagnostic contains: /* first= */
+                // BUG: Diagnostic contains: /* first= */
                 foo(/* second= */ 1);
               }
             }
@@ -721,7 +759,7 @@ public class ParameterNameTest {
     testHelper
         .addSourceLines(
             "Test.java",
-            """
+"""
 class Test {
   void foo(int... args) {}
 
@@ -876,6 +914,7 @@ class Test {
             "test/a/A.java",
             """
             package test.a;
+
             public class A {
               public static void f(int value) {}
             }
@@ -884,6 +923,7 @@ class Test {
             "test/b/nested/B.java",
             """
             package test.b.nested;
+
             public class B {
               public static void f(int value) {}
             }
@@ -892,6 +932,7 @@ class Test {
             "test/c/C.java",
             """
             package test.c;
+
             public class C {
               public static void f(int value) {}
             }
@@ -902,6 +943,7 @@ class Test {
             import test.a.A;
             import test.b.nested.B;
             import test.c.C;
+
             class Test {
               void f() {
                 A.f(/* typo= */ 1);
@@ -922,7 +964,9 @@ class Test {
             "test/a/A.java",
             """
             package test.a;
+
             import static org.mockito.Mockito.eq;
+
             public class A {
               // BUG: Diagnostic contains:
               Object x = eq(/* notValue= */ 1);

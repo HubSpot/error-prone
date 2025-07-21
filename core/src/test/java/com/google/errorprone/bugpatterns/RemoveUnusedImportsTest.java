@@ -19,7 +19,6 @@ import static com.google.errorprone.BugCheckerRefactoringTestHelper.TestMode.TEX
 
 import com.google.errorprone.BugCheckerRefactoringTestHelper;
 import com.google.errorprone.CompilationTestHelper;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -29,13 +28,11 @@ import org.junit.runners.JUnit4;
  */
 @RunWith(JUnit4.class)
 public class RemoveUnusedImportsTest {
-  private BugCheckerRefactoringTestHelper testHelper;
+  private final BugCheckerRefactoringTestHelper testHelper =
+      BugCheckerRefactoringTestHelper.newInstance(RemoveUnusedImports.class, getClass());
 
-  @Before
-  public void setUp() {
-    this.testHelper =
-        BugCheckerRefactoringTestHelper.newInstance(RemoveUnusedImports.class, getClass());
-  }
+  private final CompilationTestHelper compilationTestHelper =
+      CompilationTestHelper.newInstance(RemoveUnusedImports.class, getClass());
 
   @Test
   public void basicUsageTest() {
@@ -472,6 +469,144 @@ public class RemoveUnusedImportsTest {
 
             /** {@link Lib.I#f(One)} {@link Lib.J#f(Two)} */
             public class Test {}
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void b390690031() {
+    testHelper
+        .addInputLines(
+            "a/One.java",
+            """
+            package a;
+
+            import java.lang.annotation.ElementType;
+            import java.lang.annotation.Target;
+
+            @Target({ElementType.CONSTRUCTOR, ElementType.METHOD})
+            public @interface One {}
+            """)
+        .expectUnchanged()
+        .addInputLines(
+            "a/Two.java",
+            """
+            package a;
+
+            import java.lang.annotation.ElementType;
+            import java.lang.annotation.Target;
+
+            @Target({ElementType.CONSTRUCTOR, ElementType.METHOD})
+            public @interface Two {}
+            """)
+        .expectUnchanged()
+        .addInputLines(
+            "p/Test.java",
+            """
+            package p;
+
+            import a.One;
+            import a.Two;
+
+            public record Test(int z, @One int x, int y) {}
+            """)
+        .addOutputLines(
+            "out/p/Test.java",
+            """
+            package p;
+
+            import a.One;
+
+            public record Test(int z, @One int x, int y) {}
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void shadowed_apparentUsageReported() {
+    compilationTestHelper
+        .addSourceLines(
+            "A.java",
+            """
+            package pkg;
+
+            class A {
+              interface List {}
+            }
+            """)
+        .addSourceLines(
+            "B.java",
+            """
+            package pkg;
+
+            // BUG: Diagnostic contains: resolves to pkg.A.List
+            import java.util.List;
+
+            class B extends A {
+              List foo() {
+                return null;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void methodShadowed_apparentUsageReported() {
+    compilationTestHelper
+        .addSourceLines(
+            "A.java",
+            """
+            package pkg;
+
+            class A {
+              String format() {
+                return null;
+              }
+            }
+            """)
+        .addSourceLines(
+            "B.java",
+            """
+            package pkg;
+
+            // BUG: Diagnostic contains: resolves to pkg.A#format
+            import static java.lang.String.format;
+
+            class B extends A {
+              String test() {
+                return format();
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void staticFieldImportShadowed_apparentUsageReported() {
+    compilationTestHelper
+        .addSourceLines(
+            "A.java",
+            """
+            package pkg;
+
+            class A {
+              static final int MINUTES = 1;
+            }
+            """)
+        .addSourceLines(
+            "B.java",
+            """
+            package pkg;
+
+            // BUG: Diagnostic contains: resolves to pkg.A#MINUTES
+            import static java.util.concurrent.TimeUnit.MINUTES;
+
+            class B extends A {
+              int test() {
+                return MINUTES;
+              }
+            }
             """)
         .doTest();
   }

@@ -16,6 +16,8 @@
 
 package com.google.errorprone.bugpatterns;
 
+import static com.google.common.truth.TruthJUnit.assume;
+
 import com.google.errorprone.CompilationTestHelper;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -42,6 +44,26 @@ public final class NonApiTypeTest {
 
               // BUG: Diagnostic contains: java.util.List
               private void test1(java.util.LinkedList value) {}
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void protoListImplementations() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            public class Test {
+              // BUG: Diagnostic contains: java.util.List
+              private void test1(com.google.protobuf.ProtocolStringList value) {}
+
+              // BUG: Diagnostic contains: java.util.List
+              private void test1(com.google.protobuf.LazyStringList value) {}
+
+              // BUG: Diagnostic contains: java.util.List
+              private void test1(com.google.protobuf.LazyStringArrayList value) {}
             }
             """)
         .doTest();
@@ -318,6 +340,70 @@ public final class NonApiTypeTest {
               // BUG: Diagnostic contains: NonApiType
               public Iterator<String> returnType() {
                 return null;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void recordConstructorParameters_notFlagged() {
+    assume().that(Runtime.version().feature()).isAtLeast(16);
+
+    helper
+        .addSourceLines(
+            "Record.java",
+            """
+            import java.util.ArrayList;
+            import java.util.List;
+
+            public record Record(String a) {
+              public Record(ArrayList<String> a) {
+                this(a.get(0));
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void recordCompactConstructor_notFlagged() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            import static com.google.common.base.Preconditions.checkArgument;
+            import com.google.common.collect.ImmutableSet;
+
+            public class Test {
+              public record RecordWithImmutableSet(ImmutableSet<String> ids) {
+                public RecordWithImmutableSet {
+                  ids.forEach(id -> checkArgument(!id.isBlank()));
+                }
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void guiceModules() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.inject.AbstractModule;
+            import com.google.inject.Module;
+
+            public class Test extends AbstractModule {
+              // BUG: Diagnostic contains: NonApiType
+              public AbstractModule test() {
+                return new AbstractModule() {};
+              }
+
+              // Exact type, no finding.
+              public Test test2() {
+                return new Test();
               }
             }
             """)

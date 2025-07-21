@@ -18,7 +18,9 @@ package com.google.errorprone.refaster;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.isStatic;
+import static com.google.errorprone.util.AnnotationNames.REPEATED_ANNOTATION;
 
 import com.google.common.collect.ImmutableClassToInstanceMap;
 import com.google.common.collect.ImmutableList;
@@ -115,7 +117,6 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
@@ -156,9 +157,9 @@ public class UTemplater extends SimpleTreeVisitor<Tree, Void> {
     if (genericType instanceof UForAll forAllType) {
       typeParameters = forAllType.getTypeVars();
       methodType = (UMethodType) forAllType.getQuantifiedType();
-    } else if (genericType instanceof UMethodType) {
+    } else if (genericType instanceof UMethodType uMethodType) {
       typeParameters = ImmutableList.of();
-      methodType = (UMethodType) genericType;
+      methodType = uMethodType;
     } else {
       throw new IllegalArgumentException(
           "Expected genericType to be either a ForAll or a UMethodType, but was " + genericType);
@@ -166,10 +167,9 @@ public class UTemplater extends SimpleTreeVisitor<Tree, Void> {
 
     List<? extends StatementTree> bodyStatements = decl.getBody().getStatements();
     if (bodyStatements.size() == 1
-        && Iterables.getOnlyElement(bodyStatements).getKind() == Kind.RETURN
+        && Iterables.getOnlyElement(bodyStatements) instanceof ReturnTree returnTree
         && context.get(REQUIRE_BLOCK_KEY) == null) {
-      ExpressionTree expression =
-          ((ReturnTree) Iterables.getOnlyElement(bodyStatements)).getExpression();
+      ExpressionTree expression = returnTree.getExpression();
       return ExpressionTemplate.create(
           annotations,
           typeParameters,
@@ -330,8 +330,8 @@ public class UTemplater extends SimpleTreeVisitor<Tree, Void> {
   @Override
   public UExpression visitMemberSelect(MemberSelectTree tree, Void v) {
     Symbol sym = ASTHelpers.getSymbol(tree);
-    if (sym instanceof ClassSymbol) {
-      return UClassIdent.create((ClassSymbol) sym);
+    if (sym instanceof ClassSymbol classSymbol) {
+      return UClassIdent.create(classSymbol);
     } else if (isStatic(sym)) {
       ExpressionTree selected = tree.getExpression();
       checkState(
@@ -423,7 +423,7 @@ public class UTemplater extends SimpleTreeVisitor<Tree, Void> {
 
   static <T, U extends Unifiable<? super T>> boolean anyMatch(
       U toUnify, T target, Unifier unifier) {
-    return toUnify.unify(target, unifier).first().isPresent();
+    return toUnify.unify(target, unifier).findFirst().isPresent();
   }
 
   @Override
@@ -457,8 +457,7 @@ public class UTemplater extends SimpleTreeVisitor<Tree, Void> {
     } else if (anyMatch(AS_VARARGS, tree.getMethodSelect(), new Unifier(context))) {
       ExpressionTree arg = Iterables.getOnlyElement(tree.getArguments());
       checkArgument(
-          ASTHelpers.hasAnnotation(
-              ASTHelpers.getSymbol(arg), Repeated.class, new VisitorState(context)));
+          hasAnnotation(ASTHelpers.getSymbol(arg), REPEATED_ANNOTATION, new VisitorState(context)));
       return template(arg);
     }
     Map<MethodSymbol, PlaceholderMethod> placeholderMethods =
@@ -591,8 +590,8 @@ public class UTemplater extends SimpleTreeVisitor<Tree, Void> {
   @Override
   public UExpression visitIdentifier(IdentifierTree tree, Void v) {
     Symbol sym = ASTHelpers.getSymbol(tree);
-    if (sym instanceof ClassSymbol) {
-      return UClassIdent.create((ClassSymbol) sym);
+    if (sym instanceof ClassSymbol classSymbol) {
+      return UClassIdent.create(classSymbol);
     } else if (sym != null && isStatic(sym)) {
       return staticMember(sym);
     } else if (freeVariables.containsKey(tree.getName().toString())) {
@@ -884,9 +883,9 @@ public class UTemplater extends SimpleTreeVisitor<Tree, Void> {
 
         @Override
         public UType visitClassType(ClassType type, Void v) {
-          if (type instanceof IntersectionClassType) {
+          if (type instanceof IntersectionClassType intersectionClassType) {
             return UIntersectionClassType.create(
-                templateTypes(((IntersectionClassType) type).getComponents()));
+                templateTypes(intersectionClassType.getComponents()));
           }
           return UClassType.create(
               type.tsym.getQualifiedName().toString(), templateTypes(type.getTypeArguments()));

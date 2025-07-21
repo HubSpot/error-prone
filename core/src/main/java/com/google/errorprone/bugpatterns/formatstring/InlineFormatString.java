@@ -21,22 +21,24 @@ import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.matchers.Matchers.allOf;
 import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.staticMethod;
+import static com.google.errorprone.util.ASTHelpers.constValue;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
+import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
+import static com.google.errorprone.util.ASTHelpers.isConsideredFinal;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
+import static com.google.errorprone.util.AnnotationNames.FORMAT_METHOD_ANNOTATION;
+import static com.google.errorprone.util.AnnotationNames.FORMAT_STRING_ANNOTATION;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.MultimapBuilder;
 import com.google.common.collect.SetMultimap;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
-import com.google.errorprone.annotations.FormatMethod;
-import com.google.errorprone.annotations.FormatString;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.BugChecker.CompilationUnitTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
-import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
@@ -53,7 +55,6 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import javax.lang.model.element.ElementKind;
 import org.jspecify.annotations.Nullable;
 
 /** A {@link BugChecker}; see the associated {@link BugPattern} annotation for details. */
@@ -73,10 +74,9 @@ public class InlineFormatString extends BugChecker implements CompilationUnitTre
 
   private static boolean secondParameterIsString(ExpressionTree tree, VisitorState state) {
     Symbol symbol = getSymbol(tree);
-    if (!(symbol instanceof MethodSymbol)) {
+    if (!(symbol instanceof MethodSymbol methodSymbol)) {
       return false;
     }
-    MethodSymbol methodSymbol = (MethodSymbol) symbol;
     return methodSymbol.getParameters().size() >= 2
         && isSubtype(methodSymbol.getParameters().get(1).type, state.getSymtab().stringType, state);
   }
@@ -96,7 +96,7 @@ public class InlineFormatString extends BugChecker implements CompilationUnitTre
   private static @Nullable ExpressionTree formatMethodAnnotationArguments(
       MethodInvocationTree tree, VisitorState state) {
     MethodSymbol sym = getSymbol(tree);
-    if (!ASTHelpers.hasAnnotation(sym, FormatMethod.class, state)) {
+    if (!hasAnnotation(sym, FORMAT_METHOD_ANNOTATION, state)) {
       return null;
     }
     return tree.getArguments().get(formatStringIndex(state, sym));
@@ -106,7 +106,7 @@ public class InlineFormatString extends BugChecker implements CompilationUnitTre
     int idx = 0;
     List<VarSymbol> parameters = sym.getParameters();
     for (VarSymbol p : parameters) {
-      if (ASTHelpers.hasAnnotation(p, FormatString.class, state)) {
+      if (hasAnnotation(p, FORMAT_STRING_ANNOTATION, state)) {
         return idx;
       }
       idx++;
@@ -134,13 +134,20 @@ public class InlineFormatString extends BugChecker implements CompilationUnitTre
               return;
             }
             Symbol variable = getSymbol(arg);
-            if (variable == null
-                || variable.getKind() != ElementKind.FIELD
-                || !variable.isPrivate()
-                || ASTHelpers.constValue(arg, String.class) == null) {
+            if (variable == null || !isConstant(variable, arg)) {
               return;
             }
             uses.put(variable, arg);
+          }
+
+          private boolean isConstant(Symbol variable, ExpressionTree arg) {
+            return switch (variable.getKind()) {
+              case FIELD -> variable.isPrivate() && constValue(arg, String.class) != null;
+              // locals don't have a computed constant value, this will be handled below when we
+              // scan for constant initializers
+              case LOCAL_VARIABLE -> isConsideredFinal(variable);
+              default -> false;
+            };
           }
         },
         null);

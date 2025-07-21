@@ -25,10 +25,10 @@ import static com.google.errorprone.predicates.TypePredicates.isExactType;
 import static com.google.errorprone.predicates.TypePredicates.not;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
+import static com.google.errorprone.util.ASTHelpers.isRecord;
 import static com.google.errorprone.util.ASTHelpers.isSameType;
 import static com.google.errorprone.util.ASTHelpers.methodIsPublicAndNotAnOverride;
 
-import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
@@ -88,10 +88,12 @@ public final class NonApiType extends BugChecker implements MethodTreeMatcher {
           // Optionals
           withPublicVisibility(
               isExactType("java.util.Optional"),
+              NON_GRAPH_WRAPPER,
               "Avoid Optional parameters. " + OPTIONAL_AS_PARAM_LINK,
               ApiElementType.PARAMETER),
           withPublicVisibility(
               isExactType("com.google.common.base.Optional"),
+              NON_GRAPH_WRAPPER,
               "Prefer a java.util.Optional instead. " + PREFER_JDK_OPTIONAL_LINK,
               ApiElementType.ANY),
 
@@ -152,6 +154,12 @@ public final class NonApiType extends BugChecker implements MethodTreeMatcher {
               "Prefer accepting an Iterable or Collection instead. " + STREAM_LINK,
               ApiElementType.PARAMETER),
 
+          // Guice
+          withAnyVisibility(
+              isExactType("com.google.inject.AbstractModule"),
+              "Prefer using Module instead.",
+              ApiElementType.ANY),
+
           // ProtoTime
           withPublicVisibility(
               isExactType("com.google.protobuf.Duration"),
@@ -187,6 +195,15 @@ public final class NonApiType extends BugChecker implements MethodTreeMatcher {
               ApiElementType.ANY),
           // TODO(kak): consider com.google.type.Interval -> Range<Instant>
 
+          // ProtocolStringList subtypes (see b/408025632)
+          // Ideally, we also would flag local variables, but NonApiType is a method-level check.
+          withAnyVisibility(
+              anyOf(isDescendantOf("com.google.protobuf.ProtocolStringList")),
+              "Unless you need methods declared on the subtypes, prefer a java.util.List<String>"
+                  + " instead. "
+                  + INTERFACES_NOT_IMPLS_LINK,
+              ApiElementType.ANY),
+
           // Flogger
           withAnyVisibility(
               anyOf(
@@ -204,10 +221,17 @@ public final class NonApiType extends BugChecker implements MethodTreeMatcher {
 
   @Override
   public Description matchMethod(MethodTree tree, VisitorState state) {
-    Type enclosingType = getSymbol(tree).owner.type;
+    var symbol = getSymbol(tree);
+    // NOTE: maybe it would make sense to judiciously start warning on some types for records: maybe
+    // a record really shouldn't have ArrayList members. However, we'd want to be consistent and
+    // flag canonical constructors as well (even when implicit).
+    if (isRecord(symbol.owner)) {
+      return NO_MATCH;
+    }
+    Type enclosingType = symbol.owner.type;
 
     boolean isPublicApi =
-        methodIsPublicAndNotAnOverride(getSymbol(tree), state)
+        methodIsPublicAndNotAnOverride(symbol, state)
             && state.errorProneOptions().isPubliclyVisibleTarget();
 
     for (Tree parameter : tree.getParameters()) {
@@ -266,19 +290,22 @@ public final class NonApiType extends BugChecker implements MethodTreeMatcher {
       TypePredicate enclosingTypePredicate,
       String failureMessage,
       ApiElementType elementType) {
-    return new AutoValue_NonApiType_TypeToCheck(
+    return new TypeToCheck(
         typePredicate, enclosingTypePredicate, failureMessage, ApiVisibility.PUBLIC, elementType);
   }
 
   private static TypeToCheck withAnyVisibility(
       TypePredicate typePredicate, String failureMessage, ApiElementType elementType) {
-    return new AutoValue_NonApiType_TypeToCheck(
+    return new TypeToCheck(
         typePredicate, anything(), failureMessage, ApiVisibility.ANY, elementType);
   }
 
-  @AutoValue
-  abstract static class TypeToCheck {
-
+  private record TypeToCheck(
+      TypePredicate typePredicate,
+      TypePredicate enclosingTypePredicate,
+      String failureMessage,
+      ApiVisibility visibility,
+      ApiElementType elementType) {
     final boolean matches(Type type, Type enclosingType, VisitorState state) {
       // only fire this check inside certain subtypes
       if (enclosingTypePredicate().apply(enclosingType, state)) {
@@ -295,15 +322,5 @@ public final class NonApiType extends BugChecker implements MethodTreeMatcher {
       // TODO(kak): do we want to check var-args as well?
       return false;
     }
-
-    abstract TypePredicate typePredicate();
-
-    abstract TypePredicate enclosingTypePredicate();
-
-    abstract String failureMessage();
-
-    abstract ApiVisibility visibility();
-
-    abstract ApiElementType elementType();
   }
 }
