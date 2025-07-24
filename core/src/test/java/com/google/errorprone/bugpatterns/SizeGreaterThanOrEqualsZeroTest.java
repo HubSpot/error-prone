@@ -17,7 +17,6 @@
 package com.google.errorprone.bugpatterns;
 
 import com.google.errorprone.CompilationTestHelper;
-import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -27,20 +26,15 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 @Ignore("b/130669807")
 public class SizeGreaterThanOrEqualsZeroTest {
-  CompilationTestHelper compilationHelper;
-
-  @Before
-  public void setUp() {
-    compilationHelper =
-        CompilationTestHelper.newInstance(SizeGreaterThanOrEqualsZero.class, getClass());
-  }
+  private final CompilationTestHelper compilationHelper =
+      CompilationTestHelper.newInstance(SizeGreaterThanOrEqualsZero.class, getClass());
 
   @Test
   public void collectionSizePositiveCases() {
     compilationHelper
         .addSourceLines(
             "SizeGreaterThanOrEqualsZeroPositiveCases.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import com.google.common.collect.Iterables;
@@ -189,7 +183,7 @@ public class SizeGreaterThanOrEqualsZeroPositiveCases {
     compilationHelper
         .addSourceLines(
             "SizeGreaterThanOrEqualsZeroNegativeCases.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import com.google.errorprone.bugpatterns.proto.ProtoTest.TestProtoMessage;

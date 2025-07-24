@@ -21,7 +21,7 @@
   <parent>
     <groupId>com.google.errorprone</groupId>
     <artifactId>error_prone_parent</artifactId>
-    <version>2.36.0</version>
+    <version>2.40.0</version>
   </parent>
 
   <name>error-prone test helpers</name>
@@ -86,7 +86,7 @@
       <!-- Apache 2.0 -->
       <groupId>com.google.googlejavaformat</groupId>
       <artifactId>google-java-format</artifactId>
-      <version>1.19.1</version>
+      <version>${google-java-format.version}</version>
     </dependency>
     <dependency>
       <!-- Eclipse Public License 1.0 -->

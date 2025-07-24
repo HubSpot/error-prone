@@ -48,7 +48,9 @@ public class UnnecessaryBoxedVariableTest {
             import java.util.stream.Stream;
             import org.jspecify.annotations.Nullable;
 
-            /** @author awturner@google.com (Andy Turner) */
+            /**
+             * @author awturner@google.com (Andy Turner)
+             */
             class UnnecessaryBoxedVariableCases {
               void positive_local() {
                 Integer i = 0;
@@ -237,7 +239,7 @@ public class UnnecessaryBoxedVariableTest {
               private Integer methodBoxedArg(Integer i) {
                 return i;
               }
-            }\
+            }
             """)
         .addOutputLines(
             "UnnecessaryBoxedVariableCases_expected.java",
@@ -250,7 +252,9 @@ public class UnnecessaryBoxedVariableTest {
             import java.util.stream.Stream;
             import org.jspecify.annotations.Nullable;
 
-            /** @author awturner@google.com (Andy Turner) */
+            /**
+             * @author awturner@google.com (Andy Turner)
+             */
             class UnnecessaryBoxedVariableCases {
               void positive_local() {
                 int i = 0;
@@ -436,7 +440,7 @@ public class UnnecessaryBoxedVariableTest {
               private Integer methodBoxedArg(Integer i) {
                 return i;
               }
-            }\
+            }
             """)
         .doTest();
   }
@@ -525,6 +529,23 @@ public class UnnecessaryBoxedVariableTest {
             }
             """)
         .setArgs(ImmutableList.of("-processor", AutoValueProcessor.class.getName()))
+        .doTest();
+  }
+
+  @Test
+  public void recordsIgnored() {
+    compilationTestHelper
+        .addSourceLines(
+            "Foo.java",
+            """
+            import static com.google.common.base.Preconditions.checkNotNull;
+
+            record Foo(Integer foo, boolean bar) {
+              Foo {
+                checkNotNull(foo);
+              }
+            }
+            """)
         .doTest();
   }
 }

@@ -20,8 +20,8 @@ import static com.google.errorprone.refaster.Unifier.unifications;
 import static com.google.errorprone.refaster.Unifier.unifyList;
 
 import com.google.auto.value.AutoValue;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
+import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.TreeVisitor;
 import com.sun.tools.javac.tree.JCTree;
@@ -33,6 +33,7 @@ import com.sun.tools.javac.tree.JCTree.JCStatement;
 import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
 import com.sun.tools.javac.util.List;
 import com.sun.tools.javac.util.ListBuffer;
+import java.util.Optional;
 
 /**
  * {@code UTree} representation of a {@code LambdaExpressionTree}.
@@ -59,7 +60,7 @@ abstract class ULambda extends UExpression implements LambdaExpressionTree {
   @Override
   public Choice<Unifier> visitLambdaExpression(LambdaExpressionTree node, Unifier unifier) {
     return unifyList(unifier, getParameters(), node.getParameters())
-        .thenChoose(unifications(getBody(), node.getBody()));
+        .flatMap(unifications(getBody(), node.getBody()));
   }
 
   @Override
@@ -79,8 +80,7 @@ abstract class ULambda extends UExpression implements LambdaExpressionTree {
   }
 
   JCTree inlineBody(Inliner inliner) throws CouldNotResolveImportException {
-    if (getBody() instanceof UPlaceholderExpression) {
-      UPlaceholderExpression body = (UPlaceholderExpression) getBody();
+    if (getBody() instanceof UPlaceholderExpression body) {
       Optional<List<JCStatement>> blockBinding =
           inliner.getOptionalBinding(body.placeholder().blockKey());
       if (blockBinding.isPresent()) {
@@ -89,10 +89,10 @@ abstract class ULambda extends UExpression implements LambdaExpressionTree {
             UPlaceholderExpression.copier(body.arguments(), inliner)
                 .copy(blockBinding.get(), inliner);
         if (blockInlined.size() == 1) {
-          if (blockInlined.get(0) instanceof JCReturn) {
-            return ((JCReturn) blockInlined.get(0)).getExpression();
-          } else if (blockInlined.get(0) instanceof JCExpressionStatement) {
-            return ((JCExpressionStatement) blockInlined.get(0)).getExpression();
+          if (blockInlined.get(0) instanceof JCReturn jCReturn) {
+            return jCReturn.getExpression();
+          } else if (blockInlined.get(0) instanceof JCExpressionStatement jCExpressionStatement) {
+            return jCExpressionStatement.getExpression();
           }
         }
         return inliner.maker().Block(0, blockInlined);
@@ -111,6 +111,6 @@ abstract class ULambda extends UExpression implements LambdaExpressionTree {
 
   @Override
   public BodyKind getBodyKind() {
-    return getBody().getKind() == Kind.BLOCK ? BodyKind.STATEMENT : BodyKind.EXPRESSION;
+    return getBody() instanceof BlockTree ? BodyKind.STATEMENT : BodyKind.EXPRESSION;
   }
 }

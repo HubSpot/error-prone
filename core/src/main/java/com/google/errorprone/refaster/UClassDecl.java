@@ -49,17 +49,12 @@ abstract class UClassDecl extends USimpleStatement implements ClassTree {
     return new AutoValue_UClassDecl(ImmutableList.copyOf(members));
   }
 
-  @AutoValue
-  abstract static class UnifierWithRemainingMembers {
+  private record UnifierWithRemainingMembers(
+      Unifier unifier, ImmutableList<UMethodDecl> remainingMembers) {
     static UnifierWithRemainingMembers create(
         Unifier unifier, Iterable<UMethodDecl> remainingMembers) {
-      return new AutoValue_UClassDecl_UnifierWithRemainingMembers(
-          unifier, ImmutableList.copyOf(remainingMembers));
+      return new UnifierWithRemainingMembers(unifier, ImmutableList.copyOf(remainingMembers));
     }
-
-    abstract Unifier unifier();
-
-    abstract ImmutableList<UMethodDecl> remainingMembers();
 
     static Function<Unifier, UnifierWithRemainingMembers> withRemaining(
         Iterable<UMethodDecl> remainingMembers) {
@@ -75,7 +70,7 @@ abstract class UClassDecl extends USimpleStatement implements ClassTree {
           Choice.from(
               ContiguousSet.create(
                   Range.closedOpen(0, currentMembers.size()), DiscreteDomain.integers()));
-      return methodChoice.thenChoose(
+      return methodChoice.flatMap(
           (Integer i) -> {
             ImmutableList<UMethodDecl> remainingMembers =
                 ImmutableList.<UMethodDecl>builder()
@@ -103,7 +98,7 @@ abstract class UClassDecl extends USimpleStatement implements ClassTree {
             }
             return chosenMethod
                 .unify(tree, unifier)
-                .transform(UnifierWithRemainingMembers.withRemaining(remainingMembers));
+                .map(UnifierWithRemainingMembers.withRemaining(remainingMembers));
           });
     };
   }
@@ -113,15 +108,15 @@ abstract class UClassDecl extends USimpleStatement implements ClassTree {
     Choice<UnifierWithRemainingMembers> path =
         Choice.of(UnifierWithRemainingMembers.create(unifier, getMembers()));
     for (Tree targetMember : node.getMembers()) {
-      if (targetMember instanceof MethodTree
-          && ASTHelpers.isGeneratedConstructor((MethodTree) targetMember)) {
+      if (targetMember instanceof MethodTree methodTree
+          && ASTHelpers.isGeneratedConstructor(methodTree)) {
         // skip synthetic constructors
         continue;
       }
-      path = path.thenChoose(match(targetMember));
+      path = path.flatMap(match(targetMember));
     }
-    return path.condition(s -> s.remainingMembers().isEmpty())
-        .transform(UnifierWithRemainingMembers::unifier);
+    return path.filter(s -> s.remainingMembers().isEmpty())
+        .map(UnifierWithRemainingMembers::unifier);
   }
 
   @Override

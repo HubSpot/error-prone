@@ -34,7 +34,6 @@ import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.isGeneratedConstructor;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
-import static com.google.errorprone.util.ASTHelpers.scope;
 import static com.google.errorprone.util.ASTHelpers.shouldKeep;
 import static com.google.errorprone.util.MoreAnnotations.asStrings;
 import static com.google.errorprone.util.MoreAnnotations.getAnnotationValue;
@@ -64,7 +63,6 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
-import com.sun.source.tree.Tree.Kind;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.TreeScanner;
@@ -135,6 +133,8 @@ public final class UnusedMethod extends BugChecker implements CompilationUnitTre
           "jakarta.persistence.PrePersist",
           "jakarta.persistence.PreRemove",
           "jakarta.persistence.PreUpdate",
+          "jakarta.validation.constraints.AssertFalse",
+          "jakarta.validation.constraints.AssertTrue",
           "com.google.inject.Provides",
           "com.hubspot.rosetta.annotations.RosettaCreator",
           "com.hubspot.rosetta.annotations.RosettaValue",
@@ -265,15 +265,15 @@ public final class UnusedMethod extends BugChecker implements CompilationUnitTre
               return true;
             }
             for (JCExpression arg : annotation.getArguments()) {
-              if (arg.getKind() != Kind.ASSIGNMENT) {
+              if (!(arg instanceof AssignmentTree)) {
                 // Implicit value annotation, e.g. @Parameters({"1"}); no exemption required.
                 return false;
               }
               JCExpression var = ((JCAssign) arg).getVariable();
-              if (var.getKind() == Kind.IDENTIFIER) {
+              if (var instanceof IdentifierTree identifierTree) {
                 // Anything that is not @Parameters(value = ...), e.g.
                 // @Parameters(source = ...) or @Parameters(method = ...)
-                if (!((IdentifierTree) var).getName().contentEquals(JUNIT_PARAMS_VALUE)) {
+                if (!identifierTree.getName().contentEquals(JUNIT_PARAMS_VALUE)) {
                   return true;
                 }
               }
@@ -474,10 +474,11 @@ public final class UnusedMethod extends BugChecker implements CompilationUnitTre
 
       SuggestedFix.Builder fix = SuggestedFix.builder();
 
-      int constructorCount = size(scope(symbol.members()).getSymbols(Symbol::isConstructor));
+      int constructorCount = size(symbol.members().getSymbols(Symbol::isConstructor));
       int finalFields =
           size(
-              scope(symbol.members())
+              symbol
+                  .members()
                   .getSymbols(s -> s.getKind().equals(FIELD) && s.getModifiers().contains(FINAL)));
       boolean fixable;
       if (constructorCount == trees.size()) {

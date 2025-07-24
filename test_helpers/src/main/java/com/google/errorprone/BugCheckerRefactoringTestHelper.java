@@ -49,6 +49,7 @@ import com.google.errorprone.scanner.Scanner;
 import com.google.errorprone.scanner.ScannerSupplier;
 import com.google.googlejavaformat.java.Formatter;
 import com.google.googlejavaformat.java.FormatterException;
+import com.google.googlejavaformat.java.StringWrapper;
 import com.google.testing.compile.JavaFileObjects;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
@@ -94,7 +95,8 @@ public class BugCheckerRefactoringTestHelper {
 
       private String maybeFormat(String input) {
         try {
-          return new Formatter().formatSource(input);
+          Formatter formatter = new Formatter();
+          return StringWrapper.wrap(formatter.formatSource(input), formatter);
         } catch (FormatterException e) {
           return input;
         }
@@ -190,6 +192,13 @@ public class BugCheckerRefactoringTestHelper {
         clazz, ScannerSupplier.fromBugCheckerClasses(checkerClass));
   }
 
+  /**
+   * Adds an input file.
+   *
+   * @deprecated prefer {@link #addInputLines}. Declaring tests in the same file using text blocks
+   *     is more readable, as it encourages writing small, focussed tests.
+   */
+  @Deprecated
   public BugCheckerRefactoringTestHelper.ExpectOutput addInput(String inputFilename) {
     return new ExpectOutput(forResource(clazz, inputFilename));
   }
@@ -368,14 +377,24 @@ public class BugCheckerRefactoringTestHelper {
       this.input = input;
     }
 
+    @CanIgnoreReturnValue
     public BugCheckerRefactoringTestHelper addOutputLines(String path, String... output) {
       return addInputAndOutput(input, forSourceLines(path, output));
     }
 
+    /**
+     * Adds an output file.
+     *
+     * @deprecated prefer {@link #addOutputLines}. Declaring tests in the same file using text
+     *     blocks is more readable, as it encourages writing small, focussed tests.
+     */
+    @Deprecated
+    @CanIgnoreReturnValue
     public BugCheckerRefactoringTestHelper addOutput(String outputFilename) {
       return addInputAndOutput(input, forResource(clazz, outputFilename));
     }
 
+    @CanIgnoreReturnValue
     public BugCheckerRefactoringTestHelper expectUnchanged() {
       return addInputAndOutput(input, input);
     }

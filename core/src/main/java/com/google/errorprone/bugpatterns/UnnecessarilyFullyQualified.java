@@ -88,16 +88,19 @@ public final class UnnecessarilyFullyQualified extends BugChecker
    */
   private final ImmutableSet<String> exemptedEnclosingTypes;
 
+  private final boolean batchFindings;
+
   @Inject
   UnnecessarilyFullyQualified(ErrorProneFlags errorProneFlags) {
     this.exemptedEnclosingTypes = errorProneFlags.getSetOrEmpty("BadImport:BadEnclosingTypes");
+    this.batchFindings =
+        errorProneFlags.getBoolean("UnnecessarilyFullyQualified:BatchFindings").orElse(false);
   }
 
   @Override
   public Description matchCompilationUnit(CompilationUnitTree tree, VisitorState state) {
     if (tree.getTypeDecls().stream()
-        .anyMatch(
-            t -> getSymbol(tree) != null && !getGeneratedBy(getSymbol(tree), state).isEmpty())) {
+        .anyMatch(t -> getSymbol(tree) != null && !getGeneratedBy(getSymbol(tree)).isEmpty())) {
       return NO_MATCH;
     }
     if (isPackageInfo(tree)) {
@@ -256,6 +259,9 @@ public final class UnnecessarilyFullyQualified extends BugChecker
       SuggestedFix fix = fixBuilder.build();
       for (TreePath path : pathsToFix) {
         state.reportMatch(describeMatch(path.getLeaf(), fix));
+        if (this.batchFindings) {
+          break;
+        }
       }
     }
     return NO_MATCH;

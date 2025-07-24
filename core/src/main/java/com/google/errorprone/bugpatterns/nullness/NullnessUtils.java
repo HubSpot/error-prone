@@ -32,10 +32,8 @@ import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.stripParentheses;
 import static com.sun.source.tree.Tree.Kind.ANNOTATED_TYPE;
 import static com.sun.source.tree.Tree.Kind.ARRAY_TYPE;
-import static com.sun.source.tree.Tree.Kind.CONDITIONAL_EXPRESSION;
 import static com.sun.source.tree.Tree.Kind.IDENTIFIER;
 import static com.sun.source.tree.Tree.Kind.NULL_LITERAL;
-import static com.sun.source.tree.Tree.Kind.PARAMETERIZED_TYPE;
 import static com.sun.tools.javac.parser.Tokens.TokenKind.DOT;
 import static java.lang.Boolean.TRUE;
 import static java.util.Objects.requireNonNull;
@@ -56,7 +54,6 @@ import com.sun.source.tree.ArrayTypeTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.BlockTree;
-import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.ConditionalExpressionTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
@@ -66,6 +63,7 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ParameterizedTypeTree;
 import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.StatementTree;
+import com.sun.source.tree.SwitchExpressionTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.VariableTree;
@@ -79,8 +77,6 @@ import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.processing.JavacProcessingEnvironment;
-import java.lang.reflect.Method;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import javax.lang.model.element.Name;
@@ -128,10 +124,22 @@ class NullnessUtils {
    * such a Symbol.
    */
 
+  /*
+   * TODO(cpovirk): Unify this with
+   * NullArgumentForNonnullParameter.enclosingAnnotationDefaultsNonTypeVariablesToNonNull, but note
+   * the differences documented on that method.
+   */
   static boolean isInNullMarkedScope(Symbol sym, VisitorState state) {
     for (; sym != null; sym = sym.getEnclosingElement()) {
-      if (hasAnnotation(sym, "org.jspecify.annotations.NullMarked", state)) {
+      // https://jspecify.dev/docs/spec/#null-marked-scope
+      // TODO(cpovirk): Including handling of @kotlin.Metadata.
+      boolean marked = hasAnnotation(sym, "org.jspecify.annotations.NullMarked", state);
+      boolean unmarked = hasAnnotation(sym, "org.jspecify.annotations.NullUnmarked", state);
+      if (marked && !unmarked) {
         return true;
+      }
+      if (unmarked && !marked) {
+        return false;
       }
     }
     return false;
@@ -204,19 +212,19 @@ class NullnessUtils {
       Tree typeTree,
       NullableAnnotationToUse nullableAnnotationToUse,
       @Nullable String suppressionToRemove) {
-    if (typeTree.getKind() == PARAMETERIZED_TYPE) {
-      typeTree = ((ParameterizedTypeTree) typeTree).getType();
+    if (typeTree instanceof ParameterizedTypeTree ptt) {
+      typeTree = ptt.getType();
     }
     switch (typeTree.getKind()) {
       case ARRAY_TYPE -> {
         Tree beforeBrackets = typeTree;
         while (true) {
           Tree pastAnnotations =
-              beforeBrackets.getKind() == ANNOTATED_TYPE
-                  ? ((AnnotatedTypeTree) beforeBrackets).getUnderlyingType()
+              beforeBrackets instanceof AnnotatedTypeTree att
+                  ? att.getUnderlyingType()
                   : beforeBrackets;
-          if (pastAnnotations.getKind() == ARRAY_TYPE) {
-            beforeBrackets = ((ArrayTypeTree) pastAnnotations).getType();
+          if (pastAnnotations instanceof ArrayTypeTree arrayTypeTree) {
+            beforeBrackets = arrayTypeTree.getType();
           } else {
             break;
           }
@@ -410,13 +418,11 @@ class NullnessUtils {
       return null;
     }
 
-    Name name =
-        nullChecked.getKind() == IDENTIFIER ? ((IdentifierTree) nullChecked).getName() : null;
+    Name name = nullChecked instanceof IdentifierTree id ? id.getName() : null;
 
-    Symbol symbol = getSymbol(nullChecked);
-    VarSymbol varSymbol = symbol instanceof VarSymbol ? (VarSymbol) symbol : null;
+    VarSymbol varSymbol = getSymbol(nullChecked) instanceof VarSymbol vs ? vs : null;
 
-    return new AutoValue_NullnessUtils_NullCheck(name, varSymbol, polarity);
+    return new NullCheck(name, varSymbol, polarity);
   }
 
   /**
@@ -442,25 +448,22 @@ class NullnessUtils {
    * foo.bar} is non-null in the future. One case that might be particularly useful is {@code
    * this.bar}. We might even go further, assuming that {@code foo.bar()} will continue to have the
    * same value in some cases.
+   *
+   * @param bareIdentifier Returns the bare identifier that was checked against {@code null}, if the
+   *     null check took that form. Prefer this over {@link
+   *     #varSymbolButUsuallyPreferBareIdentifier} in most cases, as discussed in the class
+   *     documentation.
+   * @param varSymbolButUsuallyPreferBareIdentifier Returns the symbol that was checked against
+   *     {@code null}.
    */
-  @com.google.auto.value.AutoValue // fully qualified to work around JDK-7177813(?) in JDK8 build
-  abstract static class NullCheck {
-    /**
-     * Returns the bare identifier that was checked against {@code null}, if the null check took
-     * that form. Prefer this over {@link #varSymbolButUsuallyPreferBareIdentifier} in most cases,
-     * as discussed in the class documentation.
-     */
-    abstract @Nullable Name bareIdentifier();
-
-    /** Returns the symbol that was checked against {@code null}. */
-    abstract @Nullable VarSymbol varSymbolButUsuallyPreferBareIdentifier();
-
-    abstract Polarity polarity();
-
+  record NullCheck(
+      @Nullable Name bareIdentifier,
+      @Nullable VarSymbol varSymbolButUsuallyPreferBareIdentifier,
+      Polarity polarity) {
     boolean bareIdentifierMatches(ExpressionTree other) {
-      return other.getKind() == IDENTIFIER
+      return other instanceof IdentifierTree identifierTree
           && bareIdentifier() != null
-          && bareIdentifier().equals(((IdentifierTree) other).getName());
+          && bareIdentifier().equals(identifierTree.getName());
     }
 
     ExpressionTree nullCase(ConditionalExpressionTree tree) {
@@ -560,39 +563,13 @@ class NullnessUtils {
       }
 
       boolean isSwitchExpressionWithDefinitelyNullBranch(Tree tree) {
-        return tree.getKind().name().equals("SWITCH_EXPRESSION")
-            && getCases(tree).stream()
-                .map(NullnessUtils::getBody)
+        return tree instanceof SwitchExpressionTree switchExpressionTree
+            && switchExpressionTree.getCases().stream()
+                .map(c -> c.getBody())
                 .anyMatch(t -> Objects.equals(visit(t, null), TRUE));
       }
     }.visit(tree, null);
   }
-
-  private static List<?> getCases(Tree switchExpressionTree) {
-    try {
-      if (getCasesMethod == null) {
-        getCasesMethod =
-            Class.forName("com.sun.source.tree.SwitchExpressionTree").getMethod("getCases");
-      }
-      return (List<?>) getCasesMethod.invoke(switchExpressionTree);
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
-  }
-
-  private static Tree getBody(Object caseTree) {
-    try {
-      if (getBodyMethod == null) {
-        getBodyMethod = CaseTree.class.getMethod("getBody");
-      }
-      return (Tree) getBodyMethod.invoke(caseTree);
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
-  }
-
-  private static Method getCasesMethod;
-  private static Method getBodyMethod;
 
   /** Returns true if this is {@code x == null ? x : ...} or similar. */
   private static boolean isTernaryXIfXIsNull(ConditionalExpressionTree tree) {
@@ -611,17 +588,16 @@ class NullnessUtils {
   /** Returns x if the path's leaf is the only statement inside {@code if (x == null) { ... }}. */
   static ImmutableSet<Name> varsProvenNullByParentIf(TreePath path) {
     Tree parent = path.getParentPath().getLeaf();
-    if (!(parent instanceof BlockTree)) {
+    if (!(parent instanceof BlockTree blockTree)) {
       return ImmutableSet.of();
     }
-    if (((BlockTree) parent).getStatements().size() > 1) {
+    if (blockTree.getStatements().size() > 1) {
       return ImmutableSet.of();
     }
     Tree grandparent = path.getParentPath().getParentPath().getLeaf();
-    if (!(grandparent instanceof IfTree)) {
+    if (!(grandparent instanceof IfTree ifTree)) {
       return ImmutableSet.of();
     }
-    IfTree ifTree = (IfTree) grandparent;
     NullCheck nullCheck = getNullCheck(ifTree.getCondition());
     if (nullCheck == null) {
       return ImmutableSet.of();
@@ -642,8 +618,7 @@ class NullnessUtils {
       if (!(tree instanceof ExpressionTree)) {
         break;
       }
-      if (tree.getKind() == CONDITIONAL_EXPRESSION) {
-        ConditionalExpressionTree ternary = (ConditionalExpressionTree) tree;
+      if (tree instanceof ConditionalExpressionTree ternary) {
         NullCheck nullCheck = getNullCheck(ternary.getCondition());
         if (nullCheck == null) {
           return ImmutableSet.of();
@@ -667,8 +642,8 @@ class NullnessUtils {
     // Skip fields declared in other compilation units since we can't make a fix for them here.
     if (declPath != null
         && declPath.getCompilationUnit() == state.getPath().getCompilationUnit()
-        && (declPath.getLeaf() instanceof VariableTree)) {
-      return (VariableTree) declPath.getLeaf();
+        && (declPath.getLeaf() instanceof VariableTree variableTree)) {
+      return variableTree;
     }
     return null;
   }

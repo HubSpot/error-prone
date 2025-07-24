@@ -69,10 +69,9 @@ public final class LockNotBeforeTry extends BugChecker implements MethodInvocati
       return NO_MATCH;
     }
     Tree enclosing = state.getPath().getParentPath().getParentPath().getLeaf();
-    if (!(enclosing instanceof BlockTree)) {
+    if (!(enclosing instanceof BlockTree block)) {
       return NO_MATCH;
     }
-    BlockTree block = (BlockTree) enclosing;
     int index = block.getStatements().indexOf(parent);
     if (index + 1 < block.getStatements().size()) {
       StatementTree nextStatement = block.getStatements().get(index + 1);
@@ -109,17 +108,16 @@ public final class LockNotBeforeTry extends BugChecker implements MethodInvocati
           .build();
     }
     Tree enclosing = state.getPath().getParentPath().getParentPath().getLeaf();
-    if (!(enclosing instanceof BlockTree)) {
+    if (!(enclosing instanceof BlockTree block)) {
       return NO_MATCH;
     }
-    BlockTree block = (BlockTree) enclosing;
     int index = block.getStatements().indexOf(lockStatement);
     // Scan through the enclosing statements
     for (StatementTree statement : Iterables.skip(block.getStatements(), index + 1)) {
       // ... for a try/finally which releases this lock.
-      if (statement instanceof TryTree && releases((TryTree) statement, lockee, state)) {
+      if (statement instanceof TryTree tryTree && releases(tryTree, lockee, state)) {
         int start = getStartPosition(statement);
-        int end = getStartPosition(((TryTree) statement).getBlock().getStatements().get(0));
+        int end = getStartPosition(tryTree.getBlock().getStatements().get(0));
         SuggestedFix fix =
             SuggestedFix.builder()
                 .replace(start, end, "")
@@ -134,8 +132,8 @@ public final class LockNotBeforeTry extends BugChecker implements MethodInvocati
             .build();
       }
       // ... or an unlock at the same level.
-      if (statement instanceof ExpressionStatementTree) {
-        ExpressionTree expression = ((ExpressionStatementTree) statement).getExpression();
+      if (statement instanceof ExpressionStatementTree expressionStatementTree) {
+        ExpressionTree expression = expressionStatementTree.getExpression();
         if (acquires(expression, lockee, state)) {
           return buildDescription(lockInvocation)
               .setMessage(

@@ -21,7 +21,9 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
+import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.streamSuperMethods;
+import static com.google.errorprone.util.AnnotationNames.RESTRICTED_API_ANNOTATION;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
@@ -80,7 +82,7 @@ public class RestrictedApiChecker extends BugChecker
   @Override
   public Description matchAnnotation(AnnotationTree tree, VisitorState state) {
     // TODO(bangert): Validate all the fields
-    if (!getSymbol(tree).getQualifiedName().contentEquals(RestrictedApi.class.getName())) {
+    if (!getSymbol(tree).getQualifiedName().contentEquals(RESTRICTED_API_ANNOTATION)) {
       return NO_MATCH;
     }
     // TODO(bangert): make a more elegant API to get the annotation within an annotation tree.
@@ -97,7 +99,7 @@ public class RestrictedApiChecker extends BugChecker
 
   private static Tree getAnnotationArgumentTree(AnnotationTree tree, String name) {
     return tree.getArguments().stream()
-        .filter(arg -> arg.getKind().equals(Tree.Kind.ASSIGNMENT))
+        .filter(arg -> arg instanceof AssignmentTree)
         .map(arg -> (AssignmentTree) arg)
         .filter(arg -> isVariableTreeWithName(arg, name))
         .map(AssignmentTree::getExpression)
@@ -107,8 +109,8 @@ public class RestrictedApiChecker extends BugChecker
 
   private static boolean isVariableTreeWithName(AssignmentTree tree, String name) {
     ExpressionTree variable = tree.getVariable();
-    return variable instanceof IdentifierTree
-        && ((IdentifierTree) variable).getName().contentEquals(name);
+    return variable instanceof IdentifierTree identifierTree
+        && identifierTree.getName().contentEquals(name);
   }
 
   @Override
@@ -158,7 +160,8 @@ public class RestrictedApiChecker extends BugChecker
 
     return (MethodSymbol)
         getOnlyElement(
-            ASTHelpers.scope(superclass.members())
+            superclass
+                .members()
                 .getSymbols(
                     member ->
                         member.isConstructor()
@@ -185,7 +188,7 @@ public class RestrictedApiChecker extends BugChecker
 
     // Try each super method for @RestrictedApi
     return streamSuperMethods(method, state.getTypes())
-        .filter((t) -> ASTHelpers.hasAnnotation(t, RestrictedApi.class, state))
+        .filter((t) -> hasAnnotation(t, RESTRICTED_API_ANNOTATION, state))
         .findFirst()
         .map(
             superWithRestrictedApi ->
@@ -199,7 +202,7 @@ public class RestrictedApiChecker extends BugChecker
     if (sym == null) {
       return null;
     }
-    return sym.attribute(state.getSymbolFromString(RestrictedApi.class.getName()));
+    return sym.attribute(state.getSymbolFromString(RESTRICTED_API_ANNOTATION));
   }
 
   private Description checkRestriction(

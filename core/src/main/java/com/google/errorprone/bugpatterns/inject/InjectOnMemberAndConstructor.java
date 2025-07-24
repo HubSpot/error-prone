@@ -82,7 +82,7 @@ public class InjectOnMemberAndConstructor extends BugChecker implements ClassTre
     if (ctorsWithInject.size() != 1) {
       // Injection frameworks don't support multiple @Inject ctors.
       // There is already an ERROR check for it.
-      // http://errorprone.info/bugpattern/MoreThanOneInjectableConstructor
+      // https://errorprone.info/bugpattern/MoreThanOneInjectableConstructor
       return Description.NO_MATCH;
     }
 
@@ -103,10 +103,9 @@ public class InjectOnMemberAndConstructor extends BugChecker implements ClassTre
     SuggestedFix.Builder fix = SuggestedFix.builder();
     VariableTree variableTreeFirstMatch = null;
     for (Tree member : classTree.getMembers()) {
-      if (!(member instanceof VariableTree)) {
+      if (!(member instanceof VariableTree variableTree)) {
         continue;
       }
-      VariableTree variableTree = (VariableTree) member;
       if (!INSTANCE_FIELD_WITH_INJECT.matches(variableTree, state)) {
         continue;
       }

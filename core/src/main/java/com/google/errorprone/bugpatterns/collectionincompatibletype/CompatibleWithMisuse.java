@@ -19,13 +19,15 @@ package com.google.errorprone.bugpatterns.collectionincompatibletype;
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.errorprone.BugPattern.SeverityLevel.ERROR;
+import static com.google.errorprone.util.ASTHelpers.enclosingClass;
+import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
+import static com.google.errorprone.util.AnnotationNames.COMPATIBLE_WITH_ANNOTATION;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
-import com.google.errorprone.annotations.CompatibleWith;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.BugChecker.AnnotationTreeMatcher;
 import com.google.errorprone.matchers.Description;
@@ -37,7 +39,6 @@ import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.Tree;
-import com.sun.source.tree.Tree.Kind;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Symbol.TypeVariableSymbol;
@@ -56,7 +57,7 @@ import org.jspecify.annotations.Nullable;
 public class CompatibleWithMisuse extends BugChecker implements AnnotationTreeMatcher {
 
   private static final Matcher<AnnotationTree> IS_COMPATIBLE_WITH_ANNOTATION =
-      Matchers.isType(CompatibleWith.class.getCanonicalName());
+      Matchers.isType(COMPATIBLE_WITH_ANNOTATION);
 
   @Override
   public Description matchAnnotation(AnnotationTree annoTree, VisitorState state) {
@@ -75,7 +76,7 @@ public class CompatibleWithMisuse extends BugChecker implements AnnotationTreeMa
     for (MethodSymbol methodSymbol :
         ASTHelpers.findSuperMethods(declaredMethod, state.getTypes())) {
       if (methodSymbol.params().stream()
-          .anyMatch(p -> ASTHelpers.hasAnnotation(p, CompatibleWith.class, state))) {
+          .anyMatch(p -> hasAnnotation(p, COMPATIBLE_WITH_ANNOTATION, state))) {
         return describeWithMessage(
             annoTree,
             String.format(
@@ -91,7 +92,7 @@ public class CompatibleWithMisuse extends BugChecker implements AnnotationTreeMa
     ClassSymbol cs = (ClassSymbol) declaredMethod.owner;
     do {
       potentialTypeVars.addAll(cs.getTypeParameters());
-      cs = cs.isInner() ? cs.owner.enclClass() : null;
+      cs = cs.isInner() ? enclosingClass(cs) : null;
     } while (cs != null);
 
     if (potentialTypeVars.isEmpty()) {
@@ -130,12 +131,12 @@ public class CompatibleWithMisuse extends BugChecker implements AnnotationTreeMa
   // is required.
   private static @Nullable String valueArgumentFromCompatibleWithAnnotation(AnnotationTree tree) {
     ExpressionTree argumentValue = Iterables.getOnlyElement(tree.getArguments());
-    if (argumentValue.getKind() != Kind.ASSIGNMENT) {
+    if (!(argumentValue instanceof AssignmentTree assignmentTree)) {
       // :-| Annotation symbol broken. Punt?
       return null;
     }
 
-    return ASTHelpers.constValue(((AssignmentTree) argumentValue).getExpression(), String.class);
+    return ASTHelpers.constValue(assignmentTree.getExpression(), String.class);
   }
 
   private static String printTypeArgs(Set<String> validNames) {

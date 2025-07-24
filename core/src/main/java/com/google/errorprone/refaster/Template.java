@@ -16,9 +16,10 @@
 
 package com.google.errorprone.refaster;
 
+import static com.google.errorprone.util.ErrorProneLog.deferredDiagnosticHandler;
+import static com.google.errorprone.util.ErrorProneLog.getDiagnostics;
 import static java.util.logging.Level.FINE;
 
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableClassToInstanceMap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -29,7 +30,7 @@ import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.refaster.PlaceholderMethod.PlaceholderExpressionKey;
 import com.google.errorprone.refaster.UTypeVar.TypeWithExpression;
 import com.google.errorprone.refaster.annotation.NoAutoboxing;
-import com.sun.source.tree.Tree.Kind;
+import com.sun.source.tree.ModifiersTree;
 import com.sun.tools.javac.code.Kinds.KindSelector;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
@@ -76,6 +77,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Optional;
 import java.util.logging.Logger;
 import org.jspecify.annotations.Nullable;
 
@@ -223,15 +225,15 @@ public abstract class Template<M extends TemplateMatch> implements Serializable 
       }
 
       if (!checkBounds(unifier, inliner, warner)) {
-        return Optional.absent();
+        return Optional.empty();
       }
       return Optional.of(unifier);
     } catch (CouldNotResolveImportException e) {
       logger.log(FINE, "Failure to resolve an import", e);
-      return Optional.absent();
+      return Optional.empty();
     } catch (InferException e) {
       logger.log(FINE, "No valid instantiation found: " + e.getMessage());
-      return Optional.absent();
+      return Optional.empty();
     }
   }
 
@@ -282,7 +284,7 @@ public abstract class Template<M extends TemplateMatch> implements Serializable 
            */
           int endPos = endPositions.getEndPos(tree);
           boolean hasRealEndPosition = endPos != Position.NOPOS;
-          if (tree.getKind() != Kind.MODIFIERS && hasRealEndPosition) {
+          if (!(tree instanceof ModifiersTree) && hasRealEndPosition) {
             writer.append(unitContents.substring(tree.getStartPosition(), endPos));
           } else {
             super.printExpr(tree, prec);
@@ -308,10 +310,8 @@ public abstract class Template<M extends TemplateMatch> implements Serializable 
 
         @Override
         public void printStat(JCTree tree) throws IOException {
-          if (tree instanceof JCExpressionStatement
-              && ((JCExpressionStatement) tree).getExpression() instanceof JCMethodInvocation) {
-            JCMethodInvocation invocation =
-                (JCMethodInvocation) ((JCExpressionStatement) tree).getExpression();
+          if (tree instanceof JCExpressionStatement jCExpressionStatement
+              && jCExpressionStatement.getExpression() instanceof JCMethodInvocation invocation) {
             JCExpression select = invocation.getMethodSelect();
             if (select != null && select.toString().equals("Refaster.emitComment")) {
               String commentLiteral =
@@ -428,12 +428,13 @@ public abstract class Template<M extends TemplateMatch> implements Serializable 
     // Type inference sometimes produces diagnostics, so we need to catch them to avoid interfering
     // with the enclosing compilation.
     Log.DeferredDiagnosticHandler handler =
-        new Log.DeferredDiagnosticHandler(Log.instance(inliner.getContext()));
+        deferredDiagnosticHandler(Log.instance(inliner.getContext()));
     try {
       MethodType result =
           callCheckMethod(warner, inliner, resultInfo, actualArgTypes, methodSymbol, site, env);
-      if (!handler.getDiagnostics().isEmpty()) {
-        throw new InferException(handler.getDiagnostics());
+      Collection<JCDiagnostic> diagnostics = getDiagnostics(handler);
+      if (!diagnostics.isEmpty()) {
+        throw new InferException(diagnostics);
       }
       return result;
     } finally {

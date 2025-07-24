@@ -20,7 +20,6 @@ import static com.google.errorprone.bugpatterns.threadsafety.IllegalGuardedBy.ch
 import static com.google.errorprone.util.ASTHelpers.isStatic;
 import static java.util.Objects.requireNonNull;
 
-import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableList;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.util.ASTHelpers;
@@ -64,7 +63,7 @@ public class GuardedBySymbolResolver implements GuardedByBinder.Resolver {
 
   public static GuardedBySymbolResolver from(Tree tree, VisitorState visitorState) {
     return GuardedBySymbolResolver.from(
-        ASTHelpers.getSymbol(tree).owner.enclClass(),
+        ASTHelpers.enclosingClass(ASTHelpers.getSymbol(tree)),
         MethodInfo.create(tree, visitorState),
         visitorState.getPath().getCompilationUnit(),
         visitorState.context,
@@ -224,8 +223,8 @@ public class GuardedBySymbolResolver implements GuardedByBinder.Resolver {
       ExpressionTree arg = method.argument(idx);
       if (arg != null) {
         Symbol sym = ASTHelpers.getSymbol(arg);
-        if (sym instanceof VarSymbol) {
-          return (VarSymbol) sym;
+        if (sym instanceof VarSymbol varSymbol) {
+          return varSymbol;
         }
       }
       return param;
@@ -315,17 +314,25 @@ public class GuardedBySymbolResolver implements GuardedByBinder.Resolver {
     return null;
   }
 
-  /** Information about a method that is associated with a {@link GuardedBy} annotation. */
-  @AutoValue
-  abstract static class MethodInfo {
-    /** The method symbol. */
-    abstract MethodSymbol sym();
-
-    /**
-     * The method arguments, if the site is a method invocation expression for a method annotated
-     * with {@code @GuardedBy}.
-     */
-    abstract @Nullable ImmutableList<ExpressionTree> arguments();
+  /**
+   * Information about a method that is associated with a {@link GuardedBy} annotation.
+   *
+   * @param sym The method symbol.
+   * @param arguments The method arguments, if the site is a method invocation expression for a
+   *     method annotated with {@code @GuardedBy}.
+   */
+  private record MethodInfo(MethodSymbol sym, @Nullable ImmutableList<ExpressionTree> arguments) {
+    MethodInfo {
+      checkArgument(
+          arguments == null
+              || arguments.size() == sym.getParameters().size()
+              // If the method is varargs, there can be one fewer arguments than parameters if no
+              // arguments are passed for the varargs parameter.
+              || (sym.isVarArgs() && arguments.size() >= sym.getParameters().size() - 1),
+          "arguments (%s) don't match parameters (%s)",
+          arguments,
+          sym.getParameters());
+    }
 
     @Nullable ExpressionTree argument(int idx) {
       if (arguments() == null) {
@@ -344,34 +351,21 @@ public class GuardedBySymbolResolver implements GuardedByBinder.Resolver {
     }
 
     static MethodInfo create(MethodSymbol sym, ImmutableList<ExpressionTree> arguments) {
-      checkArgument(
-          arguments == null
-              || arguments.size() == sym.getParameters().size()
-              // If the method is varargs, there can be one fewer arguments than parameters if no
-              // arguments are passed for the varargs parameter.
-              || (sym.isVarArgs() && arguments.size() >= sym.getParameters().size() - 1),
-          "arguments (%s) don't match parameters (%s)",
-          arguments,
-          sym.getParameters());
-      return new AutoValue_GuardedBySymbolResolver_MethodInfo(sym, arguments);
+      return new MethodInfo(sym, arguments);
     }
 
     static @Nullable MethodInfo create(Tree tree, VisitorState visitorState) {
-      Symbol sym = ASTHelpers.getSymbol(tree);
-      if (!(sym instanceof MethodSymbol)) {
+      if (!(ASTHelpers.getSymbol(tree) instanceof MethodSymbol methodSym)) {
         return null;
       }
-      MethodSymbol methodSym = (MethodSymbol) sym;
       Tree parent = visitorState.getPath().getParentPath().getLeaf();
-      if (!(parent instanceof MethodInvocationTree)) {
+      if (!(parent instanceof MethodInvocationTree invocation)) {
         return create(methodSym);
       }
-      MethodInvocationTree invocation = (MethodInvocationTree) parent;
       if (!invocation.getMethodSelect().equals(tree)) {
         return create(methodSym);
       }
-      return create(
-          methodSym, ImmutableList.copyOf(((MethodInvocationTree) parent).getArguments()));
+      return create(methodSym, ImmutableList.copyOf(invocation.getArguments()));
     }
   }
 }

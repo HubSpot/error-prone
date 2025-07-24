@@ -17,7 +17,7 @@
 package com.google.errorprone.bugpatterns;
 
 import static com.google.common.collect.Iterables.getLast;
-import static com.google.errorprone.BugPattern.SeverityLevel.ERROR;
+import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static java.util.stream.Collectors.joining;
@@ -33,10 +33,9 @@ import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.ConditionalExpressionTree;
 import com.sun.source.tree.IfTree;
 import com.sun.source.tree.Tree;
-import com.sun.source.tree.Tree.Kind;
 
 /** A {@link BugChecker}; see the associated {@link BugPattern} annotation for details. */
-@BugPattern(summary = "Both branches contain identical code", severity = ERROR)
+@BugPattern(summary = "Both branches contain identical code", severity = WARNING)
 public class DuplicateBranches extends BugChecker
     implements IfTreeMatcher, ConditionalExpressionTreeMatcher {
   @Override
@@ -73,9 +72,9 @@ public class DuplicateBranches extends BugChecker
     int start = getStartPosition(elseTree);
     int end = state.getEndPosition(elseTree);
     boolean needsBraces = false;
-    if (elseTree instanceof BlockTree) {
-      needsBraces = !state.getPath().getParentPath().getLeaf().getKind().equals(Kind.BLOCK);
-      var statements = ((BlockTree) elseTree).getStatements();
+    if (elseTree instanceof BlockTree blockTree) {
+      needsBraces = !(state.getPath().getParentPath().getLeaf() instanceof BlockTree);
+      var statements = blockTree.getStatements();
       if (statements.isEmpty()) {
         start = end;
       } else {

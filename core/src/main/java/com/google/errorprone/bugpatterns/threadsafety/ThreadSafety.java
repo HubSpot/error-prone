@@ -558,11 +558,8 @@ public final class ThreadSafety {
           // TODO(b/25630186): add enforcement
           return Violation.absent();
         }
-        case INTERFACE, CLASS -> {}
+        case INTERFACE, CLASS, RECORD -> {}
         default -> {
-          if (type.tsym.getKind().name().equals("RECORD")) {
-            break;
-          }
           throw new AssertionError(String.format("Unexpected type kind %s", type.tsym.getKind()));
         }
       }
@@ -775,10 +772,10 @@ public final class ThreadSafety {
       return AnnotationInfo.create(sym.getQualifiedName().toString(), containerElements);
     }
     // @ThreadSafe is inherited from supertypes
-    if (!(sym instanceof ClassSymbol)) {
+    if (!(sym instanceof ClassSymbol classSymbol)) {
       return null;
     }
-    Type superClass = ((ClassSymbol) sym).getSuperclass();
+    Type superClass = classSymbol.getSuperclass();
     AnnotationInfo superAnnotation = getInheritedAnnotation(superClass.asElement(), state);
     if (superAnnotation == null) {
       return null;

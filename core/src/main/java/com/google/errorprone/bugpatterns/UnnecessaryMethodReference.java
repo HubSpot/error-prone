@@ -22,10 +22,9 @@ import static com.google.errorprone.util.ASTHelpers.getReceiver;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
-import static com.google.errorprone.util.ASTHelpers.targetType;
+import static com.google.errorprone.util.TargetType.targetType;
 import static javax.lang.model.element.Modifier.ABSTRACT;
 
-import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableList;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.BugPattern.SeverityLevel;
@@ -35,8 +34,7 @@ import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.suppliers.Suppliers;
-import com.google.errorprone.util.ASTHelpers;
-import com.google.errorprone.util.ASTHelpers.TargetType;
+import com.google.errorprone.util.TargetType;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberReferenceTree;
@@ -66,8 +64,8 @@ public final class UnnecessaryMethodReference extends BugChecker
     if (receiver == null) {
       return NO_MATCH;
     }
-    if (receiver instanceof IdentifierTree
-        && ((IdentifierTree) receiver).getName().contentEquals("super")) {
+    if (receiver instanceof IdentifierTree identifierTree
+        && identifierTree.getName().contentEquals("super")) {
       return NO_MATCH;
     }
     if (!state.getTypes().isSubtype(getType(receiver), targetType.type())) {
@@ -75,8 +73,8 @@ public final class UnnecessaryMethodReference extends BugChecker
     }
     MethodSymbol symbol = getSymbol(tree);
     Scope members = targetType.type().tsym.members();
-    if (!ASTHelpers.scope(members)
-            .anyMatch(sym -> isFunctionalInterfaceInvocation(symbol, targetType.type(), sym, state))
+    if (!members.anyMatch(
+            sym -> isFunctionalInterfaceInvocation(symbol, targetType.type(), sym, state))
         && !isKnownAlias(tree, targetType.type(), state)) {
       return NO_MATCH;
     }
@@ -118,14 +116,9 @@ public final class UnnecessaryMethodReference extends BugChecker
               instanceMethod().onDescendantOf("com.google.common.collect.Range").named("contains"),
               Suppliers.typeFromString("com.google.common.base.Predicate")));
 
-  @AutoValue
-  abstract static class KnownAlias {
-    public static KnownAlias create(Matcher<ExpressionTree> matcher, Supplier<Type> targetType) {
-      return new AutoValue_UnnecessaryMethodReference_KnownAlias(matcher, targetType);
+  private record KnownAlias(Matcher<ExpressionTree> matcher, Supplier<Type> targetType) {
+    static KnownAlias create(Matcher<ExpressionTree> matcher, Supplier<Type> targetType) {
+      return new KnownAlias(matcher, targetType);
     }
-
-    abstract Matcher<ExpressionTree> matcher();
-
-    abstract Supplier<Type> targetType();
   }
 }

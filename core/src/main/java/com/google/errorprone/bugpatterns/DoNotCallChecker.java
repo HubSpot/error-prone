@@ -30,9 +30,6 @@ import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.isConsideredFinal;
 import static com.google.errorprone.util.ASTHelpers.isSameType;
-import static com.sun.source.tree.Tree.Kind.IDENTIFIER;
-import static com.sun.source.tree.Tree.Kind.MEMBER_SELECT;
-import static com.sun.source.tree.Tree.Kind.METHOD_INVOCATION;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableListMultimap;
@@ -77,20 +74,11 @@ public class DoNotCallChecker extends BugChecker
       instanceMethod().onDescendantOf("java.lang.Thread").named("run").withNoParameters();
 
   private static final Matcher<ExpressionTree> CALL_ON_SUPER =
-      (invocation, state) -> {
-        if (invocation.getKind() != METHOD_INVOCATION) {
-          return false;
-        }
-        ExpressionTree select = ((MethodInvocationTree) invocation).getMethodSelect();
-        if (select.getKind() != MEMBER_SELECT) {
-          return false;
-        }
-        ExpressionTree receiver = ((MemberSelectTree) select).getExpression();
-        if (receiver.getKind() != IDENTIFIER) {
-          return false;
-        }
-        return ((IdentifierTree) receiver).getName().contentEquals("super");
-      };
+      (invocation, state) ->
+          invocation instanceof MethodInvocationTree methodInvocationTree
+              && methodInvocationTree.getMethodSelect() instanceof MemberSelectTree memberSelectTree
+              && memberSelectTree.getExpression() instanceof IdentifierTree identifierTree
+              && identifierTree.getName().contentEquals("super");
 
   // If your method cannot be annotated with @DoNotCall (e.g., it's a JDK or thirdparty method),
   // then add it to this Map with an explanation.
@@ -351,12 +339,10 @@ public class DoNotCallChecker extends BugChecker
         if (hasAnnotation(sym, DO_NOT_CALL, state)) {
           return Optional.of(sym);
         }
-        ExpressionTree receiver = getReceiver(tree);
-        Symbol receiverSymbol = getSymbol(receiver);
-        if (!(receiverSymbol instanceof VarSymbol)) {
+        if (!(getSymbol(getReceiver(tree)) instanceof VarSymbol receiverSymbol)) {
           return Optional.empty();
         }
-        ImmutableList<Type> assigned = assignedTypes.get((VarSymbol) receiverSymbol);
+        ImmutableList<Type> assigned = assignedTypes.get(receiverSymbol);
         if (!assigned.stream().allMatch(t -> isSameType(t, assigned.get(0), state))) {
           return Optional.empty();
         }
@@ -404,10 +390,10 @@ public class DoNotCallChecker extends BugChecker
       @Override
       public Void visitAssignment(AssignmentTree node, Void unused) {
         Symbol assignee = getSymbol(node.getVariable());
-        if (assignee instanceof VarSymbol && isConsideredFinal(assignee)) {
+        if (assignee instanceof VarSymbol varSymbol && isConsideredFinal(assignee)) {
           Type type = getType(node.getExpression());
           if (type != null) {
-            assignedTypes.put((VarSymbol) assignee, type);
+            assignedTypes.put(varSymbol, type);
           }
         }
         return super.visitAssignment(node, null);

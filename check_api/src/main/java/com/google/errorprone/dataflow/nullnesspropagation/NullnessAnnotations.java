@@ -92,10 +92,10 @@ public class NullnessAnnotations {
 
   private static String simpleName(AnnotationTree annotation) {
     Tree annotationType = annotation.getAnnotationType();
-    if (annotationType instanceof IdentifierTree) {
-      return ((IdentifierTree) annotationType).getName().toString();
-    } else if (annotationType instanceof MemberSelectTree) {
-      return ((MemberSelectTree) annotationType).getIdentifier().toString();
+    if (annotationType instanceof IdentifierTree identifierTree) {
+      return identifierTree.getName().toString();
+    } else if (annotationType instanceof MemberSelectTree memberSelectTree) {
+      return memberSelectTree.getIdentifier().toString();
     } else {
       throw new AssertionError(annotationType.getKind());
     }
@@ -170,12 +170,12 @@ public class NullnessAnnotations {
   public static Optional<Nullness> getUpperBound(TypeVariable typeVar) {
     // Annotations on bounds at type variable declaration
     Optional<Nullness> result;
-    if (typeVar.getUpperBound() instanceof IntersectionType) {
+    if (typeVar.getUpperBound() instanceof IntersectionType intersectionType) {
       // For intersection types, use the lower bound of any annotations on the individual bounds
       result =
           fromAnnotationStream(
-              ((IntersectionType) typeVar.getUpperBound())
-                  .getBounds().stream().flatMap(t -> t.getAnnotationMirrors().stream()));
+              intersectionType.getBounds().stream()
+                  .flatMap(t -> t.getAnnotationMirrors().stream()));
     } else {
       result = fromAnnotationsOn(typeVar.getUpperBound());
     }

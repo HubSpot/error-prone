@@ -16,10 +16,12 @@
 
 package com.google.errorprone.bugpatterns.threadsafety;
 
+import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
+import static com.google.errorprone.util.AnnotationNames.LAZY_INIT_ANNOTATION;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.VisitorState;
-import com.google.errorprone.annotations.concurrent.LazyInit;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.threadsafety.ThreadSafety.Violation;
 import com.google.errorprone.fixes.SuggestedFixes;
@@ -49,12 +51,17 @@ public class ThreadSafeAnalysis {
   private final VisitorState state;
   private final WellKnownThreadSafety wellKnownThreadSafety;
   private final ThreadSafety threadSafety;
+  private final GuardedByFlags flags;
 
   public ThreadSafeAnalysis(
-      BugChecker bugChecker, VisitorState state, WellKnownThreadSafety wellKnownThreadSafety) {
+      BugChecker bugChecker,
+      VisitorState state,
+      WellKnownThreadSafety wellKnownThreadSafety,
+      GuardedByFlags flags) {
     this.bugChecker = bugChecker;
     this.state = state;
     this.wellKnownThreadSafety = wellKnownThreadSafety;
+    this.flags = flags;
 
     this.threadSafety = ThreadSafety.threadSafeBuilder(wellKnownThreadSafety).build(state);
   }
@@ -190,8 +197,7 @@ public class ThreadSafeAnalysis {
     // javac gives us members in reverse declaration order
     // handling them in declaration order leads to marginally better diagnostics
     List<Symbol> members =
-        ImmutableList.copyOf(ASTHelpers.scope(classSym.members()).getSymbols(instanceFieldFilter))
-            .reverse();
+        ImmutableList.copyOf(classSym.members().getSymbols(instanceFieldFilter)).reverse();
     for (Symbol member : members) {
       Optional<Tree> memberTree = Optional.ofNullable(declarations.get(member));
       Violation info =
@@ -213,19 +219,19 @@ public class ThreadSafeAnalysis {
       VarSymbol var) {
     if (bugChecker.isSuppressed(var)
         || bugChecker.customSuppressionAnnotations().stream()
-            .map(a -> ASTHelpers.hasAnnotation(var, a, state))
+            .map(a -> hasAnnotation(var, a.getName(), state))
             .anyMatch(v -> v)) {
       return Violation.absent();
     }
     if (var.getModifiers().contains(Modifier.STATIC)) {
       return Violation.absent();
     }
-    if (!GuardedByUtils.getGuardValues(var).isEmpty()) {
+    if (!GuardedByUtils.getGuardValues(var, flags).isEmpty()) {
       return Violation.absent();
     }
 
     if (!var.getModifiers().contains(Modifier.FINAL)
-        && !ASTHelpers.hasAnnotation(var, LazyInit.class, state)) {
+        && !hasAnnotation(var, LAZY_INIT_ANNOTATION, state)) {
       return processModifier(tree, classSym, var, Modifier.FINAL, "'%s' has non-final field '%s'");
     }
     Type varType = state.getTypes().memberType(classType, var);

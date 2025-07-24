@@ -97,9 +97,7 @@ public final class EqualsGetClass extends BugChecker implements MethodInvocation
     VariableTree parameter = getOnlyElement(methodTree.getParameters());
     ExpressionTree receiver = getReceiver(tree);
     VarSymbol symbol = getSymbol(parameter);
-    if (receiver == null
-        || receiver.getKind() != Kind.IDENTIFIER
-        || !symbol.equals(getSymbol(receiver))) {
+    if (!(receiver instanceof IdentifierTree) || !symbol.equals(getSymbol(receiver))) {
       return Description.NO_MATCH;
     }
     EqualsFixer fixer = new EqualsFixer(symbol, getSymbol(classTree), state);
@@ -123,10 +121,10 @@ public final class EqualsGetClass extends BugChecker implements MethodInvocation
         return true;
       }
       while (!(receiver instanceof IdentifierTree)) {
-        if (receiver instanceof ParenthesizedTree) {
-          receiver = ((ParenthesizedTree) receiver).getExpression();
-        } else if (receiver instanceof TypeCastTree) {
-          receiver = ((TypeCastTree) receiver).getExpression();
+        if (receiver instanceof ParenthesizedTree parenthesizedTree) {
+          receiver = parenthesizedTree.getExpression();
+        } else if (receiver instanceof TypeCastTree typeCastTree) {
+          receiver = typeCastTree.getExpression();
         } else {
           return false;
         }
@@ -136,12 +134,8 @@ public final class EqualsGetClass extends BugChecker implements MethodInvocation
     }
 
     private static boolean matchesClass(ExpressionTree tree) {
-      Symbol symbol = getSymbol(tree);
-      if (!(symbol instanceof VarSymbol)) {
-        return false;
-      }
-      VarSymbol varSymbol = (VarSymbol) symbol;
-      return varSymbol.getSimpleName().contentEquals("class");
+      return getSymbol(tree) instanceof VarSymbol varSymbol
+          && varSymbol.getSimpleName().contentEquals("class");
     }
 
     private final Symbol parameter;

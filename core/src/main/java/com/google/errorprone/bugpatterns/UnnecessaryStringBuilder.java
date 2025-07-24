@@ -22,9 +22,10 @@ import static com.google.errorprone.matchers.method.MethodMatchers.constructor;
 import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
+import static com.google.errorprone.util.ASTHelpers.hasImplicitType;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
 import static com.google.errorprone.util.ASTHelpers.requiresParentheses;
-import static com.google.errorprone.util.ASTHelpers.targetType;
+import static com.google.errorprone.util.TargetType.targetType;
 import static java.util.stream.Collectors.joining;
 
 import com.google.errorprone.BugPattern;
@@ -35,9 +36,10 @@ import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.util.ASTHelpers;
-import com.google.errorprone.util.ASTHelpers.TargetType;
+import com.google.errorprone.util.TargetType;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
@@ -47,7 +49,6 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Type;
-import com.sun.tools.javac.util.Position;
 import java.util.ArrayList;
 import java.util.List;
 import javax.lang.model.element.ElementKind;
@@ -93,10 +94,9 @@ public class UnnecessaryStringBuilder extends BugChecker implements NewClassTree
         break;
       }
       TreePath grandParent = parentPath.getParentPath();
-      if (!(grandParent.getLeaf() instanceof MethodInvocationTree)) {
+      if (!(grandParent.getLeaf() instanceof MethodInvocationTree methodInvocationTree)) {
         break;
       }
-      MethodInvocationTree methodInvocationTree = (MethodInvocationTree) grandParent.getLeaf();
       if (!methodInvocationTree.getMethodSelect().equals(parentPath.getLeaf())) {
         break;
       }
@@ -116,7 +116,7 @@ public class UnnecessaryStringBuilder extends BugChecker implements NewClassTree
         return NO_MATCH;
       }
     }
-    ASTHelpers.TargetType target = ASTHelpers.targetType(state.withPath(path));
+    TargetType target = TargetType.targetType(state.withPath(path));
     if (target == null) {
       return NO_MATCH;
     }
@@ -128,7 +128,7 @@ public class UnnecessaryStringBuilder extends BugChecker implements NewClassTree
     if (leaf instanceof VariableTree variableTree) {
       if (isRewritableVariable(variableTree, state)) {
         SuggestedFix.Builder fix = SuggestedFix.builder();
-        if (state.getEndPosition(variableTree.getType()) != Position.NOPOS) {
+        if (!hasImplicitType(variableTree, state)) {
           // If the variable is declared with `var`, there's no declaration type to change
           fix.replace(variableTree.getType(), "String");
         }
@@ -165,7 +165,7 @@ public class UnnecessaryStringBuilder extends BugChecker implements NewClassTree
   }
 
   private static boolean isUsedAsStringBuilder(VisitorState state, TargetType target) {
-    if (target.path().getLeaf().getKind().equals(Tree.Kind.MEMBER_REFERENCE)) {
+    if (target.path().getLeaf() instanceof MemberReferenceTree) {
       // e.g. sb::append
       return true;
     }

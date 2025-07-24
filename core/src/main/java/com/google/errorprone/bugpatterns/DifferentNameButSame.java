@@ -94,8 +94,7 @@ public final class DifferentNameButSame extends BugChecker implements Compilatio
 
       @Override
       public Void visitMemberSelect(MemberSelectTree memberSelectTree, Void unused) {
-        if (getCurrentPath().getParentPath().getLeaf() instanceof MemberSelectTree) {
-          MemberSelectTree tree = (MemberSelectTree) getCurrentPath().getParentPath().getLeaf();
+        if (getCurrentPath().getParentPath().getLeaf() instanceof MemberSelectTree tree) {
           Symbol superSymbol = getSymbol(tree);
           if (superSymbol instanceof ClassSymbol) {
             return super.visitMemberSelect(memberSelectTree, null);
@@ -192,11 +191,9 @@ public final class DifferentNameButSame extends BugChecker implements Compilatio
   private boolean isDefinedInThisFile(Symbol symbol, CompilationUnitTree tree) {
     return tree.getTypeDecls().stream()
         .anyMatch(
-            t -> {
-              Symbol topLevelClass = getSymbol(t);
-              return topLevelClass instanceof ClassSymbol
-                  && symbol.isEnclosedBy((ClassSymbol) topLevelClass);
-            });
+            t ->
+                getSymbol(t) instanceof ClassSymbol classSymbol
+                    && symbol.isEnclosedBy(classSymbol));
   }
 
   private static boolean isGeneric(Symbol symbol) {

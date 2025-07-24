@@ -19,7 +19,6 @@ package com.google.errorprone.refaster;
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Functions;
 import com.google.common.base.MoreObjects;
-import com.google.common.base.Optional;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -32,6 +31,7 @@ import com.sun.tools.javac.tree.JCTree.JCExpression;
 import com.sun.tools.javac.tree.JCTree.JCStatement;
 import com.sun.tools.javac.tree.TreeMaker;
 import com.sun.tools.javac.util.List;
+import java.util.Optional;
 
 /**
  * A representation of a block placeholder.
@@ -117,7 +117,7 @@ abstract class UPlaceholderStatement implements UStatement {
             State.create(List.<UVariableDecl>nil(), initState.unifier(), ConsumptionState.empty()));
 
     if (verification.allRequiredMatched()) {
-      realOptions = choiceToHere.or(realOptions);
+      realOptions = choiceToHere.concat(realOptions);
     }
     for (StatementTree targetStatement : initState.unconsumedStatements()) {
       if (!verification.scan(targetStatement, initState.unifier())) {
@@ -125,19 +125,19 @@ abstract class UPlaceholderStatement implements UStatement {
       }
       // Consume another statement, or if that fails, fall back to the previous choices...
       choiceToHere =
-          choiceToHere.thenChoose(
+          choiceToHere.flatMap(
               (State<ConsumptionState> consumptionState) ->
                   visitor
                       .unifyStatement(targetStatement, consumptionState)
-                      .transform(
+                      .map(
                           (State<? extends JCStatement> stmtState) ->
                               stmtState.withResult(
                                   consumptionState.result().consume(stmtState.result()))));
       if (verification.allRequiredMatched()) {
-        realOptions = choiceToHere.or(realOptions);
+        realOptions = choiceToHere.concat(realOptions);
       }
     }
-    return realOptions.thenOption(
+    return realOptions.mapIfPresent(
         (State<ConsumptionState> consumptionState) -> {
           if (ImmutableSet.copyOf(consumptionState.seenParameters())
               .containsAll(placeholder().requiredParameters())) {
@@ -162,7 +162,7 @@ abstract class UPlaceholderStatement implements UStatement {
               }
             }
           }
-          return Optional.absent();
+          return Optional.empty();
         });
   }
 
@@ -176,14 +176,14 @@ abstract class UPlaceholderStatement implements UStatement {
       Optional<JCExpression> exprBinding = inliner.getOptionalBinding(placeholder().exprKey());
       binding =
           binding.or(
-              exprBinding.transform(
-                  (JCExpression expr) -> {
-                    return switch (implementationFlow()) {
-                      case NEVER_EXITS -> List.of(inliner.maker().Exec(expr));
-                      case ALWAYS_RETURNS -> List.of(inliner.maker().Return(expr));
-                      default -> throw new AssertionError();
-                    };
-                  }));
+              () ->
+                  exprBinding.map(
+                      (JCExpression expr) ->
+                          switch (implementationFlow()) {
+                            case NEVER_EXITS -> List.of(inliner.maker().Exec(expr));
+                            case ALWAYS_RETURNS -> List.of(inliner.maker().Return(expr));
+                            default -> throw new AssertionError();
+                          }));
       return UPlaceholderExpression.copier(arguments(), inliner).copy(binding.get(), inliner);
     } catch (UncheckedCouldNotResolveImportException e) {
       throw e.getCause();

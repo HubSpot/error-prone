@@ -18,12 +18,12 @@ package com.google.errorprone.bugpatterns;
 
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
+import static com.google.errorprone.matchers.FieldMatchers.instanceField;
 import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
 import static com.google.errorprone.util.ASTHelpers.findEnclosingNode;
 import static com.google.errorprone.util.ASTHelpers.getReceiver;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
-import static com.google.errorprone.util.ASTHelpers.isSameType;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
 import static com.google.errorprone.util.ASTHelpers.outermostClass;
 
@@ -54,19 +54,19 @@ public class ASTHelpersSuggestions extends BugChecker implements MethodInvocatio
       anyOf(
           instanceMethod()
               .onDescendantOf("com.sun.tools.javac.code.Symbol")
-              .namedAnyOf(
-                  "isDirectlyOrIndirectlyLocal", "isLocal", "packge", "getEnclosedElements"),
+              .namedAnyOf("packge", "getEnclosedElements"),
           instanceMethod()
               .onClass((t, s) -> isSubtype(MODULE_SYMBOL.get(s), t, s))
               .namedAnyOf("isStatic"));
 
-  private static final Matcher<ExpressionTree> SCOPE =
-      instanceMethod().onDescendantOf("com.sun.tools.javac.code.Scope");
+  private static final Matcher<ExpressionTree> SYMBOL_ENCLCLASS =
+      instanceMethod().onDescendantOf("com.sun.tools.javac.code.Symbol").namedAnyOf("enclClass");
+
+  private static final Matcher<ExpressionTree> SYMBOL_OWNER =
+      instanceField("com.sun.tools.javac.code.Symbol", "owner");
 
   private static final ImmutableMap<String, String> NAMES =
-      ImmutableMap.of(
-          "packge", "enclosingPackage",
-          "isDirectlyOrIndirectlyLocal", "isLocal");
+      ImmutableMap.of("packge", "enclosingPackage");
 
   @Override
   public Description matchMethodInvocation(MethodInvocationTree tree, VisitorState state) {
@@ -91,30 +91,22 @@ public class ASTHelpersSuggestions extends BugChecker implements MethodInvocatio
               .replace(state.getEndPosition(receiver), state.getEndPosition(tree), ")")
               .build());
     }
-    if (SCOPE.matches(tree, state)) {
-      MethodSymbol sym = getSymbol(tree);
-      Type filter = COM_SUN_TOOLS_JAVAC_UTIL_FILTER.get(state);
-      Type predicate = JAVA_UTIL_FUNCTION_PREDICATE.get(state);
-      if (sym.getParameters().stream()
-          .anyMatch(
-              p ->
-                  isSameType(filter, p.asType(), state)
-                      || isSameType(predicate, p.asType(), state))) {
-        return describeMatch(
-            tree,
-            SuggestedFix.builder()
-                .addStaticImport("com.google.errorprone.util.ASTHelpers.scope")
-                .prefixWith(receiver, "scope(")
-                .postfixWith(receiver, ")")
-                .build());
+    if (SYMBOL_ENCLCLASS.matches(tree, state)) {
+      // Check whether the receiver matches the instance field Symbol.owner.
+      if (SYMBOL_OWNER.matches(receiver, state)) {
+        // Get the receiver of the Symbol.owner expression.
+        ExpressionTree receiver2 = getReceiver(receiver);
+        if (receiver2 != null) {
+          return describeMatch(
+              tree,
+              SuggestedFix.builder()
+                  .addStaticImport("com.google.errorprone.util.ASTHelpers.enclosingClass")
+                  .prefixWith(tree, "enclosingClass(")
+                  .replace(state.getEndPosition(receiver2), state.getEndPosition(tree), ")")
+                  .build());
+        }
       }
     }
     return NO_MATCH;
   }
-
-  private static final Supplier<Type> COM_SUN_TOOLS_JAVAC_UTIL_FILTER =
-      VisitorState.memoize(state -> state.getTypeFromString("com.sun.tools.javac.util.Filter"));
-
-  private static final Supplier<Type> JAVA_UTIL_FUNCTION_PREDICATE =
-      VisitorState.memoize(state -> state.getTypeFromString("java.util.function.Predicate"));
 }

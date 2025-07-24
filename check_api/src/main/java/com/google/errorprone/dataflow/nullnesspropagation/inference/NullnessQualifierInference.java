@@ -21,7 +21,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 import com.github.benmanes.caffeine.cache.CacheLoader;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
-import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Streams;
@@ -162,10 +161,10 @@ public class NullnessQualifierInference extends TreeScanner<Void, Void> {
       fromAnnotations = NullnessAnnotations.fromAnnotationsOn(inferredType);
     }
     if (!fromAnnotations.isPresent()) {
-      if (declaredType instanceof TypeVariable) {
+      if (declaredType instanceof TypeVariable typeVariable) {
         // Check bounds second so explicit annotations take precedence. Even for bounds we still use
         // equality constraint below since we have to assume the bound as the "worst" case.
-        fromAnnotations = NullnessAnnotations.getUpperBound((TypeVariable) declaredType);
+        fromAnnotations = NullnessAnnotations.getUpperBound(typeVariable);
       } else {
         // Look for a default annotation in scope of either the symbol we're looking at or, if this
         // is a type variable, the type variable declaration's scope, which is effectively the type
@@ -263,8 +262,7 @@ public class NullnessQualifierInference extends TreeScanner<Void, Void> {
 
     // If return type is parameterized by a generic type on receiver, collate references to that
     // generic between the receiver and the result/argument types.
-    if (!callee.isStatic() && node.getMethodSelect() instanceof JCFieldAccess) {
-      JCFieldAccess fieldAccess = ((JCFieldAccess) node.getMethodSelect());
+    if (!callee.isStatic() && node.getMethodSelect() instanceof JCFieldAccess fieldAccess) {
       for (TypeVariableSymbol tvs : fieldAccess.selected.type.tsym.getTypeParameters()) {
         Type rcvrtype = fieldAccess.selected.type.tsym.type;
         // Note this should be a singleton set, one for each type parameter
@@ -454,8 +452,8 @@ public class NullnessQualifierInference extends TreeScanner<Void, Void> {
     } else if ((rVal instanceof LiteralTree)
         || (rVal instanceof NewClassTree)
         || (rVal instanceof NewArrayTree)
-        || ((rVal instanceof IdentifierTree)
-            && ((IdentifierTree) rVal).getName().contentEquals("this"))) {
+        || ((rVal instanceof IdentifierTree identifierTree)
+            && identifierTree.getName().contentEquals("this"))) {
       qualifierConstraints.putEdge(
           ProperInferenceVar.NONNULL, TypeArgInferenceVar.create(ImmutableList.of(), rVal));
       qualifierConstraints.putEdge(
@@ -485,8 +483,8 @@ public class NullnessQualifierInference extends TreeScanner<Void, Void> {
     Optional<Nullness> fromAnnotations =
         extractExplicitNullness(lType, argSelector.isEmpty() ? decl : null);
     if (!fromAnnotations.isPresent()) {
-      if (lType instanceof TypeVariable) {
-        fromAnnotations = NullnessAnnotations.getUpperBound((TypeVariable) lType);
+      if (lType instanceof TypeVariable typeVariable) {
+        fromAnnotations = NullnessAnnotations.getUpperBound(typeVariable);
         isBound = true;
       } else {
         fromAnnotations = NullnessAnnotations.fromDefaultAnnotations(decl);
@@ -518,18 +516,13 @@ public class NullnessQualifierInference extends TreeScanner<Void, Void> {
   }
 
   /** Pair of a {@link Type} and an optional {@link Symbol}. */
-  @AutoValue
-  abstract static class TypeAndSymbol {
+  private record TypeAndSymbol(Type type, @Nullable VarSymbol symbol) {
     static TypeAndSymbol create(Type type) {
       return create(type, /* symbol= */ null);
     }
 
     static TypeAndSymbol create(Type type, @Nullable VarSymbol symbol) {
-      return new AutoValue_NullnessQualifierInference_TypeAndSymbol(type, symbol);
+      return new TypeAndSymbol(type, symbol);
     }
-
-    abstract Type type();
-
-    abstract @Nullable VarSymbol symbol();
   }
 }

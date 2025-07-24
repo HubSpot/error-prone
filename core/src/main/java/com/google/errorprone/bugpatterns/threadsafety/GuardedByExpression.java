@@ -17,6 +17,7 @@
 package com.google.errorprone.bugpatterns.threadsafety;
 
 import static com.google.errorprone.bugpatterns.threadsafety.IllegalGuardedBy.checkGuardedBy;
+import static com.google.errorprone.util.ASTHelpers.enclosingClass;
 
 import com.google.auto.value.AutoValue;
 import com.sun.tools.javac.code.Flags;
@@ -180,7 +181,7 @@ public abstract class GuardedByExpression {
       GuardedByExpression base = thisliteral();
       Symbol curr = access;
       do {
-        curr = curr.owner.enclClass();
+        curr = enclosingClass(curr);
         if (curr == null) {
           break;
         }
@@ -207,10 +208,9 @@ public abstract class GuardedByExpression {
 
       @Override
       public boolean equals(Object other) {
-        if (!(other instanceof VarSymbol)) {
+        if (!(other instanceof VarSymbol that)) {
           return false;
         }
-        VarSymbol that = (VarSymbol) other;
         if (!that.getSimpleName().contentEquals(ENCLOSING_INSTANCE_NAME)) {
           return false;
         }
@@ -227,11 +227,11 @@ public abstract class GuardedByExpression {
     }
 
     Select select(GuardedByExpression base, Symbol member) {
-      if (member instanceof VarSymbol) {
-        return select(base, (VarSymbol) member);
+      if (member instanceof VarSymbol varSymbol) {
+        return select(base, varSymbol);
       }
-      if (member instanceof MethodSymbol) {
-        return select(base, (MethodSymbol) member);
+      if (member instanceof MethodSymbol methodSymbol) {
+        return select(base, methodSymbol);
       }
       throw new IllegalStateException("Bad select expression: expected symbol " + member.getKind());
     }

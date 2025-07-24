@@ -16,6 +16,8 @@
 
 package com.google.errorprone.bugpatterns;
 
+import static com.google.common.truth.TruthJUnit.assume;
+
 import com.google.errorprone.BugCheckerRefactoringTestHelper;
 import com.google.errorprone.CompilationTestHelper;
 import org.junit.Test;
@@ -148,6 +150,30 @@ public class IdentifierNameTest {
               int get() {
                 int fooBar = 1;
                 return fooBar;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void localClass_renamed() {
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void get() {
+                class MisnamedURLVisitor {}
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void get() {
+                class MisnamedUrlVisitor {}
               }
             }
             """)
@@ -644,6 +670,116 @@ public class IdentifierNameTest {
             "    void f() {}",
             "  }",
             "}")
+        .doTest();
+  }
+
+  @Test
+  public void unnamedVariables() {
+    assume().that(Runtime.version().feature()).isAtLeast(21);
+
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            import java.util.Scanner;
+            import java.util.function.Function;
+
+            class Test {
+              void unnamed() {
+                try (var _ = new Scanner("discarded")) {
+                  Function<String, String> f = _ -> "bar";
+                  String _ = f.apply("foo");
+                } catch (Exception _) {
+                }
+              }
+            }
+            """)
+        .setArgs("--enable-preview", "--release", Integer.toString(Runtime.version().feature()))
+        .doTest();
+  }
+
+  @Test
+  public void bindingVariables() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              void test(Object o) {
+                // BUG: Diagnostic contains: badName
+                if (o instanceof Test BadName) {}
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void versionNumbers() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              private static final int GUAVA33_4_6 = 42;
+
+              void test() {
+                int murmur3_32;
+                // BUG: Diagnostic contains: murmur332
+                int murmur3__32;
+                // BUG: Diagnostic contains: murmur3D
+                int murmur3_d;
+                // BUG: Diagnostic contains: murmur332
+                int murmur_3_32;
+                // BUG: Diagnostic contains: Murmur332
+                int _murmur3_32;
+
+                int addressV6_66_0;
+                // BUG: Diagnostic contains: address66255
+                int address_66_255;
+                // BUG: Diagnostic contains: addressV666Ff
+                int addressV6_66_ff;
+                // BUG: Diagnostic contains: addressV6Ffffff
+                int addressV6_ffffff;
+              }
+
+              class Murmur3_32 {}
+
+              // BUG: Diagnostic contains: Murmur332
+              class Murmur3__32 {}
+
+              // BUG: Diagnostic contains: Murmur332
+              class Murmur3_32_ {}
+
+              // BUG: Diagnostic contains: Murmur3d
+              class Murmur3_d {}
+
+              // BUG: Diagnostic contains: Murmur32
+              class Murmur_32 {}
+
+              // BUG: Diagnostic contains: Murmur332
+              class _Murmur3_32 {}
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void versionNumbersInCode() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              private static final int GUAVA33_4_6 = 42;
+
+              void murmur3_32() {
+                int murmur3_64 = 42;
+              }
+
+              class Murmur3_32 {}
+            }
+            """)
         .doTest();
   }
 }

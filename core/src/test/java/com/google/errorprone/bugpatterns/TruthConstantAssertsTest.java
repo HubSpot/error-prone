@@ -17,7 +17,6 @@
 package com.google.errorprone.bugpatterns;
 
 import com.google.errorprone.CompilationTestHelper;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -29,19 +28,15 @@ import org.junit.runners.JUnit4;
  */
 @RunWith(JUnit4.class)
 public final class TruthConstantAssertsTest {
-  CompilationTestHelper compilationHelper;
-
-  @Before
-  public void setUp() {
-    compilationHelper = CompilationTestHelper.newInstance(TruthConstantAsserts.class, getClass());
-  }
+  private final CompilationTestHelper compilationHelper =
+      CompilationTestHelper.newInstance(TruthConstantAsserts.class, getClass());
 
   @Test
   public void positiveCase() {
     compilationHelper
         .addSourceLines(
             "TruthConstantAssertsPositiveCases.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import static com.google.common.truth.Truth.assertThat;

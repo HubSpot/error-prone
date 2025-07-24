@@ -108,6 +108,8 @@ public class AlwaysThrows extends BugChecker implements MethodInvocationTreeMatc
             .withParameters("java.lang.String")) {
       @Override
       void validate(MethodInvocationTree tree, String argument) {
+        // ByteString.fromHex was only added in 2021; use reflection to be tolerant of old proto
+        // versions.
         try {
           ByteString.class.getMethod("fromHex", String.class).invoke(null, argument);
         } catch (NoSuchMethodException | IllegalAccessException e) {
@@ -147,8 +149,8 @@ public class AlwaysThrows extends BugChecker implements MethodInvocationTreeMatc
       if (state.getPath().getParentPath() != null
           && state.getPath().getParentPath().getParentPath() != null) {
         Tree grandParent = state.getPath().getParentPath().getParentPath().getLeaf();
-        if (grandParent instanceof ExpressionTree
-            && IMMUTABLE_MAP_PUT.matches((ExpressionTree) grandParent, state)) {
+        if (grandParent instanceof ExpressionTree expressionTree
+            && IMMUTABLE_MAP_PUT.matches(expressionTree, state)) {
           return NO_MATCH;
         }
       }
@@ -238,7 +240,9 @@ public class AlwaysThrows extends BugChecker implements MethodInvocationTreeMatc
                 + repeatedKeys.stream()
                     .map(
                         k ->
-                            k instanceof VarSymbol ? ((VarSymbol) k).getSimpleName() : k.toString())
+                            k instanceof VarSymbol varSymbol
+                                ? varSymbol.getSimpleName()
+                                : k.toString())
                     .collect(toImmutableSet()))
         .build();
   }

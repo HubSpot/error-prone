@@ -24,11 +24,10 @@ import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern.SeverityLevel;
-import com.google.errorprone.descriptionlistener.DescriptionListeners;
-import com.google.errorprone.hubspot.HubSpotLifecycleManager;
-import com.google.errorprone.hubspot.HubSpotMetrics;
-import com.google.errorprone.hubspot.HubSpotUtils;
+import com.google.errorprone.ErrorProneOptions.Severity;
 import com.google.errorprone.RefactoringCollection.RefactoringResult;
+import com.google.errorprone.descriptionlistener.DescriptionListeners;
+import com.google.errorprone.hubspot.HubSpotMetrics;
 import com.google.errorprone.scanner.ErrorProneScannerTransformer;
 import com.google.errorprone.scanner.ScannerSupplier;
 import com.google.errorprone.util.ASTHelpers;
@@ -83,15 +82,18 @@ public class ErrorProneAnalyzer implements TaskListener {
             .or(
                 Suppliers.memoize(
                     () -> {
-                      ScannerSupplier toUse =
-                          ErrorPronePlugins.loadPlugins(scannerSupplier, epOptions, context);
                       ImmutableSet<String> namedCheckers =
                           epOptions.patchingOptions().namedCheckers();
-                      if (!namedCheckers.isEmpty()) {
-                        toUse = toUse.filter(bci -> namedCheckers.contains(bci.canonicalName()));
-                      } else {
-                        toUse = toUse.applyOverrides(epOptions);
-                      }
+                      ScannerSupplier toUse =
+                          ErrorPronePlugins.loadPlugins(scannerSupplier, epOptions, context)
+                              .applyOverrides(epOptions)
+                              .filter(
+                                  bci -> {
+                                    String name = bci.canonicalName();
+                                    return epOptions.getSeverityMap().get(name) != Severity.OFF
+                                        && (namedCheckers.isEmpty()
+                                            || namedCheckers.contains(name));
+                                  });
                       return ErrorProneScannerTransformer.create(toUse.get());
                     }));
 
@@ -221,7 +223,7 @@ public class ErrorProneAnalyzer implements TaskListener {
       if (shouldExcludeSourceFile(compilation)) {
         return;
       }
-      if (path.getLeaf().getKind() == Tree.Kind.COMPILATION_UNIT) {
+      if (path.getLeaf() instanceof CompilationUnitTree) {
         // We only get TaskEvents for compilation units if they contain no package declarations
         // (e.g. package-info.java files).  In this case it's safe to analyze the
         // CompilationUnitTree immediately.
@@ -248,21 +250,10 @@ public class ErrorProneAnalyzer implements TaskListener {
       // symbol's supertypes. If javac didn't need to check the symbol's assignability
       // then a normal compilation would have succeeded, and no diagnostics will have been
       // reported yet, but we don't want to crash javac.
-      log.error("proc.cant.access", e.sym, getDetailValue(e), getStackTraceAsString(e));
+      log.error("proc.cant.access", e.sym, e.getDetailValue(), getStackTraceAsString(e));
     } finally {
       log.useSource(originalSource);
       HubSpotMetrics.instance(context).recordTimings(context);
-    }
-  }
-
-  private static Object getDetailValue(CompletionFailure completionFailure) {
-    try {
-      // The return type of getDetailValue() changed from Object to JCDiagnostic in JDK 10,
-      // but the rest of the signature is unchanged between the two versions,
-      // see https://bugs.openjdk.java.net/browse/JDK-817032,
-      return CompletionFailure.class.getMethod("getDetailValue").invoke(completionFailure);
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
     }
   }
 
@@ -285,7 +276,7 @@ public class ErrorProneAnalyzer implements TaskListener {
         case IMPORT -> {
           // The spec disallows mixing imports and empty top-level declarations (";"), but
           // javac has a bug that causes it to accept empty declarations interspersed with imports:
-          // http://mail.openjdk.java.net/pipermail/compiler-dev/2013-August/006968.html
+          // https://mail.openjdk.java.net/pipermail/compiler-dev/2013-August/006968.html
           //
           // Any import declarations after the first semi are incorrectly added to the list
           // of type declarations, so we have to skip over them here.

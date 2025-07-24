@@ -16,24 +16,23 @@
 
 package com.google.errorprone.util;
 
-import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Verify.verify;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
-import static com.google.common.collect.Iterables.getOnlyElement;
+import static com.google.common.collect.MoreCollectors.onlyElement;
 import static com.google.common.collect.Streams.stream;
+import static com.google.common.collect.Streams.zip;
 import static com.google.errorprone.VisitorState.memoize;
 import static com.google.errorprone.matchers.JUnitMatchers.JUNIT4_RUN_WITH_ANNOTATION;
 import static com.google.errorprone.matchers.Matchers.isSubtypeOf;
 import static com.sun.tools.javac.code.Scope.LookupKind.NON_RECURSIVE;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toCollection;
+import static javax.lang.model.element.ElementKind.CONSTRUCTOR;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.google.auto.value.AutoValue;
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.CharMatcher;
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.HashMultimap;
@@ -55,23 +54,14 @@ import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.suppliers.Suppliers;
 import com.sun.source.tree.AnnotatedTypeTree;
 import com.sun.source.tree.AnnotationTree;
-import com.sun.source.tree.ArrayAccessTree;
-import com.sun.source.tree.AssertTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.CatchTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.CompoundAssignmentTree;
-import com.sun.source.tree.ConditionalExpressionTree;
-import com.sun.source.tree.DoWhileLoopTree;
-import com.sun.source.tree.EnhancedForLoopTree;
 import com.sun.source.tree.ExpressionTree;
-import com.sun.source.tree.ForLoopTree;
 import com.sun.source.tree.IdentifierTree;
-import com.sun.source.tree.IfTree;
-import com.sun.source.tree.InstanceOfTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MemberReferenceTree;
@@ -85,9 +75,7 @@ import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.PackageTree;
 import com.sun.source.tree.ParameterizedTypeTree;
 import com.sun.source.tree.ParenthesizedTree;
-import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.SwitchTree;
-import com.sun.source.tree.SynchronizedTree;
 import com.sun.source.tree.ThrowTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.Tree.Kind;
@@ -96,7 +84,6 @@ import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
-import com.sun.source.tree.WhileLoopTree;
 import com.sun.source.util.SimpleTreeVisitor;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreeScanner;
@@ -104,7 +91,6 @@ import com.sun.tools.javac.api.JavacTrees;
 import com.sun.tools.javac.code.Attribute;
 import com.sun.tools.javac.code.Attribute.Compound;
 import com.sun.tools.javac.code.Attribute.TypeCompound;
-import com.sun.tools.javac.code.BoundKind;
 import com.sun.tools.javac.code.Flags;
 import com.sun.tools.javac.code.Scope;
 import com.sun.tools.javac.code.Symbol;
@@ -115,6 +101,7 @@ import com.sun.tools.javac.code.Symbol.TypeSymbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
 import com.sun.tools.javac.code.Symtab;
 import com.sun.tools.javac.code.Type;
+import com.sun.tools.javac.code.Type.ArrayType;
 import com.sun.tools.javac.code.Type.ClassType;
 import com.sun.tools.javac.code.Type.TypeVar;
 import com.sun.tools.javac.code.Type.UnionClassType;
@@ -147,12 +134,10 @@ import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
 import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.FatalError;
 import com.sun.tools.javac.util.Log;
-import com.sun.tools.javac.util.Log.DeferredDiagnosticHandler;
 import com.sun.tools.javac.util.Name;
 import com.sun.tools.javac.util.Position;
 import java.io.IOException;
 import java.lang.annotation.Annotation;
-import java.lang.reflect.Method;
 import java.net.JarURLConnection;
 import java.net.URI;
 import java.nio.CharBuffer;
@@ -187,8 +172,8 @@ public class ASTHelpers {
     requireNonNull(expr1);
     requireNonNull(expr2);
     // Throw up our hands if we're not comparing identifiers and/or field accesses.
-    if ((expr1.getKind() != Kind.IDENTIFIER && expr1.getKind() != Kind.MEMBER_SELECT)
-        || (expr2.getKind() != Kind.IDENTIFIER && expr2.getKind() != Kind.MEMBER_SELECT)) {
+    if ((!(expr1 instanceof IdentifierTree) && !(expr1 instanceof MemberSelectTree))
+        || (!(expr2 instanceof IdentifierTree) && !(expr2 instanceof MemberSelectTree))) {
       return false;
     }
 
@@ -200,17 +185,17 @@ public class ASTHelpers {
       throw new IllegalStateException("Couldn't get symbol for " + expr2);
     }
 
-    if (expr1.getKind() == Kind.IDENTIFIER && expr2.getKind() == Kind.IDENTIFIER) {
+    if (expr1 instanceof IdentifierTree && expr2 instanceof IdentifierTree) {
       // foo == foo?
       return sym1.equals(sym2);
-    } else if (expr1.getKind() == Kind.MEMBER_SELECT && expr2.getKind() == Kind.MEMBER_SELECT) {
+    } else if (expr1 instanceof MemberSelectTree && expr2 instanceof MemberSelectTree) {
       // foo.baz.bar == foo.baz.bar?
       return sym1.equals(sym2)
           && sameVariable(((JCFieldAccess) expr1).selected, ((JCFieldAccess) expr2).selected);
     } else {
       // this.foo == foo?
       ExpressionTree selected;
-      if (expr1.getKind() == Kind.IDENTIFIER) {
+      if (expr1 instanceof IdentifierTree) {
         selected = ((JCFieldAccess) expr2).selected;
       } else {
         selected = ((JCFieldAccess) expr1).selected;
@@ -225,21 +210,21 @@ public class ASTHelpers {
    * is null.
    */
   public static @Nullable Symbol getDeclaredSymbol(Tree tree) {
-    if (tree instanceof PackageTree) {
-      return getSymbol((PackageTree) tree);
+    if (tree instanceof PackageTree packageTree) {
+      return getSymbol(packageTree);
     }
     if (tree instanceof TypeParameterTree) {
       Type type = ((JCTypeParameter) tree).type;
       return type == null ? null : type.tsym;
     }
-    if (tree instanceof ClassTree) {
-      return getSymbol((ClassTree) tree);
+    if (tree instanceof ClassTree classTree) {
+      return getSymbol(classTree);
     }
-    if (tree instanceof MethodTree) {
-      return getSymbol((MethodTree) tree);
+    if (tree instanceof MethodTree methodTree) {
+      return getSymbol(methodTree);
     }
-    if (tree instanceof VariableTree) {
-      return getSymbol((VariableTree) tree);
+    if (tree instanceof VariableTree variableTree) {
+      return getSymbol(variableTree);
     }
     return null;
   }
@@ -250,32 +235,34 @@ public class ASTHelpers {
    * error.
    */
   public static @Nullable Symbol getSymbol(Tree tree) {
-    if (tree instanceof AnnotationTree) {
-      return getSymbol(((AnnotationTree) tree).getAnnotationType());
+    if (tree instanceof AnnotationTree annotationTree) {
+      return getSymbol(annotationTree.getAnnotationType());
     }
-    if (tree instanceof JCFieldAccess) {
-      return ((JCFieldAccess) tree).sym;
+    if (tree instanceof JCFieldAccess jcFieldAccess) {
+      return jcFieldAccess.sym;
     }
-    if (tree instanceof JCIdent) {
-      return ((JCIdent) tree).sym;
+    if (tree instanceof JCIdent jcIdent) {
+      // You might reasonably expect that IdentifierTrees always have a non-null symbol, but a few
+      // cases don't, including module names and identifiers resolved from Javadoc (sometimes).
+      return jcIdent.sym;
     }
-    if (tree instanceof JCMethodInvocation) {
-      return getSymbol((MethodInvocationTree) tree);
+    if (tree instanceof JCMethodInvocation jcMethodInvocation) {
+      return getSymbol(jcMethodInvocation);
     }
-    if (tree instanceof JCNewClass) {
-      return getSymbol((NewClassTree) tree);
+    if (tree instanceof JCNewClass jcNewClass) {
+      return getSymbol(jcNewClass);
     }
-    if (tree instanceof MemberReferenceTree) {
-      return getSymbol((MemberReferenceTree) tree);
+    if (tree instanceof MemberReferenceTree memberReferenceTree) {
+      return getSymbol(memberReferenceTree);
     }
-    if (tree instanceof JCAnnotatedType) {
-      return getSymbol(((JCAnnotatedType) tree).underlyingType);
+    if (tree instanceof JCAnnotatedType jcAnnotatedType) {
+      return getSymbol(jcAnnotatedType.underlyingType);
     }
-    if (tree instanceof ParameterizedTypeTree) {
-      return getSymbol(((ParameterizedTypeTree) tree).getType());
+    if (tree instanceof ParameterizedTypeTree parameterizedTypeTree) {
+      return getSymbol(parameterizedTypeTree.getType());
     }
-    if (tree instanceof ClassTree) {
-      return getSymbol((ClassTree) tree);
+    if (tree instanceof ClassTree classTree) {
+      return getSymbol(classTree);
     }
 
     return getDeclaredSymbol(tree);
@@ -299,11 +286,11 @@ public class ASTHelpers {
   /** Gets the method symbol for a new class. */
   public static MethodSymbol getSymbol(NewClassTree tree) {
     Symbol sym = ((JCNewClass) tree).constructor;
-    if (!(sym instanceof MethodSymbol)) {
+    if (!(sym instanceof MethodSymbol methodSymbol)) {
       // Defensive. Would only occur if there are errors in the AST.
       throw new IllegalArgumentException(tree.toString());
     }
-    return (MethodSymbol) sym;
+    return methodSymbol;
   }
 
   /** Gets the symbol for a variable. */
@@ -339,8 +326,8 @@ public class ASTHelpers {
    * also means that this symbol is not an override.
    */
   public static boolean canBeRemoved(Symbol symbol, VisitorState state) {
-    if (symbol instanceof MethodSymbol
-        && !findSuperMethods((MethodSymbol) symbol, state.getTypes()).isEmpty()) {
+    if (symbol instanceof MethodSymbol methodSymbol
+        && !findSuperMethods(methodSymbol, state.getTypes()).isEmpty()) {
       return false;
     }
     return isEffectivelyPrivate(symbol);
@@ -358,7 +345,24 @@ public class ASTHelpers {
 
   /** Returns whether this symbol or any of its owners are private. */
   public static boolean isEffectivelyPrivate(Symbol symbol) {
-    return enclosingElements(symbol).anyMatch(Symbol::isPrivate);
+    return enclosingElements(symbol)
+        .anyMatch(
+            s -> {
+              if (s.isPrivate()) {
+                return true;
+              }
+              if (s instanceof ClassSymbol) {
+                // Anonymous classes. (Note: packages can be anonymous too.)
+                if (s.isAnonymous()) {
+                  return true;
+                }
+                // Local classes have a method as an owner.
+                if (s.owner instanceof MethodSymbol) {
+                  return true;
+                }
+              }
+              return false;
+            });
   }
 
   /** Checks whether an expression requires parentheses. */
@@ -376,8 +380,8 @@ public class ASTHelpers {
       case LAMBDA_EXPRESSION -> {
         // Parenthesizing e.g. `x -> (y -> z)` is unnecessary but helpful
         Tree parent = state.getPath().getParentPath().getLeaf();
-        return parent.getKind().equals(Kind.LAMBDA_EXPRESSION)
-            && stripParentheses(((LambdaExpressionTree) parent).getBody()).equals(expression);
+        return parent instanceof LambdaExpressionTree lambdaExpressionTree
+            && stripParentheses(lambdaExpressionTree.getBody()).equals(expression);
       }
       default -> {
         // continue below
@@ -391,26 +395,37 @@ public class ASTHelpers {
       return state.getOffsetTokensForNode(expression).stream()
           .anyMatch(t -> t.kind() == TokenKind.PLUS);
     }
-    if (expression instanceof UnaryTree) {
+    if (expression instanceof UnaryTree unaryTree) {
       Tree parent = state.getPath().getParentPath().getLeaf();
-      if (!(parent instanceof MemberSelectTree)) {
+      if (parent instanceof TypeCastTree castTree
+          && !castTree.getType().getKind().equals(Kind.PRIMITIVE_TYPE)) {
+        // unary plus and minus require parens when used with non-primitive casts
+        // see https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.16
+        switch (unaryTree.getKind()) {
+          case UNARY_PLUS, UNARY_MINUS -> {
+            return true;
+          }
+          default -> {}
+        }
+      }
+      if (!(parent instanceof MemberSelectTree memberSelectTree)) {
         return false;
       }
       // eg. (i++).toString();
-      return stripParentheses(((MemberSelectTree) parent).getExpression()).equals(expression);
+      return stripParentheses(memberSelectTree.getExpression()).equals(expression);
     }
     return true;
   }
 
   /** Removes any enclosing parentheses from the tree. */
   public static Tree stripParentheses(Tree tree) {
-    return tree instanceof ExpressionTree ? stripParentheses((ExpressionTree) tree) : tree;
+    return tree instanceof ExpressionTree expressionTree ? stripParentheses(expressionTree) : tree;
   }
 
   /** Given an ExpressionTree, removes any enclosing parentheses. */
   public static ExpressionTree stripParentheses(ExpressionTree tree) {
-    while (tree instanceof ParenthesizedTree) {
-      tree = ((ParenthesizedTree) tree).getExpression();
+    while (tree instanceof ParenthesizedTree pt) {
+      tree = pt.getExpression();
     }
     return tree;
   }
@@ -419,7 +434,8 @@ public class ASTHelpers {
    * Given a TreePath, finds the first enclosing node of the given type and returns the path from
    * the enclosing node to the top-level {@code CompilationUnitTree}.
    */
-  public static <T> TreePath findPathFromEnclosingNodeToTopLevel(TreePath path, Class<T> klass) {
+  public static <T> @Nullable TreePath findPathFromEnclosingNodeToTopLevel(
+      TreePath path, Class<T> klass) {
     if (path != null) {
       do {
         path = path.getParentPath();
@@ -480,13 +496,13 @@ public class ASTHelpers {
    */
   public static @Nullable ExpressionTree getRootAssignable(
       MethodInvocationTree methodInvocationTree) {
-    if (!(methodInvocationTree instanceof JCMethodInvocation)) {
+    if (!(methodInvocationTree instanceof JCMethodInvocation jCMethodInvocation)) {
       throw new IllegalArgumentException(
           "Expected type to be JCMethodInvocation, but was " + methodInvocationTree.getClass());
     }
 
     // Check for bare method call, e.g. intern().
-    if (((JCMethodInvocation) methodInvocationTree).getMethodSelect() instanceof JCIdent) {
+    if (jCMethodInvocation.getMethodSelect() instanceof JCIdent) {
       return null;
     }
 
@@ -494,8 +510,8 @@ public class ASTHelpers {
     ExpressionTree expr = methodInvocationTree;
     while (expr instanceof JCMethodInvocation) {
       expr = ((JCMethodInvocation) expr).getMethodSelect();
-      if (expr instanceof JCFieldAccess) {
-        expr = ((JCFieldAccess) expr).getExpression();
+      if (expr instanceof JCFieldAccess jCFieldAccess) {
+        expr = jCFieldAccess.getExpression();
       }
     }
 
@@ -517,10 +533,10 @@ public class ASTHelpers {
       return methodCall.type.getReturnType();
     } else if (expressionTree instanceof JCIdent methodCall) {
       return methodCall.type.getReturnType();
-    } else if (expressionTree instanceof JCMethodInvocation) {
-      return getReturnType(((JCMethodInvocation) expressionTree).getMethodSelect());
-    } else if (expressionTree instanceof JCMemberReference) {
-      return ((JCMemberReference) expressionTree).sym.type.getReturnType();
+    } else if (expressionTree instanceof JCMethodInvocation jCMethodInvocation) {
+      return getReturnType(jCMethodInvocation.getMethodSelect());
+    } else if (expressionTree instanceof JCMemberReference jCMemberReference) {
+      return jCMemberReference.sym.type.getReturnType();
     }
     throw new IllegalArgumentException("Expected a JCFieldAccess or JCIdent");
   }
@@ -561,10 +577,10 @@ public class ASTHelpers {
       return methodSelectFieldAccess.selected.type;
     } else if (expressionTree instanceof JCIdent methodCall) {
       return methodCall.sym.owner.type;
-    } else if (expressionTree instanceof JCMethodInvocation) {
-      return getReceiverType(((JCMethodInvocation) expressionTree).getMethodSelect());
-    } else if (expressionTree instanceof JCMemberReference) {
-      return ((JCMemberReference) expressionTree).getQualifierExpression().type;
+    } else if (expressionTree instanceof JCMethodInvocation jCMethodInvocation) {
+      return getReceiverType(jCMethodInvocation.getMethodSelect());
+    } else if (expressionTree instanceof JCMemberReference jCMemberReference) {
+      return jCMemberReference.getQualifierExpression().type;
     }
     throw new IllegalArgumentException(
         "Expected a JCFieldAccess or JCIdent from expression " + expressionTree);
@@ -589,16 +605,16 @@ public class ASTHelpers {
    * }</pre>
    */
   public static @Nullable ExpressionTree getReceiver(ExpressionTree expressionTree) {
-    if (expressionTree instanceof MethodInvocationTree) {
-      ExpressionTree methodSelect = ((MethodInvocationTree) expressionTree).getMethodSelect();
+    if (expressionTree instanceof MethodInvocationTree methodInvocationTree) {
+      ExpressionTree methodSelect = methodInvocationTree.getMethodSelect();
       if (methodSelect instanceof IdentifierTree) {
         return null;
       }
       return getReceiver(methodSelect);
-    } else if (expressionTree instanceof MemberSelectTree) {
-      return ((MemberSelectTree) expressionTree).getExpression();
-    } else if (expressionTree instanceof MemberReferenceTree) {
-      return ((MemberReferenceTree) expressionTree).getQualifierExpression();
+    } else if (expressionTree instanceof MemberSelectTree memberSelectTree) {
+      return memberSelectTree.getExpression();
+    } else if (expressionTree instanceof MemberReferenceTree memberReferenceTree) {
+      return memberReferenceTree.getQualifierExpression();
     } else {
       throw new IllegalStateException(
           String.format(
@@ -702,33 +718,15 @@ public class ASTHelpers {
    * including interfaces.
    */
   public static Set<MethodSymbol> findSuperMethods(MethodSymbol methodSymbol, Types types) {
-    return findSuperMethods(methodSymbol, types, /* skipInterfaces= */ false)
-        .collect(toCollection(LinkedHashSet::new));
+    return streamSuperMethods(methodSymbol, types).collect(toCollection(LinkedHashSet::new));
   }
 
   /** See {@link #findSuperMethods(MethodSymbol, Types)}. */
   public static Stream<MethodSymbol> streamSuperMethods(MethodSymbol methodSymbol, Types types) {
-    return findSuperMethods(methodSymbol, types, /* skipInterfaces= */ false);
-  }
-
-  private static Stream<MethodSymbol> findSuperMethods(
-      MethodSymbol methodSymbol, Types types, boolean skipInterfaces) {
     TypeSymbol owner = (TypeSymbol) methodSymbol.owner;
-    Stream<Type> typeStream = types.closure(owner.type).stream();
-    if (skipInterfaces) {
-      typeStream = typeStream.filter(type -> !type.isInterface());
-    }
-    return typeStream
+    return types.closure(owner.type).stream()
         .map(type -> findSuperMethodInType(methodSymbol, type, types))
         .filter(Objects::nonNull);
-  }
-
-  /**
-   * Finds (if it exists) first (in the class hierarchy) non-interface super method of given {@code
-   * method}.
-   */
-  public static Optional<MethodSymbol> findSuperMethod(MethodSymbol methodSymbol, Types types) {
-    return findSuperMethods(methodSymbol, types, /* skipInterfaces= */ true).findFirst();
   }
 
   /**
@@ -743,7 +741,7 @@ public class ASTHelpers {
   public static Stream<MethodSymbol> matchingMethods(
       Name name, Predicate<MethodSymbol> predicate, Type startClass, Types types) {
     Predicate<Symbol> matchesMethodPredicate =
-        sym -> sym instanceof MethodSymbol && predicate.test((MethodSymbol) sym);
+        sym -> sym instanceof MethodSymbol methodSymbol && predicate.test(methodSymbol);
 
     // Iterate over all classes and interfaces that startClass inherits from.
     return types.closure(startClass).stream()
@@ -756,8 +754,8 @@ public class ASTHelpers {
                 return Stream.empty();
               }
               return stream(
-                      scope(superClassSymbols)
-                          .getSymbolsByName(name, matchesMethodPredicate, NON_RECURSIVE))
+                      superClassSymbols.getSymbolsByName(
+                          name, matchesMethodPredicate, NON_RECURSIVE))
                   // By definition of the filter, we know that the symbol is a MethodSymbol.
                   .map(symbol -> (MethodSymbol) symbol);
             });
@@ -811,9 +809,29 @@ public class ASTHelpers {
   /**
    * Returns whether the given {@link Symbol} is a record, a record's canonical constructor or a
    * member that is part of a record's state vector.
+   *
+   * <p>Health warning: some things are flagged within a compilation, but won't be flagged across
+   * compilation boundaries, like canonical constructors.
    */
   public static boolean isRecord(Symbol symbol) {
     return (symbol.flags() & RECORD_FLAG) == RECORD_FLAG;
+  }
+
+  /** Finds the canonical constructor on a record. */
+  public static MethodSymbol canonicalConstructor(ClassSymbol record, VisitorState state) {
+    var fieldTypes =
+        record.getRecordComponents().stream().map(rc -> rc.type).collect(toImmutableList());
+    return stream(record.members().getSymbols(s -> s.getKind() == CONSTRUCTOR))
+        .map(c -> (MethodSymbol) c)
+        .filter(
+            c ->
+                c.getParameters().size() == fieldTypes.size()
+                    && zip(
+                            c.getParameters().stream(),
+                            fieldTypes.stream(),
+                            (a, b) -> isSameType(a.type, b, state))
+                        .allMatch(x -> x))
+        .collect(onlyElement());
   }
 
   /**
@@ -835,13 +853,14 @@ public class ASTHelpers {
     if (hasAttribute(sym, annotationName)) {
       return true;
     }
-    if (sym instanceof ClassSymbol && isInherited(state, annotationClass)) {
-      do {
+    if (sym instanceof ClassSymbol cs && isInherited(state, annotationClass)) {
+      for (sym = cs.getSuperclass().tsym;
+          sym instanceof ClassSymbol cs2;
+          sym = cs2.getSuperclass().tsym) {
         if (hasAttribute(sym, annotationName)) {
           return true;
         }
-        sym = ((ClassSymbol) sym).getSuperclass().tsym;
-      } while (sym instanceof ClassSymbol);
+      }
     }
     return false;
   }
@@ -993,11 +1012,11 @@ public class ASTHelpers {
    * annotation inheritance (see JLS 9.6.4.3).
    */
   public static boolean hasDirectAnnotationWithSimpleName(Symbol sym, String simpleName) {
-    if (sym instanceof MethodSymbol) {
-      return hasDirectAnnotationWithSimpleName((MethodSymbol) sym, simpleName);
+    if (sym instanceof MethodSymbol methodSymbol) {
+      return hasDirectAnnotationWithSimpleName(methodSymbol, simpleName);
     }
-    if (sym instanceof VarSymbol) {
-      return hasDirectAnnotationWithSimpleName((VarSymbol) sym, simpleName);
+    if (sym instanceof VarSymbol varSymbol) {
+      return hasDirectAnnotationWithSimpleName(varSymbol, simpleName);
     }
     return hasDirectAnnotationWithSimpleName(sym.getAnnotationMirrors().stream(), simpleName);
   }
@@ -1144,10 +1163,10 @@ public class ASTHelpers {
 
   /** Returns true if the given tree is a generated constructor. */
   public static boolean isGeneratedConstructor(MethodTree tree) {
-    if (!(tree instanceof JCMethodDecl)) {
+    if (!(tree instanceof JCMethodDecl jCMethodDecl)) {
       return false;
     }
-    return (((JCMethodDecl) tree).mods.flags & Flags.GENERATEDCONSTR) == Flags.GENERATEDCONSTR;
+    return (jCMethodDecl.mods.flags & Flags.GENERATEDCONSTR) == Flags.GENERATEDCONSTR;
   }
 
   /** Returns the list of all constructors defined in the class (including generated ones). */
@@ -1184,7 +1203,7 @@ public class ASTHelpers {
    * determined.
    */
   public static @Nullable Type getType(@Nullable Tree tree) {
-    return tree instanceof JCTree ? ((JCTree) tree).type : null;
+    return tree instanceof JCTree jCTree ? jCTree.type : null;
   }
 
   /**
@@ -1193,7 +1212,7 @@ public class ASTHelpers {
    */
   public static @Nullable ClassType getType(@Nullable ClassTree tree) {
     Type type = getType((Tree) tree);
-    return type instanceof ClassType ? (ClassType) type : null;
+    return type instanceof ClassType classType ? classType : null;
   }
 
   public static @Nullable String getAnnotationName(AnnotationTree tree) {
@@ -1269,15 +1288,18 @@ public class ASTHelpers {
     tree = stripParentheses(tree);
     Type type = ASTHelpers.getType(tree);
     Object value;
-    if (tree instanceof JCLiteral) {
-      value = ((JCLiteral) tree).value;
+    if (tree instanceof JCLiteral jCLiteral) {
+      value = jCLiteral.value;
     } else if (type != null) {
       value = type.constValue();
     } else {
       return null;
     }
-    if (type.hasTag(TypeTag.BOOLEAN) && value instanceof Integer) {
-      return ((Integer) value) == 1;
+    if (type.hasTag(TypeTag.BOOLEAN) && value instanceof Integer integer) {
+      return integer == 1;
+    }
+    if (type.hasTag(TypeTag.CHAR) && value instanceof Integer) {
+      return (char) (int) value;
     }
     return value;
   }
@@ -1346,40 +1368,40 @@ public class ASTHelpers {
 
   /** Returns the modifiers tree of the given class, method, or variable declaration. */
   public static @Nullable ModifiersTree getModifiers(Tree tree) {
-    if (tree instanceof ClassTree) {
-      return ((ClassTree) tree).getModifiers();
+    if (tree instanceof ClassTree classTree) {
+      return classTree.getModifiers();
     }
-    if (tree instanceof MethodTree) {
-      return ((MethodTree) tree).getModifiers();
+    if (tree instanceof MethodTree methodTree) {
+      return methodTree.getModifiers();
     }
-    if (tree instanceof VariableTree) {
-      return ((VariableTree) tree).getModifiers();
+    if (tree instanceof VariableTree variableTree) {
+      return variableTree.getModifiers();
     }
-    if (tree instanceof ModifiersTree) {
-      return (ModifiersTree) tree;
+    if (tree instanceof ModifiersTree modifiersTree) {
+      return modifiersTree;
     }
     return null;
   }
 
   /** Returns the annotations of the given tree, or an empty list. */
   public static List<? extends AnnotationTree> getAnnotations(Tree tree) {
-    if (tree instanceof TypeParameterTree) {
-      return ((TypeParameterTree) tree).getAnnotations();
+    if (tree instanceof TypeParameterTree typeParameterTree) {
+      return typeParameterTree.getAnnotations();
     }
-    if (tree instanceof ModuleTree) {
-      return ((ModuleTree) tree).getAnnotations();
+    if (tree instanceof ModuleTree moduleTree) {
+      return moduleTree.getAnnotations();
     }
-    if (tree instanceof PackageTree) {
-      return ((PackageTree) tree).getAnnotations();
+    if (tree instanceof PackageTree packageTree) {
+      return packageTree.getAnnotations();
     }
-    if (tree instanceof NewArrayTree) {
-      return ((NewArrayTree) tree).getAnnotations();
+    if (tree instanceof NewArrayTree newArrayTree) {
+      return newArrayTree.getAnnotations();
     }
-    if (tree instanceof AnnotatedTypeTree) {
-      return ((AnnotatedTypeTree) tree).getAnnotations();
+    if (tree instanceof AnnotatedTypeTree annotatedTypeTree) {
+      return annotatedTypeTree.getAnnotations();
     }
-    if (tree instanceof ModifiersTree) {
-      return ((ModifiersTree) tree).getAnnotations();
+    if (tree instanceof ModifiersTree modifiersTree) {
+      return modifiersTree.getAnnotations();
     }
     ModifiersTree modifiersTree = getModifiers(tree);
     return modifiersTree == null ? ImmutableList.of() : modifiersTree.getAnnotations();
@@ -1412,12 +1434,12 @@ public class ASTHelpers {
    */
   public static boolean isJUnitTestCode(VisitorState state) {
     for (Tree ancestor : state.getPath()) {
-      if (ancestor instanceof MethodTree
-          && JUnitMatchers.hasJUnitAnnotation((MethodTree) ancestor, state)) {
+      if (ancestor instanceof MethodTree methodTree
+          && JUnitMatchers.hasJUnitAnnotation(methodTree, state)) {
         return true;
       }
-      if (ancestor instanceof ClassTree
-          && (JUnitMatchers.isTestCaseDescendant.matches((ClassTree) ancestor, state)
+      if (ancestor instanceof ClassTree classTree
+          && (JUnitMatchers.isTestCaseDescendant.matches(classTree, state)
               || hasAnnotation(getSymbol(ancestor), JUNIT4_RUN_WITH_ANNOTATION, state))) {
         return true;
       }
@@ -1431,12 +1453,12 @@ public class ASTHelpers {
    */
   public static boolean isTestNgTestCode(VisitorState state) {
     for (Tree ancestor : state.getPath()) {
-      if (ancestor instanceof MethodTree
-          && TestNgMatchers.hasTestNgAnnotation((MethodTree) ancestor, state)) {
+      if (ancestor instanceof MethodTree methodTree
+          && TestNgMatchers.hasTestNgAnnotation(methodTree, state)) {
         return true;
       }
-      if (ancestor instanceof ClassTree
-          && TestNgMatchers.hasTestNgAnnotation((ClassTree) ancestor)) {
+      if (ancestor instanceof ClassTree classTree
+          && TestNgMatchers.hasTestNgAnnotation(classTree)) {
         return true;
       }
     }
@@ -1472,10 +1494,10 @@ public class ASTHelpers {
   private static boolean hasSimpleName(AnnotationTree annotation, String name) {
     Tree annotationType = annotation.getAnnotationType();
     javax.lang.model.element.Name simpleName;
-    if (annotationType instanceof IdentifierTree) {
-      simpleName = ((IdentifierTree) annotationType).getName();
-    } else if (annotationType instanceof MemberSelectTree) {
-      simpleName = ((MemberSelectTree) annotationType).getIdentifier();
+    if (annotationType instanceof IdentifierTree identifierTree) {
+      simpleName = identifierTree.getName();
+    } else if (annotationType instanceof MemberSelectTree memberSelectTree) {
+      simpleName = memberSelectTree.getIdentifier();
     } else {
       return false;
     }
@@ -1604,7 +1626,7 @@ public class ASTHelpers {
     Resolve resolve = Resolve.instance(state.context);
     Enter enter = Enter.instance(state.context);
     Log log = Log.instance(state.context);
-    DeferredDiagnosticHandler handler = new DeferredDiagnosticHandler(log);
+    Log.DiagnosticHandler handler = ErrorProneLog.deferredDiagnosticHandler(log);
     try {
       return resolve.resolveInternalMethod(
           /*pos*/ null,
@@ -1630,7 +1652,7 @@ public class ASTHelpers {
   public static ImmutableSet<String> getGeneratedBy(VisitorState state) {
     return stream(state.getPath())
         .filter(ClassTree.class::isInstance)
-        .flatMap(enclosing -> getGeneratedBy(getSymbol(enclosing), state).stream())
+        .flatMap(enclosing -> getGeneratedBy(getSymbol(enclosing)).stream())
         .collect(toImmutableSet());
   }
 
@@ -1638,12 +1660,20 @@ public class ASTHelpers {
    * Returns the values of the given symbol's {@code Generated} annotations, if present. If the
    * annotation doesn't have {@code values} set, returns the string name of the annotation itself.
    */
-  public static ImmutableSet<String> getGeneratedBy(Symbol symbol, VisitorState state) {
+  public static ImmutableSet<String> getGeneratedBy(Symbol symbol) {
     checkNotNull(symbol);
     return symbol.getRawAttributes().stream()
         .filter(attribute -> attribute.type.tsym.getSimpleName().contentEquals("Generated"))
         .flatMap(ASTHelpers::generatedValues)
         .collect(toImmutableSet());
+  }
+
+  /**
+   * @deprecated TODO(ghm): delete after a JavaBuilder release
+   */
+  @Deprecated
+  public static ImmutableSet<String> getGeneratedBy(Symbol symbol, VisitorState state) {
+    return getGeneratedBy(symbol);
   }
 
   private static Stream<String> generatedValues(Attribute.Compound attribute) {
@@ -1674,10 +1704,17 @@ public class ASTHelpers {
         .anyMatch(
             tree ->
                 (tree instanceof VariableTree && variableIsStaticFinal((VarSymbol) getSymbol(tree)))
-                    || (tree instanceof AssignmentTree
-                        && getSymbol(((AssignmentTree) tree).getVariable()) instanceof VarSymbol
-                        && variableIsStaticFinal(
-                            (VarSymbol) getSymbol(((AssignmentTree) tree).getVariable()))));
+                    || (tree instanceof AssignmentTree assignmentTree
+                        && getSymbol(assignmentTree.getVariable()) instanceof VarSymbol varSymbol
+                        && variableIsStaticFinal(varSymbol)));
+  }
+
+  /**
+   * @deprecated use TargetType.targetType directly
+   */
+  @Deprecated
+  public static @Nullable TargetType targetType(VisitorState state) {
+    return TargetType.targetType(state);
   }
 
   /**
@@ -1688,532 +1725,6 @@ public class ASTHelpers {
    */
   public static boolean variableIsStaticFinal(VarSymbol var) {
     return (var.isStatic() || var.owner.isEnum()) && var.getModifiers().contains(Modifier.FINAL);
-  }
-
-  /** An expression's target type, see {@link #targetType}. */
-  @AutoValue
-  public abstract static class TargetType {
-    public abstract Type type();
-
-    public abstract TreePath path();
-
-    static TargetType create(Type type, TreePath path) {
-      return new AutoValue_ASTHelpers_TargetType(type, path);
-    }
-  }
-
-  /**
-   * Implementation of unary numeric promotion rules.
-   *
-   * <p><a href="https://docs.oracle.com/javase/specs/jls/se9/html/jls-5.html#jls-5.6.1">JLS
-   * §5.6.1</a>
-   */
-  private static @Nullable Type unaryNumericPromotion(Type type, VisitorState state) {
-    Type unboxed = unboxAndEnsureNumeric(type, state);
-    return switch (unboxed.getTag()) {
-      case BYTE, SHORT, CHAR -> state.getSymtab().intType;
-      case INT, LONG, FLOAT, DOUBLE -> unboxed;
-      default -> throw new AssertionError("Should not reach here: " + type);
-    };
-  }
-
-  /**
-   * Implementation of binary numeric promotion rules.
-   *
-   * <p><a href="https://docs.oracle.com/javase/specs/jls/se9/html/jls-5.html#jls-5.6.2">JLS
-   * §5.6.2</a>
-   */
-  private static @Nullable Type binaryNumericPromotion(
-      Type leftType, Type rightType, VisitorState state) {
-    Type unboxedLeft = unboxAndEnsureNumeric(leftType, state);
-    Type unboxedRight = unboxAndEnsureNumeric(rightType, state);
-    Set<TypeTag> tags = EnumSet.of(unboxedLeft.getTag(), unboxedRight.getTag());
-    if (tags.contains(TypeTag.DOUBLE)) {
-      return state.getSymtab().doubleType;
-    } else if (tags.contains(TypeTag.FLOAT)) {
-      return state.getSymtab().floatType;
-    } else if (tags.contains(TypeTag.LONG)) {
-      return state.getSymtab().longType;
-    } else {
-      return state.getSymtab().intType;
-    }
-  }
-
-  private static Type unboxAndEnsureNumeric(Type type, VisitorState state) {
-    Type unboxed = state.getTypes().unboxedTypeOrType(type);
-    checkArgument(unboxed.isNumeric(), "[%s] is not numeric", type);
-    return unboxed;
-  }
-
-  /**
-   * Returns the target type of the tree at the given {@link VisitorState}'s path, or else {@code
-   * null}.
-   *
-   * <p>For example, the target type of an assignment expression is the variable's type, and the
-   * target type of a return statement is the enclosing method's type.
-   */
-  public static @Nullable TargetType targetType(VisitorState state) {
-    if (!canHaveTargetType(state.getPath().getLeaf())) {
-      return null;
-    }
-    ExpressionTree current;
-    TreePath parent = state.getPath();
-    do {
-      current = (ExpressionTree) parent.getLeaf();
-      parent = parent.getParentPath();
-    } while (parent != null && parent.getLeaf().getKind() == Kind.PARENTHESIZED);
-
-    if (parent == null) {
-      return null;
-    }
-
-    Type type = new TargetTypeVisitor(current, state, parent).visit(parent.getLeaf(), null);
-    if (type == null) {
-      Tree actualTree = null;
-      if (YIELD_TREE != null && YIELD_TREE.isAssignableFrom(parent.getLeaf().getClass())) {
-        actualTree = parent.getParentPath().getParentPath().getParentPath().getLeaf();
-      } else if (CONSTANT_CASE_LABEL_TREE != null
-          && CONSTANT_CASE_LABEL_TREE.isAssignableFrom(parent.getLeaf().getClass())) {
-        actualTree = parent.getParentPath().getParentPath().getLeaf();
-      }
-
-      type = getType(TargetTypeVisitor.getSwitchExpression(actualTree));
-      if (type == null) {
-        return null;
-      }
-    }
-    return TargetType.create(type, parent);
-  }
-
-  private static final @Nullable Class<?> CONSTANT_CASE_LABEL_TREE = constantCaseLabelTree();
-  private static final @Nullable Class<?> YIELD_TREE = yieldTree();
-
-  private static @Nullable Class<?> constantCaseLabelTree() {
-    try {
-      return Class.forName("com.sun.source.tree.ConstantCaseLabelTree");
-    } catch (ClassNotFoundException e) {
-      return null;
-    }
-  }
-
-  private static @Nullable Class<?> yieldTree() {
-    try {
-      return Class.forName("com.sun.source.tree.YieldTree");
-    } catch (ClassNotFoundException e) {
-      return null;
-    }
-  }
-
-  private static boolean canHaveTargetType(Tree tree) {
-    // Anything that isn't an expression can't have a target type.
-    if (!(tree instanceof ExpressionTree)) {
-      return false;
-    }
-    switch (tree.getKind()) {
-      case IDENTIFIER, MEMBER_SELECT -> {
-        if (!(ASTHelpers.getSymbol(tree) instanceof VarSymbol)) {
-          // If we're selecting other than a member (e.g. a type or a method) then this doesn't
-          // have a target type.
-          return false;
-        }
-      }
-      case PRIMITIVE_TYPE,
-          ARRAY_TYPE,
-          PARAMETERIZED_TYPE,
-          EXTENDS_WILDCARD,
-          SUPER_WILDCARD,
-          UNBOUNDED_WILDCARD,
-          ANNOTATED_TYPE,
-          INTERSECTION_TYPE,
-          TYPE_ANNOTATION -> {
-        // These are all things that only appear in type uses, so they can't have a target type.
-        return false;
-      }
-      case ANNOTATION -> {
-        // Annotations can only appear on elements which don't have target types.
-        return false;
-      }
-      default -> {
-        // Continue.
-      }
-    }
-    return true;
-  }
-
-  @VisibleForTesting
-  static class TargetTypeVisitor extends SimpleTreeVisitor<Type, Void> {
-    private final VisitorState state;
-    private final TreePath parent;
-    private final ExpressionTree current;
-
-    private TargetTypeVisitor(ExpressionTree current, VisitorState state, TreePath parent) {
-      this.current = current;
-      this.state = state;
-      this.parent = parent;
-    }
-
-    @Override
-    public @Nullable Type visitArrayAccess(ArrayAccessTree node, Void unused) {
-      if (current.equals(node.getIndex())) {
-        return state.getSymtab().intType;
-      } else {
-        return getType(node.getExpression());
-      }
-    }
-
-    @Override
-    public Type visitAssert(AssertTree node, Void unused) {
-      return current.equals(node.getCondition())
-          ? state.getSymtab().booleanType
-          : state.getSymtab().stringType;
-    }
-
-    @Override
-    public @Nullable Type visitAssignment(AssignmentTree tree, Void unused) {
-      return getType(tree.getVariable());
-    }
-
-    @Override
-    public Type visitAnnotation(AnnotationTree tree, Void unused) {
-      return null;
-    }
-
-    @Override
-    public @Nullable Type visitCase(CaseTree tree, Void unused) {
-      Tree switchTree = parent.getParentPath().getLeaf();
-      return getType(getSwitchExpression(switchTree));
-    }
-
-    private static @Nullable ExpressionTree getSwitchExpression(@Nullable Tree tree) {
-      if (tree == null) {
-        return null;
-      }
-
-      if (tree instanceof SwitchTree) {
-        return ((SwitchTree) tree).getExpression();
-      }
-      // Reflection is required for JDK < 12
-      try {
-        Class<?> switchExpression = Class.forName("com.sun.source.tree.SwitchExpressionTree");
-        Class<?> clazz = tree.getClass();
-        if (switchExpression.isAssignableFrom(clazz)) {
-          try {
-            Method method = clazz.getMethod("getExpression");
-            return (ExpressionTree) method.invoke(tree);
-          } catch (ReflectiveOperationException e) {
-            throw new LinkageError(e.getMessage(), e);
-          }
-        }
-      } catch (ClassNotFoundException e) {
-        // continue below
-      }
-      return null;
-    }
-
-    @Override
-    public Type visitClass(ClassTree node, Void unused) {
-      return null;
-    }
-
-    @Override
-    public @Nullable Type visitCompoundAssignment(CompoundAssignmentTree tree, Void unused) {
-      Type variableType = getType(tree.getVariable());
-      Type expressionType = getType(tree.getExpression());
-      Types types = state.getTypes();
-      switch (tree.getKind()) {
-        case LEFT_SHIFT_ASSIGNMENT, RIGHT_SHIFT_ASSIGNMENT, UNSIGNED_RIGHT_SHIFT_ASSIGNMENT -> {
-          // Shift operators perform *unary* numeric promotion on the operands, separately.
-          if (tree.getExpression().equals(current)) {
-            return unaryNumericPromotion(expressionType, state);
-          }
-        }
-        case PLUS_ASSIGNMENT -> {
-          Type stringType = state.getSymtab().stringType;
-          if (types.isSuperType(variableType, stringType)) {
-            return stringType;
-          }
-        }
-        default -> {
-          // Fall though.
-        }
-      }
-      // If we've got to here, we can only have boolean or numeric operands
-      // (because the only compound assignment operator for String is +=).
-
-      // These operands will necessarily be unboxed (and, if numeric, undergo binary numeric
-      // promotion), even if the resulting expression is of boxed type. As such, report the unboxed
-      // type.
-      return types.unboxedTypeOrType(variableType).getTag() == TypeTag.BOOLEAN
-          ? state.getSymtab().booleanType
-          : binaryNumericPromotion(variableType, expressionType, state);
-    }
-
-    @Override
-    public Type visitEnhancedForLoop(EnhancedForLoopTree node, Void unused) {
-      Type variableType = ASTHelpers.getType(node.getVariable());
-      if (state.getTypes().isArray(ASTHelpers.getType(node.getExpression()))) {
-        // For iterating an array, the target type is LoopVariableType[].
-        return state.getType(variableType, true, ImmutableList.of());
-      }
-      // For iterating an iterable, the target type is Iterable<? extends LoopVariableType>.
-      variableType = state.getTypes().boxedTypeOrType(variableType);
-      return state.getType(
-          state.getSymtab().iterableType,
-          false,
-          ImmutableList.of(new WildcardType(variableType, BoundKind.EXTENDS, variableType.tsym)));
-    }
-
-    @Override
-    public Type visitInstanceOf(InstanceOfTree node, Void unused) {
-      return state.getSymtab().objectType;
-    }
-
-    @Override
-    public Type visitLambdaExpression(LambdaExpressionTree lambdaExpressionTree, Void unused) {
-      return state.getTypes().findDescriptorType(getType(lambdaExpressionTree)).getReturnType();
-    }
-
-    @Override
-    public Type visitMethod(MethodTree node, Void unused) {
-      return null;
-    }
-
-    @Override
-    public Type visitParenthesized(ParenthesizedTree node, Void unused) {
-      return visit(node.getExpression(), null);
-    }
-
-    @Override
-    public @Nullable Type visitReturn(ReturnTree tree, Void unused) {
-      for (TreePath path = parent; path != null; path = path.getParentPath()) {
-        Tree enclosing = path.getLeaf();
-        switch (enclosing.getKind()) {
-          case METHOD -> {
-            return getType(((MethodTree) enclosing).getReturnType());
-          }
-          case LAMBDA_EXPRESSION -> {
-            return visitLambdaExpression((LambdaExpressionTree) enclosing, null);
-          }
-          default -> {}
-        }
-      }
-      throw new AssertionError("return not enclosed by method or lambda");
-    }
-
-    @Override
-    public @Nullable Type visitSynchronized(SynchronizedTree node, Void unused) {
-      // The null occurs if you've asked for the type of the parentheses around the expression.
-      return Objects.equals(current, node.getExpression()) ? state.getSymtab().objectType : null;
-    }
-
-    @Override
-    public Type visitThrow(ThrowTree node, Void unused) {
-      return ASTHelpers.getType(current);
-    }
-
-    @Override
-    public Type visitTypeCast(TypeCastTree node, Void unused) {
-      return getType(node.getType());
-    }
-
-    @Override
-    public @Nullable Type visitVariable(VariableTree tree, Void unused) {
-      return getType(tree.getType());
-    }
-
-    @Override
-    public @Nullable Type visitUnary(UnaryTree tree, Void unused) {
-      return getType(tree);
-    }
-
-    @Override
-    public @Nullable Type visitBinary(BinaryTree tree, Void unused) {
-      Type leftType = checkNotNull(getType(tree.getLeftOperand()));
-      Type rightType = checkNotNull(getType(tree.getRightOperand()));
-      switch (tree.getKind()) {
-        // The addition and subtraction operators for numeric types + and - (§15.18.2)
-        case PLUS:
-          // If either operand is of string type, string concatenation is performed.
-          Type stringType = state.getSymtab().stringType;
-          if (isSameType(stringType, leftType, state) || isSameType(stringType, rightType, state)) {
-            return stringType;
-          }
-        // Fall through.
-        case MINUS:
-        // The multiplicative operators *, /, and % (§15.17)
-        case MULTIPLY:
-        case DIVIDE:
-        case REMAINDER:
-        // The numerical comparison operators <, <=, >, and >= (§15.20.1)
-        case LESS_THAN:
-        case LESS_THAN_EQUAL:
-        case GREATER_THAN:
-        case GREATER_THAN_EQUAL:
-        // The integer bitwise operators &, ^, and |
-        case AND:
-        case XOR:
-        case OR:
-          if (typeIsBoolean(state.getTypes().unboxedTypeOrType(leftType))
-              && typeIsBoolean(state.getTypes().unboxedTypeOrType(rightType))) {
-            return state.getSymtab().booleanType;
-          }
-          return binaryNumericPromotion(leftType, rightType, state);
-        case EQUAL_TO:
-        case NOT_EQUAL_TO:
-          return handleEqualityOperator(tree, leftType, rightType);
-        case LEFT_SHIFT:
-        case RIGHT_SHIFT:
-        case UNSIGNED_RIGHT_SHIFT:
-          // Shift operators perform *unary* numeric promotion on the operands, separately.
-          return unaryNumericPromotion(getType(current), state);
-        default:
-          return getType(tree);
-      }
-    }
-
-    private @Nullable Type handleEqualityOperator(BinaryTree tree, Type leftType, Type rightType) {
-      Type unboxedLeft = checkNotNull(state.getTypes().unboxedTypeOrType(leftType));
-      Type unboxedRight = checkNotNull(state.getTypes().unboxedTypeOrType(rightType));
-
-      // If the operands of an equality operator are both of numeric type, or one is of numeric
-      // type and the other is convertible (§5.1.8) to numeric type, binary numeric promotion is
-      // performed on the operands (§5.6.2).
-      if ((leftType.isNumeric() && rightType.isNumeric())
-          || (leftType.isNumeric() != rightType.isNumeric()
-              && (unboxedLeft.isNumeric() || unboxedRight.isNumeric()))) {
-        // https://docs.oracle.com/javase/specs/jls/se9/html/jls-15.html#jls-15.21.1
-        // Numerical equality.
-        return binaryNumericPromotion(unboxedLeft, unboxedRight, state);
-      }
-
-      // If the operands of an equality operator are both of type boolean, or if one operand is
-      // of type boolean and the other is of type Boolean, then the operation is boolean
-      // equality.
-      boolean leftIsBoolean = typeIsBoolean(leftType);
-      boolean rightIsBoolean = typeIsBoolean(rightType);
-      if ((leftIsBoolean && rightIsBoolean)
-          || (leftIsBoolean != rightIsBoolean
-              && (typeIsBoolean(unboxedLeft) || typeIsBoolean(unboxedRight)))) {
-        return state.getSymtab().booleanType;
-      }
-
-      // If the operands of an equality operator are both of either reference type or the null
-      // type, then the operation is object equality.
-      return tree.getLeftOperand().equals(current) ? leftType : rightType;
-    }
-
-    private static boolean typeIsBoolean(Type type) {
-      return type.getTag() == TypeTag.BOOLEAN;
-    }
-
-    @Override
-    public @Nullable Type visitConditionalExpression(ConditionalExpressionTree tree, Void unused) {
-      return tree.getCondition().equals(current) ? state.getSymtab().booleanType : getType(tree);
-    }
-
-    @Override
-    public Type visitNewClass(NewClassTree tree, Void unused) {
-      if (Objects.equals(current, tree.getEnclosingExpression())) {
-        return ASTHelpers.getSymbol(tree.getIdentifier()).owner.type;
-      }
-      return visitMethodInvocationOrNewClass(
-          tree.getArguments(), ASTHelpers.getSymbol(tree), ((JCNewClass) tree).constructorType);
-    }
-
-    @Override
-    public Type visitMethodInvocation(MethodInvocationTree tree, Void unused) {
-      return visitMethodInvocationOrNewClass(
-          tree.getArguments(), ASTHelpers.getSymbol(tree), ((JCMethodInvocation) tree).meth.type);
-    }
-
-    private @Nullable Type visitMethodInvocationOrNewClass(
-        List<? extends ExpressionTree> arguments, MethodSymbol sym, Type type) {
-      int idx = arguments.indexOf(current);
-      if (idx == -1) {
-        return null;
-      }
-      if (type.getParameterTypes().size() <= idx) {
-        if (!sym.isVarArgs()) {
-          if ((sym.flags() & Flags.HYPOTHETICAL) != 0) {
-            // HYPOTHETICAL is also used for signature-polymorphic methods
-            return null;
-          }
-          throw new IllegalStateException(
-              String.format(
-                  "saw %d formal parameters and %d actual parameters on non-varargs method %s\n",
-                  type.getParameterTypes().size(), arguments.size(), sym));
-        }
-        idx = type.getParameterTypes().size() - 1;
-      }
-      Type argType = type.getParameterTypes().get(idx);
-      if (sym.isVarArgs() && idx == type.getParameterTypes().size() - 1) {
-        argType = state.getTypes().elemtype(argType);
-      }
-      return argType;
-    }
-
-    @Override
-    public Type visitIf(IfTree tree, Void unused) {
-      return getConditionType(tree.getCondition());
-    }
-
-    @Override
-    public Type visitWhileLoop(WhileLoopTree tree, Void unused) {
-      return getConditionType(tree.getCondition());
-    }
-
-    @Override
-    public Type visitDoWhileLoop(DoWhileLoopTree tree, Void unused) {
-      return getConditionType(tree.getCondition());
-    }
-
-    @Override
-    public Type visitForLoop(ForLoopTree tree, Void unused) {
-      return getConditionType(tree.getCondition());
-    }
-
-    @Override
-    public @Nullable Type visitSwitch(SwitchTree node, Void unused) {
-      if (current == node.getExpression()) {
-        return state.getTypes().unboxedTypeOrType(getType(current));
-      } else {
-        return null;
-      }
-    }
-
-    @Override
-    public @Nullable Type visitNewArray(NewArrayTree node, Void unused) {
-      if (Objects.equals(node.getType(), current)) {
-        return null;
-      }
-      if (node.getDimensions().contains(current)) {
-        return state.getSymtab().intType;
-      }
-      if (node.getInitializers() != null && node.getInitializers().contains(current)) {
-        return state.getTypes().elemtype(ASTHelpers.getType(node));
-      }
-      return null;
-    }
-
-    @Override
-    public @Nullable Type visitMemberSelect(MemberSelectTree node, Void unused) {
-      if (current.equals(node.getExpression())) {
-        return ASTHelpers.getType(node.getExpression());
-      }
-      return null;
-    }
-
-    @Override
-    public Type visitMemberReference(MemberReferenceTree node, Void unused) {
-      return state.getTypes().findDescriptorType(getType(node)).getReturnType();
-    }
-
-    private @Nullable Type getConditionType(Tree condition) {
-      if (condition != null && condition.equals(current)) {
-        return state.getSymtab().booleanType;
-      }
-      return null;
-    }
   }
 
   /**
@@ -2348,8 +1859,8 @@ public class ASTHelpers {
       for (Tree resource : tree.getResources()) {
         Symbol symbol = getType(resource).tsym;
 
-        if (symbol instanceof ClassSymbol) {
-          getCloseMethod((ClassSymbol) symbol, state)
+        if (symbol instanceof ClassSymbol classSymbol) {
+          getCloseMethod(classSymbol, state)
               .ifPresent(methodSymbol -> getThrownTypes().addAll(methodSymbol.getThrownTypes()));
         }
       }
@@ -2460,33 +1971,6 @@ public class ASTHelpers {
     return false;
   }
 
-  private static final Method IS_LOCAL = getIsLocal();
-
-  private static Method getIsLocal() {
-    try {
-      return Symbol.class.getMethod("isLocal");
-    } catch (NoSuchMethodException e) {
-      // continue below
-    }
-    try {
-      return Symbol.class.getMethod("isDirectlyOrIndirectlyLocal");
-    } catch (NoSuchMethodException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
-  }
-
-  /**
-   * Returns true if the symbol is directly or indirectly local to a method or variable initializer;
-   * see {@code Symbol#isLocal} or {@code Symbol#isDirectlyOrIndirectlyLocal}.
-   */
-  public static boolean isLocal(Symbol symbol) {
-    try {
-      return (boolean) IS_LOCAL.invoke(symbol);
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
-  }
-
   /** Returns true if the symbol is static. Returns {@code false} for module symbols. */
   public static boolean isStatic(Symbol symbol) {
     return switch (symbol.getKind()) {
@@ -2525,11 +2009,6 @@ public class ASTHelpers {
    */
   public static boolean isAbstract(MethodSymbol method) {
     return method.getModifiers().contains(Modifier.ABSTRACT);
-  }
-
-  /** Returns a compatibility adapter around {@link Scope}. */
-  public static ErrorProneScope scope(Scope scope) {
-    return new ErrorProneScope(scope);
   }
 
   public static EnumSet<Flags.Flag> asFlagSet(long flags) {
@@ -2603,6 +2082,14 @@ public class ASTHelpers {
       }
 
       @Override
+      public Void visitArrayType(ArrayType t, Type type) {
+        if (type instanceof ArrayType other) {
+          scan(t.getComponentType(), other.getComponentType());
+        }
+        return null;
+      }
+
+      @Override
       public Void visitType(Type t, Type other) {
         return null;
       }
@@ -2621,22 +2108,17 @@ public class ASTHelpers {
     return result.build();
   }
 
-  /**
-   * @deprecated use {@link #hasImplicitType(VariableTree, VisitorState)} instead
-   */
-  @Deprecated
-  public static boolean hasNoExplicitType(VariableTree tree, VisitorState state) {
-    return hasImplicitType(tree, state);
-  }
-
   /** Returns whether this is a {@code var} or a lambda parameter that has no explicit type. */
   public static boolean hasImplicitType(VariableTree tree, VisitorState state) {
-    /*
-     * For lambda expression parameters without an explicit type, both
-     * `JCVariableDecl#declaredUsingVar()` and `#isImplicitlyTyped()` may be false. So instead we
-     * check whether the variable's type is explicitly represented in the source code.
-     */
-    return !hasExplicitSource(tree.getType(), state);
+    JCVariableDecl varDecl = (JCVariableDecl) tree;
+    if (varDecl.declaredUsingVar()) {
+      return true;
+    }
+    // after JDK-8358604, inferred variable types have source positions
+    if (!hasExplicitSource(tree.getType(), state)) {
+      return true;
+    }
+    return false;
   }
 
   /** Returns whether the given tree has an explicit source code representation. */
@@ -2683,7 +2165,7 @@ public class ASTHelpers {
   private static boolean hasMatchingMethods(
       Name name, Predicate<MethodSymbol> predicate, Type startClass, Types types) {
     Predicate<Symbol> matchesMethodPredicate =
-        sym -> sym instanceof MethodSymbol && predicate.test((MethodSymbol) sym);
+        sym -> sym instanceof MethodSymbol methodSymbol && predicate.test(methodSymbol);
 
     // Iterate over all classes and interfaces that startClass inherits from.
     for (Type superClass : types.closure(startClass)) {
@@ -2692,8 +2174,7 @@ public class ASTHelpers {
       Scope superClassSymbols = superClassSymbol.members();
       if (superClassSymbols != null) { // Can be null if superClass is a type variable
         if (!Iterables.isEmpty(
-            scope(superClassSymbols)
-                .getSymbolsByName(name, matchesMethodPredicate, NON_RECURSIVE))) {
+            superClassSymbols.getSymbolsByName(name, matchesMethodPredicate, NON_RECURSIVE))) {
           return true;
         }
       }
@@ -2705,16 +2186,18 @@ public class ASTHelpers {
     return switchTree.getCases().stream().filter(c -> isSwitchDefault(c)).findFirst();
   }
 
-  /** Returns whether {@code caseTree} is the default case of a switch statement. */
+  /**
+   * Returns whether {@code caseTree} is the default case of a switch statement. This includes
+   * {@code case null, default ->}.
+   */
   public static boolean isSwitchDefault(CaseTree caseTree) {
-    if (!caseTree.getExpressions().isEmpty()) {
+    List<? extends Tree> labels = caseTree.getLabels();
+    if (!caseTree.getExpressions().isEmpty() && labels.isEmpty()) {
       return false;
     }
-    List<? extends Tree> labels = caseTree.getLabels();
     return labels.isEmpty()
-        || (labels.size() == 1
-            // DEFAULT_CASE_LABEL is in Java 21, so we're stuck stringifying for now.
-            && getOnlyElement(labels).getKind().name().equals("DEFAULT_CASE_LABEL"));
+        // DEFAULT_CASE_LABEL is in Java 21, so we're stuck stringifying for now.
+        || labels.stream().anyMatch(label -> label.getKind().name().equals("DEFAULT_CASE_LABEL"));
   }
 
   private static final Supplier<Name> NULL_MARKED_NAME =

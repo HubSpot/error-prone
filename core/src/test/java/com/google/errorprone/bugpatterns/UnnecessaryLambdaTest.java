@@ -261,6 +261,42 @@ public class UnnecessaryLambdaTest {
   }
 
   @Test
+  public void variable_static_butNotUpperCased() {
+    testHelper
+        .addInputLines(
+            "Test.java",
+            """
+            import java.util.function.Function;
+
+            class Test {
+              private static final Function<String, String> notUpperCased = x -> "hello " + x;
+
+              void g() {
+                Function<String, String> l = Test.notUpperCased;
+                System.err.println(notUpperCased.apply("world"));
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            import java.util.function.Function;
+
+            class Test {
+              private static String notUpperCased(String x) {
+                return "hello " + x;
+              }
+
+              void g() {
+                Function<String, String> l = Test::notUpperCased;
+                System.err.println(notUpperCased("world"));
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
   public void method_shapes() {
     testHelper
         .addInputLines(

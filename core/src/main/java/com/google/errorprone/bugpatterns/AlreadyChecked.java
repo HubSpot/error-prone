@@ -206,19 +206,19 @@ public final class AlreadyChecked extends BugChecker implements CompilationUnitT
           || getCurrentPath().getLeaf() instanceof NewClassTree) {
         return super.scan(tree, null);
       }
-      if (!(tree instanceof ExpressionTree)
+      if (!(tree instanceof ExpressionTree expressionTree)
           || !isSameType(getType(tree), state.getSymtab().booleanType, state)) {
         return super.scan(tree, null);
       }
 
       if (tree instanceof IdentifierTree
-          && getCurrentPath().getLeaf() instanceof AssignmentTree
-          && ((AssignmentTree) getCurrentPath().getLeaf()).getVariable().equals(tree)) {
+          && getCurrentPath().getLeaf() instanceof AssignmentTree assignmentTree
+          && assignmentTree.getVariable().equals(tree)) {
         return super.scan(tree, null);
       }
 
       constantExpressions
-          .constantExpression((ExpressionTree) tree, state)
+          .constantExpression(expressionTree, state)
           .ifPresent(
               e -> {
                 if (truths.contains(e)) {

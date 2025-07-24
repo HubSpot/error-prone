@@ -23,9 +23,11 @@ import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.fixes.SuggestedFixes.removeModifiers;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.util.ASTHelpers.annotationsAmong;
-import static com.google.errorprone.util.ASTHelpers.findSuperMethod;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasDirectAnnotationWithSimpleName;
+import static com.google.errorprone.util.ASTHelpers.streamSuperMethods;
+import static java.lang.String.format;
+import static java.util.stream.Collectors.joining;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
@@ -63,6 +65,7 @@ public final class UnnecessarilyVisible extends BugChecker implements MethodTree
                       "com.google.inject.multibindings.ProvidesIntoMap",
                       "com.google.inject.multibindings.ProvidesIntoSet",
                       "dagger.Provides",
+                      "jakarta.inject.Inject",
                       "javax.inject.Inject")
                   .map(s::getName)
                   .collect(toImmutableSet()));
@@ -70,7 +73,7 @@ public final class UnnecessarilyVisible extends BugChecker implements MethodTree
   private static final Supplier<ImmutableSet<Name>> INJECT_ANNOTATIONS =
       VisitorState.memoize(
           s ->
-              Stream.of("com.google.inject.Inject", "javax.inject.Inject")
+              Stream.of("com.google.inject.Inject", "javax.inject.Inject", "jakarta.inject.Inject")
                   .map(s::getName)
                   .collect(toImmutableSet()));
 
@@ -81,13 +84,13 @@ public final class UnnecessarilyVisible extends BugChecker implements MethodTree
   @Override
   public Description matchMethod(MethodTree tree, VisitorState state) {
     MethodSymbol symbol = getSymbol(tree);
-    if (annotationsAmong(symbol, FRAMEWORK_ANNOTATIONS.get(state), state).isEmpty()) {
+    var annotations = annotationsAmong(symbol, FRAMEWORK_ANNOTATIONS.get(state), state);
+    if (annotations.isEmpty()) {
       return NO_MATCH;
     }
-    if (findSuperMethod(symbol, state.getTypes()).isPresent()) {
+    if (streamSuperMethods(symbol, state.getTypes()).findAny().isPresent()) {
       return NO_MATCH;
     }
-
     if (hasDirectAnnotationWithSimpleName(tree, "VisibleForTesting")) {
       return NO_MATCH;
     }
@@ -96,6 +99,13 @@ public final class UnnecessarilyVisible extends BugChecker implements MethodTree
       return NO_MATCH;
     }
     return buildDescription(tree)
+        .setMessage(
+            format(
+                "Methods annotated with %s are intended to be called by a framework, and so should"
+                    + " have default visibility.",
+                annotations.stream()
+                    .map(n -> "@" + n.toString().replaceFirst("^.+\\.", ""))
+                    .collect(joining(", "))))
         .addFix(
             removeModifiers(tree.getModifiers(), state, badModifiers)
                 .orElse(SuggestedFix.emptyFix()))

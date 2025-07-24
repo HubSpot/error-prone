@@ -52,6 +52,23 @@ public final class FieldCanBeLocalTest {
   }
 
   @Test
+  public void fullyUnused_noFinding() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              private int a;
+
+              void foo() {
+                a = 1;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
   public void suppressedByUnusedPrefix() {
     helper
         .addSourceLines(
@@ -571,7 +588,7 @@ public final class FieldCanBeLocalTest {
     helper
         .addSourceLines(
             "Test.java",
-            """
+"""
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 import java.util.Collections;

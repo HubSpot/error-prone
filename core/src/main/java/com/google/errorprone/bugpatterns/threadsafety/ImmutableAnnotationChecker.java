@@ -21,12 +21,13 @@ import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.util.ASTHelpers.getGeneratedBy;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
+import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
+import static com.google.errorprone.util.AnnotationNames.IMMUTABLE_ANNOTATION;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.BugPattern.StandardTags;
 import com.google.errorprone.VisitorState;
-import com.google.errorprone.annotations.Immutable;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
 import com.google.errorprone.bugpatterns.threadsafety.ThreadSafety.Violation;
@@ -70,11 +71,11 @@ public class ImmutableAnnotationChecker extends BugChecker implements ClassTreeM
     if (symbol.isAnnotationType() || !WellKnownMutability.isAnnotation(state, symbol.type)) {
       return NO_MATCH;
     }
-    if (!Collections.disjoint(getGeneratedBy(symbol, state), IGNORED_PROCESSORS)) {
+    if (!Collections.disjoint(getGeneratedBy(symbol), IGNORED_PROCESSORS)) {
       return NO_MATCH;
     }
 
-    if (ASTHelpers.hasAnnotation(symbol, Immutable.class, state)) {
+    if (hasAnnotation(symbol, IMMUTABLE_ANNOTATION, state)) {
       AnnotationTree annotation =
           ASTHelpers.getAnnotationWithSimpleName(tree.getModifiers().getAnnotations(), "Immutable");
       if (annotation != null) {
@@ -93,7 +94,7 @@ public class ImmutableAnnotationChecker extends BugChecker implements ClassTreeM
                 this::isSuppressed,
                 state,
                 wellKnownMutability,
-                ImmutableSet.of(Immutable.class.getName()))
+                ImmutableSet.of(IMMUTABLE_ANNOTATION))
             .checkForImmutability(
                 Optional.of(tree), ImmutableSet.of(), getType(tree), this::describeClass);
 

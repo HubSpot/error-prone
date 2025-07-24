@@ -22,7 +22,7 @@ import java.lang.annotation.Target;
 
 // TODO(b/157082874): Allow restricting entire classes.
 /**
- * Restrict this method to callsites with a allowlist annotation.
+ * Restrict access to this API element to callers with an allowlist annotation or a specific path.
  *
  * <p>Callers that are not allowlisted will cause a configurable compiler diagnostic. Allowlisting
  * can either allow the call outright, or make the compiler emit a warning when the API is called.
@@ -48,7 +48,7 @@ import java.lang.annotation.Target;
  * public class Foo {
  *   @RestrictedApi(
  *      explanation="You could shoot yourself in the foot with Foo.bar if you aren't careful",
- *      link="http://edsger.dijkstra/foo_bar_consider_harmful.html",
+ *      link="https://edsger.dijkstra/foo_bar_consider_harmful.html",
  *      allowedOnPath="testsuite/.*", // Unsafe behavior in tests is ok.
  *      allowlistAnnotations = {ReviewedFooBar.class},
  *      allowlistWithWarningAnnotations = {LegacyUnsafeFooBar.class})
@@ -79,6 +79,22 @@ import java.lang.annotation.Target;
  *   }
  * }
  * }</pre>
+ *
+ * <p>The {@code @RestrictedApi} annotation can also be used on a record's component to restrict the
+ * visibility of the record's accessor methods. For example:
+ *
+ * <pre>{@code
+ * public record User(
+ *     String name,
+ *     @RestrictedApi(
+ *         explanation = "Only allow safe accessors to the password",
+ *         allowlistAnnotations = {ReviewedFooBar.class},
+ *         link = "")
+ *         String password) {}
+ * }</pre>
+ *
+ * <p>All users will be able to call the record's constructor, but only users annotated with
+ * {@code @ReviewedFooBar} will be able to call the {@code password()} accessor method.
  */
 @Target({ElementType.CONSTRUCTOR, ElementType.METHOD})
 public @interface RestrictedApi {

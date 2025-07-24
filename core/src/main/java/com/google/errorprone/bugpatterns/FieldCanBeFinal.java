@@ -34,7 +34,6 @@ import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.CompoundAssignmentTree;
-import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MemberSelectTree;
@@ -77,6 +76,10 @@ public class FieldCanBeFinal extends BugChecker implements CompilationUnitTreeMa
           "com.google.inject.Inject",
           "com.google.inject.testing.fieldbinder.Bind",
           "com.google.testing.junit.testparameterinjector.TestParameter",
+          "jakarta.inject.Inject",
+          "jakarta.jdo.annotations.Persistent",
+          "jakarta.persistence.Id",
+          "jakarta.xml.bind.annotation.XmlAttribute",
           "javax.inject.Inject",
           "javax.jdo.annotations.Persistent",
           "javax.persistence.Id",
@@ -297,18 +300,12 @@ public class FieldCanBeFinal extends BugChecker implements CompilationUnitTreeMa
     }
 
     private boolean isThisAccess(Tree tree) {
-      if (tree.getKind() == Kind.IDENTIFIER) {
+      if (tree instanceof IdentifierTree) {
         return true;
       }
-      if (tree.getKind() != Kind.MEMBER_SELECT) {
-        return false;
-      }
-      ExpressionTree selected = ((MemberSelectTree) tree).getExpression();
-      if (!(selected instanceof IdentifierTree)) {
-        return false;
-      }
-      IdentifierTree ident = (IdentifierTree) selected;
-      return ident.getName().contentEquals("this");
+      return tree instanceof MemberSelectTree memberSelectTree
+          && memberSelectTree.getExpression() instanceof IdentifierTree ident
+          && ident.getName().contentEquals("this");
     }
 
     @Override

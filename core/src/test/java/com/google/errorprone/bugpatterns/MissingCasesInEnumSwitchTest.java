@@ -17,6 +17,7 @@
 package com.google.errorprone.bugpatterns;
 
 import static com.google.common.truth.TruthJUnit.assume;
+import static org.junit.Assert.assertThrows;
 
 import com.google.errorprone.CompilationTestHelper;
 import org.junit.Test;
@@ -126,6 +127,62 @@ public class MissingCasesInEnumSwitchTest {
                     System.err.println("found it!");
                     break;
                   default:
+                    break;
+                }
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void nonExhaustive_withCombinedDefault() {
+    assume().that(Runtime.version().feature()).isAtLeast(21);
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                THREE
+              }
+
+              void m(Case c) {
+                switch (c) {
+                  case ONE, TWO -> System.err.println("found it!");
+                  case null, default -> {}
+                }
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void nonExhaustive_withDefaultForSkew() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                THREE
+              }
+
+              void m(Case c) {
+                // BUG: Diagnostic contains:
+                // Non-exhaustive switch; either add a default or handle the remaining cases
+                // THREE
+                switch (c) {
+                  case ONE:
+                  case TWO:
+                    System.err.println("found it!");
+                    break;
+                  default: // fallback for library skew
                     break;
                 }
               }
@@ -308,5 +365,171 @@ public class MissingCasesInEnumSwitchTest {
             }
             """)
         .doTest();
+  }
+
+  @Test
+  public void i4684() {
+    assume().that(Runtime.version().feature()).isAtLeast(21);
+    compilationHelper
+        .addSourceLines(
+            "ErrorProneBug.java",
+            """
+            public class ErrorProneBug {
+              enum A {
+                A1,
+                A2,
+                A3
+              }
+
+              public static void main(String[] args) {
+                A a = null;
+
+                switch (a) {
+                  case null -> {
+                    System.out.println("null");
+                  }
+                  case A1 -> {
+                    System.out.println("A1");
+                  }
+                  case A2 -> {
+                    System.out.println("A2");
+                  }
+                  case A3 -> {
+                    System.out.println("A3");
+                  }
+                }
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void switchExpression_exhaustive() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                THREE
+              }
+
+              void m(Case c) {
+                int x =
+                    switch (c) {
+                      case ONE -> 1;
+                      case TWO -> 2;
+                      case THREE -> 3;
+                    };
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void switchExpression_hasDefault() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                THREE
+              }
+
+              void m(Case c) {
+                int x =
+                    switch (c) {
+                      case ONE -> 1;
+                      default -> -1;
+                    };
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void switchExpression_onlyDefault() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                THREE
+              }
+
+              void m(Case c) {
+                int x =
+                    switch (c) {
+                      default -> -1;
+                    };
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void switchExpression_nonExhaustive_withDefaultForSkew() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              enum Case {
+                ONE,
+                TWO,
+                THREE
+              }
+
+              void m(Case c) {
+                int x =
+                    // BUG: Diagnostic contains:
+                    // Non-exhaustive switch; ensure all cases are handled in addition to the default case
+                    // THREE
+                    switch (c) {
+                      case ONE -> 1;
+                      case TWO -> 2;
+                      // fallback for library skew
+                      default -> -1;
+                    };
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void defaultInRuleCase_crash() {
+    compilationHelper.addSourceLines(
+        "Test.java",
+        """
+        public class Test {
+          public enum E {
+            A,
+            B
+          }
+
+          public static Object test(E e) {
+            return switch (e) {
+              case A:
+                yield new Object();
+              default:
+                yield null;
+            };
+          }
+        }
+        """);
+    assertThrows(AssertionError.class, () -> compilationHelper.doTest());
   }
 }

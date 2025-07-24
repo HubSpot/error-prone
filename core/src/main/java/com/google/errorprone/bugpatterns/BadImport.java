@@ -33,12 +33,14 @@ import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.MultiMatcher;
 import com.google.errorprone.suppliers.Supplier;
 import com.sun.source.tree.AnnotationTree;
+import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.ImportTree;
+import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.Tree;
-import com.sun.source.tree.Tree.Kind;
+import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.PackageSymbol;
@@ -202,11 +204,10 @@ public class BadImport extends BugChecker implements ImportTreeMatcher {
       return state;
     }
     Tree tree = compilationUnit.getTypeDecls().get(0);
-    if (!(tree instanceof ClassTree) || ((ClassTree) tree).getMembers().isEmpty()) {
+    if (!(tree instanceof ClassTree classTree) || classTree.getMembers().isEmpty()) {
       return state;
     }
-    return state.withPath(
-        TreePath.getPath(compilationUnit, ((ClassTree) tree).getMembers().get(0)));
+    return state.withPath(TreePath.getPath(compilationUnit, classTree.getMembers().get(0)));
   }
 
   private boolean isAcceptableImport(Symbol symbol, Set<String> badNames) {
@@ -235,7 +236,7 @@ public class BadImport extends BugChecker implements ImportTreeMatcher {
           public IdentifierTree visitIdentifier(IdentifierTree node, Void unused) {
             Symbol nodeSymbol = getSymbol(node);
             if (symbols.contains(nodeSymbol) && !isSuppressed(node, state)) {
-              if (getCurrentPath().getParentPath().getLeaf().getKind() != Kind.CASE) {
+              if (!(getCurrentPath().getParentPath().getLeaf() instanceof CaseTree)) {
                 builder.prefixWith(node, enclosingReplacement);
                 moveTypeAnnotations(node);
                 return node;
@@ -253,8 +254,7 @@ public class BadImport extends BugChecker implements ImportTreeMatcher {
                   moveTypeAnnotations(node, parent, state, builder);
               case PARAMETERIZED_TYPE -> {
                 Tree grandParent = getCurrentPath().getParentPath().getParentPath().getLeaf();
-                if (grandParent.getKind() == Kind.VARIABLE
-                    || grandParent.getKind() == Kind.METHOD) {
+                if (grandParent instanceof VariableTree || grandParent instanceof MethodTree) {
                   moveTypeAnnotations(node, grandParent, state, builder);
                 }
               }

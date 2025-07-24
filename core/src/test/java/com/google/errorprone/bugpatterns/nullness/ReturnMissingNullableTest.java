@@ -35,6 +35,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public String getMessage(boolean b) {
                 if (b) {
@@ -56,6 +57,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public String getMessage(boolean b) {
                 if (b) {
@@ -77,8 +79,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               String cachedMessage;
+
               public String getMessage(boolean b) {
                 if (b) {
                   // BUG: Diagnostic contains: @Nullable
@@ -99,6 +103,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public String getMessage(boolean b) {
                 if (b) {
@@ -120,6 +125,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public String getMessage(int x) {
                 // BUG: Diagnostic contains: @Nullable
@@ -137,6 +143,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public String getMessage(int x) {
                 // BUG: Diagnostic contains: @Nullable
@@ -155,6 +162,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public String getMessage(int x) {
                 // BUG: Diagnostic contains: @Nullable
@@ -176,6 +184,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public String getMessage(int x) {
                 return switch (x) {
@@ -195,6 +204,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public String getMessage(int x) {
                 switch (x) {
@@ -217,6 +227,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public String getMessage(int x) {
                 switch (x) {
@@ -238,11 +249,13 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object get() {
                 // BUG: Diagnostic contains: @Nullable
                 return getVoid();
               }
+
               abstract Void getVoid();
             }
             """)
@@ -256,11 +269,13 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object get(Supplier<? extends Void> s) {
                 // BUG: Diagnostic contains: @Nullable
                 return s.get();
               }
+
               interface Supplier<T> {
                 T get();
               }
@@ -276,8 +291,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               static final Object NULL = null;
+
               Object get() {
                 // BUG: Diagnostic contains: @Nullable
                 return NULL;
@@ -294,11 +311,13 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object get() {
                 // BUG: Diagnostic contains: @Nullable
                 return NULL;
               }
+
               static final Object NULL = null;
             }
             """)
@@ -312,8 +331,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               final Object nullObject = null;
+
               Object get() {
                 // BUG: Diagnostic contains: @Nullable
                 return nullObject;
@@ -330,8 +351,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               final Object nullObject = null;
+
               Object get() {
                 // BUG: Diagnostic contains: @Nullable
                 return this.nullObject;
@@ -349,6 +372,7 @@ public class ReturnMissingNullableTest {
             """
             class Foo {
               final Object nullObject = null;
+
               Object get() {
                 // BUG: Diagnostic contains: @Nullable
                 return nullObject;
@@ -360,6 +384,7 @@ public class ReturnMissingNullableTest {
             """
             class Bar {
               final Object nullObject = null;
+
               Object get() {
                 // BUG: Diagnostic contains: @Nullable
                 return nullObject;
@@ -376,8 +401,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Void nullObject;
+
               Object get() {
                 // BUG: Diagnostic contains: @Nullable
                 return nullObject;
@@ -394,7 +421,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             public class LiteralNullReturnTest {
               @Nullable String[] getMessage(boolean b, String[] s) {
                 return b ? s : null;
@@ -405,7 +434,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             public class LiteralNullReturnTest {
               @Nullable String @Nullable [] getMessage(boolean b, String[] s) {
                 return b ? s : null;
@@ -422,9 +453,11 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             public class LiteralNullReturnTest {
-              String [] @Nullable [] getMessage(boolean b, String[][] s) {
+              String[] @Nullable [] getMessage(boolean b, String[][] s) {
                 return b ? s : null;
               }
             }
@@ -433,7 +466,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             public class LiteralNullReturnTest {
               String @Nullable [] @Nullable [] getMessage(boolean b, String[][] s) {
                 return b ? s : null;
@@ -450,6 +485,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object get() {
                 final Object nullObject = null;
@@ -468,6 +504,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object get() {
                 Object nullObject = null;
@@ -486,6 +523,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object get(boolean b1, boolean b2, Object someObject) {
                 final Object nullObject = null;
@@ -504,6 +542,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object foo(Object o) {
                 // BUG: Diagnostic contains: @Nullable
@@ -521,6 +560,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object foo(Object o) {
                 // BUG: Diagnostic contains: @Nullable
@@ -538,6 +578,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object foo(Object o) {
                 if (o == null) {
@@ -558,6 +599,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object foo(Object o) {
                 if (o != null) {
@@ -579,8 +621,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object o;
+
               Object foo() {
                 if (o == null) {
                   // BUG: Diagnostic contains: @Nullable
@@ -600,7 +644,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import static com.google.common.base.Verify.verify;
+
             class LiteralNullReturnTest {
               public String getMessage(boolean b) {
                 verify(b);
@@ -619,7 +665,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import com.google.common.base.Optional;
+
             class LiteralNullReturnTest {
               public String getMessage(Optional<String> m) {
                 // BUG: Diagnostic contains: @Nullable
@@ -637,7 +685,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import java.util.Optional;
+
             class LiteralNullReturnTest {
               public String getMessage(Optional<String> m) {
                 // BUG: Diagnostic contains: @Nullable
@@ -655,6 +705,7 @@ public class ReturnMissingNullableTest {
             "MyMap.java",
             """
             import java.util.Map;
+
             abstract class MyMap<K, V> implements Map<K, V> {
               @Override
               public V put(K k, V v) {
@@ -673,6 +724,7 @@ public class ReturnMissingNullableTest {
             """
             import com.google.errorprone.annotations.DoNotCall;
             import java.util.Map;
+
             interface MyMap<K, V> extends Map<K, V> {
               @DoNotCall
               @Override
@@ -690,7 +742,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             public class LiteralNullReturnTest {
               String getMessage(boolean b) {
                 // BUG: Diagnostic contains: @Nullable
@@ -708,6 +762,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public final class LiteralNullReturnTest {
               public String getMessage() {
                 // BUG: Diagnostic contains: @Nullable
@@ -725,7 +780,9 @@ public class ReturnMissingNullableTest {
             "in/com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import javax.annotation.Nullable;
+
             public class LiteralNullReturnTest {
               public String[] getMessage(boolean b) {
                 return b ? null : new String[0];
@@ -736,9 +793,12 @@ public class ReturnMissingNullableTest {
             "out/com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import javax.annotation.Nullable;
+
             public class LiteralNullReturnTest {
-              @Nullable public String[] getMessage(boolean b) {
+              @Nullable
+              public String[] getMessage(boolean b) {
                 return b ? null : new String[0];
               }
             }
@@ -753,7 +813,9 @@ public class ReturnMissingNullableTest {
             "in/com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             public class LiteralNullReturnTest {
               public String[] getMessage(boolean b) {
                 return b ? null : new String[0];
@@ -764,7 +826,9 @@ public class ReturnMissingNullableTest {
             "out/com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             public class LiteralNullReturnTest {
               public String @Nullable [] getMessage(boolean b) {
                 return b ? null : new String[0];
@@ -781,7 +845,9 @@ public class ReturnMissingNullableTest {
             "in/com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             public class LiteralNullReturnTest {
               public String[][] getMessage(boolean b, String[][] s) {
                 return b ? null : s;
@@ -792,7 +858,9 @@ public class ReturnMissingNullableTest {
             "out/com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             public class LiteralNullReturnTest {
               public String @Nullable [][] getMessage(boolean b, String[][] s) {
                 return b ? null : s;
@@ -809,9 +877,12 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             public class LiteralNullReturnTest {
               class Inner {}
+
               LiteralNullReturnTest.@Nullable Inner getMessage(boolean b, Inner i) {
                 return b ? i : null;
               }
@@ -827,9 +898,12 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             public class LiteralNullReturnTest {
               class Inner {}
+
               @Nullable Inner getMessage(boolean b, Inner i) {
                 return b ? i : null;
               }
@@ -845,11 +919,14 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               static final Object NULL;
+
               static {
                 NULL = null;
               }
+
               Object get() {
                 return NULL;
               }
@@ -883,6 +960,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object get() {
                 final Object nullObject;
@@ -901,8 +979,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object o;
+
               Object foo() {
                 if (this.o == null) {
                   return this.o;
@@ -922,6 +1002,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               @SuppressWarnings("nullness:return")
               public String getMessage(boolean b) {
@@ -937,7 +1018,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.jspecify.annotations.Nullable;
+
             public class LiteralNullReturnTest {
 
               public @Nullable String getMessage(boolean b) {
@@ -959,6 +1042,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public String getMessage() {
                 return null;
@@ -975,6 +1059,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public <T> T getMessage(boolean b, T t) {
                 return b ? null : t;
@@ -991,11 +1076,13 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import javax.annotation.Nullable;
+
             public class LiteralNullReturnTest {
               @Nullable
               public String getMessage(boolean b) {
-                return b ? "" :null;
+                return b ? "" : null;
               }
             }
             """)
@@ -1009,17 +1096,20 @@ public class ReturnMissingNullableTest {
             "com/google/anno/my/NullableDecl.java",
             """
             package com.google.anno.my;
+
             public @interface NullableDecl {}
             """)
         .addSourceLines(
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import com.google.anno.my.NullableDecl;
+
             public class LiteralNullReturnTest {
               @NullableDecl
               public String getMessage(boolean b) {
-                return b ? "" :null;
+                return b ? "" : null;
               }
             }
             """)
@@ -1033,7 +1123,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.compatqual.NullableType;
+
             public class LiteralNullReturnTest {
               public @NullableType String getMessage(boolean b) {
                 return b ? "" : null;
@@ -1050,8 +1142,10 @@ public class ReturnMissingNullableTest {
             "com/google/anno/my/Nullable.java",
             """
             package com.google.anno.my;
+
             import java.lang.annotation.ElementType;
             import java.lang.annotation.Target;
+
             @Target({ElementType.TYPE_USE})
             public @interface Nullable {}
             """)
@@ -1059,6 +1153,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/TypeAnnoReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class TypeAnnoReturnTest {
               public @com.google.anno.my.Nullable String getMessage(boolean b) {
                 return b ? "" : null;
@@ -1075,7 +1170,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import javax.annotation.Nullable;
+
             public class LiteralNullReturnTest {
               @Nullable
               String[] getMessage(boolean b, String[] s) {
@@ -1093,7 +1190,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             public class LiteralNullReturnTest {
               String @Nullable [] getMessage(boolean b, String[] s) {
                 return b ? s : null;
@@ -1110,7 +1209,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             public class LiteralNullReturnTest {
               java.lang.@Nullable String getMessage(boolean b) {
                 return b ? "" : null;
@@ -1149,8 +1250,10 @@ public class ReturnMissingNullableTest {
             "com/google/anno/my/Nullable.java",
             """
             package com.google.anno.my;
+
             import java.lang.annotation.ElementType;
             import java.lang.annotation.Target;
+
             @Target({ElementType.TYPE_USE})
             public @interface Nullable {}
             """)
@@ -1158,7 +1261,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/NullableParameterTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import com.google.anno.my.Nullable;
+
             public class NullableParameterTest {
               public String[] apply(@Nullable String[] message) {
                 return message;
@@ -1175,6 +1280,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public String getMessage() {
                 return "hello";
@@ -1191,6 +1297,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/NonNullMethodTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class NonNullMethodTest {
               public String getMessage(int x) {
                 return String.valueOf(x);
@@ -1207,8 +1314,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/NonNullFieldTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class NonNullFieldTest {
               private String message;
+
               public String getMessage() {
                 return message;
               }
@@ -1224,6 +1333,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/NonNullParameterTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class NonNullParameterTest {
               public String apply(String message) {
                 return message;
@@ -1240,8 +1350,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/ThisTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class ThisTest {
               private String message;
+
               public ThisTest setMessage(String message) {
                 this.message = message;
                 return this;
@@ -1258,8 +1370,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/CapturedLocalTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public abstract class CapturedLocalTest {
               public abstract String getMessage();
+
               public CapturedLocalTest withMessage(final String message) {
                 return new CapturedLocalTest() {
                   public String getMessage() {
@@ -1283,6 +1397,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/PrimitiveReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class PrimitiveReturnTest {
               public int getCount() {
                 return (Integer) null;
@@ -1299,9 +1414,12 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/VoidMethodTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class VoidMethodTest {
               public void run(int iterations) {
-                if (iterations <= 0) { return; }
+                if (iterations <= 0) {
+                  return;
+                }
                 run(iterations - 1);
               }
             }
@@ -1316,9 +1434,12 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/VoidTypeTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class VoidTypeTest {
               public Void run(int iterations) {
-                if (iterations <= 0) { return null; }
+                if (iterations <= 0) {
+                  return null;
+                }
                 run(iterations - 1);
                 return null;
               }
@@ -1334,10 +1455,14 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/MissingNullableReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import javax.annotation.Nullable;
+
             public class MissingNullableReturnTest {
               public static final java.util.function.Function<String, String> IDENTITY =
-                  (s -> { return s != null ? s : null; });
+                  (s -> {
+                    return s != null ? s : null;
+                  });
             }
             """)
         .doTest();
@@ -1350,7 +1475,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/MissingNullableReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import javax.annotation.Nullable;
+
             public class MissingNullableReturnTest {
               public static java.util.function.Function<String, String> identity() {
                 return s -> s;
@@ -1367,7 +1494,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/MissingNullableReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import javax.annotation.Nullable;
+
             public class MissingNullableReturnTest {
               public static java.util.function.Function<String, String> identity() {
                 return (s -> s);
@@ -1386,13 +1515,17 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/MissingNullableReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import javax.annotation.Nonnull;
+
             public class MissingNullableReturnTest {
               public @Nonnull MyClass test() {
                 return ((MyClass) null).myMethod().myField;
               }
+
               abstract class MyClass {
                 abstract MyClass myMethod();
+
                 MyClass myField;
               }
             }
@@ -1408,12 +1541,15 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/MissingNullableReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import javax.annotation.Nullable;
             import java.util.Optional;
+
             public class MissingNullableReturnTest {
               public String get() {
                 return getInternal(true, null);
               }
+
               private String getInternal(boolean flag, @Nullable Integer i) {
                 return "hello";
               }
@@ -1429,11 +1565,15 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/MissingNullableReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import javax.annotation.Nullable;
             import java.util.concurrent.Callable;
+
             public class MissingNullableReturnTest {
               public Callable<?> get() {
-                return () -> { return null; };
+                return () -> {
+                  return null;
+                };
               }
             }
             """)
@@ -1447,8 +1587,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               static Object NULL = null;
+
               Object get() {
                 return NULL;
               }
@@ -1464,7 +1606,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import org.checkerframework.checker.nullness.qual.PolyNull;
+
             public class LiteralNullReturnTest {
               public @PolyNull String getMessage(@PolyNull String s) {
                 if (s == null) {
@@ -1485,6 +1629,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             class LiteralNullReturnTest {
               public String getMessage() {
                 System.exit(1);
@@ -1502,6 +1647,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             class LiteralNullReturnTest {
               public String getMessage() {
                 Runtime.getRuntime().exit(1);
@@ -1519,6 +1665,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             class LiteralNullReturnTest {
               public String getMessage() {
                 Runtime.getRuntime().halt(1);
@@ -1536,7 +1683,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import static org.junit.Assert.fail;
+
             class LiteralNullReturnTest {
               public String getMessage() {
                 fail();
@@ -1554,7 +1703,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import static junit.framework.TestCase.fail;
+
             class LiteralNullReturnTest {
               public String getMessage() {
                 fail();
@@ -1572,15 +1723,18 @@ public class ReturnMissingNullableTest {
             "com/foo/BarTestCase.java",
             """
             package foo;
+
             import junit.framework.TestCase;
-            class BarTestCase extends TestCase {
-            }
+
+            class BarTestCase extends TestCase {}
             """)
         .addSourceLines(
             "com/foo/OtherTestCase.java",
             """
             package foo;
+
             import static foo.BarTestCase.fail;
+
             class OtherTestCase {
               public String getMessage() {
                 fail();
@@ -1598,9 +1752,12 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import static org.junit.Assert.fail;
+
             class LiteralNullReturnTest {
               void throwRuntimeException() {}
+
               public String getMessage() {
                 throwRuntimeException();
                 return null;
@@ -1617,7 +1774,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import static com.google.common.base.Preconditions.checkState;
+
             class LiteralNullReturnTest {
               public String getMessage() {
                 checkState(false);
@@ -1635,7 +1794,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import static com.google.common.base.Verify.verify;
+
             class LiteralNullReturnTest {
               public String getMessage() {
                 verify(false);
@@ -1653,8 +1814,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               static final Object SOMETHING = 1;
+
               Object get() {
                 return SOMETHING;
               }
@@ -1670,6 +1833,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object foo(Object o) {
                 return (o != null ? o : "");
@@ -1686,8 +1850,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object o;
+
               Object foo(LiteralNullReturnTest other) {
                 return (o == null ? other.o : "");
               }
@@ -1703,6 +1869,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object foo(Object o) {
                 return (o == null ? "" : o);
@@ -1719,6 +1886,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object foo(Object o) {
                 if (o != null) {
@@ -1738,6 +1906,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object foo(Object o) {
                 if (o == null) {
@@ -1758,6 +1927,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object foo(Object o) {
                 if (o == null) {
@@ -1779,6 +1949,7 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               String getMessage(boolean b) {
                 return b ? "" : null;
@@ -1795,7 +1966,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import java.util.Optional;
+
             class LiteralNullReturnTest {
               public String getMessage(Optional<String> m) {
                 return m.orElse("");
@@ -1813,6 +1986,7 @@ public class ReturnMissingNullableTest {
             """
             interface NotMap<K, V> {
               String get(Object o);
+
               V replace(K k, V v);
             }
             """)
@@ -1820,8 +1994,11 @@ public class ReturnMissingNullableTest {
             "MyMap.java",
             """
             interface MyMap extends NotMap<Integer, Double> {
-              @Override String get(Object o);
-              @Override Double replace(Integer k, Double v);
+              @Override
+              String get(Object o);
+
+              @Override
+              Double replace(Integer k, Double v);
             }
             """)
         .doTest();
@@ -1834,7 +2011,9 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             import java.util.Optional;
+
             class LiteralNullReturnTest {
               @SuppressWarnings("ReturnMissingNullable")
               public String getMessage(Optional<String> m) {
@@ -1859,9 +2038,11 @@ public class ReturnMissingNullableTest {
             "MyMap.java",
             """
             import java.util.Map;
+
             interface MyMap<K, V> extends Map<K, V>, NotMap {
               @SuppressWarnings("ReturnMissingNullable")
-              @Override V get(Object o);
+              @Override
+              V get(Object o);
             }
             """)
         .doTest();
@@ -1881,9 +2062,11 @@ public class ReturnMissingNullableTest {
             "MyMap.java",
             """
             import java.util.Map;
+
             @SuppressWarnings("ReturnMissingNullable")
             interface MyMap<K, V> extends Map<K, V>, NotMap {
-              @Override V get(Object o);
+              @Override
+              V get(Object o);
             }
             """)
         .doTest();
@@ -1896,8 +2079,10 @@ public class ReturnMissingNullableTest {
             "MyMap.java",
             """
             import java.util.Map;
+
             interface MyMap<K, V> extends Map<K, V> {
-              @Override V get(Object o);
+              @Override
+              V get(Object o);
             }
             """)
         .doTest();
@@ -1910,8 +2095,10 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             abstract class LiteralNullReturnTest {
               Object o;
+
               Object foo(LiteralNullReturnTest other) {
                 if (o == null) {
                   return other.o;
@@ -1931,7 +2118,11 @@ public class ReturnMissingNullableTest {
             """
             class T {
               @Nullable private final Object obj1 = null;
-              private final Object method(boolean b) { return b ? null : 0; }
+
+              private final Object method(boolean b) {
+                return b ? null : 0;
+              }
+
               @interface Nullable {}
             }
             """)
@@ -1940,7 +2131,12 @@ public class ReturnMissingNullableTest {
             """
             class T {
               @Nullable private final Object obj1 = null;
-              @Nullable private final Object method(boolean b) { return b ? null : 0; }
+
+              @Nullable
+              private final Object method(boolean b) {
+                return b ? null : 0;
+              }
+
               @interface Nullable {}
             }
             """)
@@ -1954,18 +2150,25 @@ public class ReturnMissingNullableTest {
             "in/Test.java",
             """
             class T {
-              private final Object method(boolean b) { return b ? null : 0; }
+              private final Object method(boolean b) {
+                return b ? null : 0;
+              }
+
               class Nullable {}
             }
             """)
         .addOutputLines(
             "out/Test.java",
             """
-class T {
-  @org.jspecify.annotations.Nullable private final Object method(boolean b) { return b ? null : 0; }
-  class Nullable {}
-}
-""")
+            class T {
+              @org.jspecify.annotations.Nullable
+              private final Object method(boolean b) {
+                return b ? null : 0;
+              }
+
+              class Nullable {}
+            }
+            """)
         .doTest();
   }
 
@@ -1989,6 +2192,7 @@ class T {
             "out/Test.java",
             """
             import org.jspecify.annotations.Nullable;
+
             class T {
               private final @Nullable Object method(boolean b) {
                 if (b) {
@@ -2009,6 +2213,7 @@ class T {
             "in/Test.java",
             """
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             class T {
               java.lang.Object method(boolean b) {
                 if (b) {
@@ -2023,6 +2228,7 @@ class T {
             "out/Test.java",
             """
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             class T {
               java.lang.@Nullable Object method(boolean b) {
                 if (b) {
@@ -2043,6 +2249,7 @@ class T {
             "in/Test.java",
             """
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             class T {
               final Object method(boolean b) {
                 if (b) {
@@ -2057,6 +2264,7 @@ class T {
             "out/Test.java",
             """
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             class T {
               final @Nullable Object method(boolean b) {
                 if (b) {
@@ -2077,6 +2285,7 @@ class T {
             "in/Test.java",
             """
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             class T {
               java.util.List<java.lang.Object> method(boolean b) {
                 if (b) {
@@ -2091,6 +2300,7 @@ class T {
             "out/Test.java",
             """
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             class T {
               java.util.@Nullable List<java.lang.Object> method(boolean b) {
                 if (b) {
@@ -2112,6 +2322,7 @@ class T {
             """
             import org.checkerframework.checker.initialization.qual.UnderInitialization;
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             class T {
               java.lang.@UnderInitialization Object method(boolean b) {
                 if (b) {
@@ -2127,6 +2338,7 @@ class T {
             """
             import org.checkerframework.checker.initialization.qual.UnderInitialization;
             import org.checkerframework.checker.nullness.qual.Nullable;
+
             class T {
               java.lang.@Nullable @UnderInitialization Object method(boolean b) {
                 if (b) {
@@ -2161,8 +2373,10 @@ class T {
             "out/Test.java",
             """
             import javax.annotation.CheckForNull;
+
             class T {
-              @CheckForNull Object method(boolean b) {
+              @CheckForNull
+              Object method(boolean b) {
                 if (b) {
                   return null;
                 } else {
@@ -2181,6 +2395,7 @@ class T {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public String getMessage() {
                 // BUG: Diagnostic contains: @Nullable
@@ -2198,6 +2413,7 @@ class T {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               public <T> T getMessage(boolean b, T t) {
                 // BUG: Diagnostic contains: @Nullable
@@ -2215,10 +2431,13 @@ class T {
             "com/google/errorprone/bugpatterns/nullness/VoidTypeTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class VoidTypeTest {
               public Void run(int iterations) {
-                // BUG: Diagnostic contains: @Nullable
-                if (iterations <= 0) { return null; }
+                if (iterations <= 0) {
+                  // BUG: Diagnostic contains: @Nullable
+                  return null;
+                }
                 run(iterations - 1);
                 // BUG: Diagnostic contains: @Nullable
                 return null;
@@ -2236,18 +2455,20 @@ class T {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               @SuppressWarnings("nullness:argument")
               public String getMessage(boolean b) {
                 if (b) {
                   doSomethingElse(null);
-                 return "negative";
+                  return "negative";
                 } else {
                   return "negative";
                 }
               }
+
               public void doSomethingElse(Object c) {
-                  return;
+                return;
               }
             }
             """)
@@ -2255,18 +2476,20 @@ class T {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
+
             public class LiteralNullReturnTest {
               @SuppressWarnings("nullness:argument")
               public String getMessage(boolean b) {
                 if (b) {
                   doSomethingElse(null);
-                 return "negative";
+                  return "negative";
                 } else {
                   return "negative";
                 }
               }
+
               public void doSomethingElse(Object c) {
-                  return;
+                return;
               }
             }
             """)
@@ -2287,13 +2510,21 @@ class T {
             "MyMap.java",
             """
             import java.util.Map;
+
             interface MyMap<K, V> extends Map<K, V>, NotMap {
+              @Override
               // BUG: Diagnostic contains: @Nullable
-              @Override V get(Object o);
+              V get(Object o);
+
+              @Override
               // BUG: Diagnostic contains: @Nullable
-              @Override V replace(K k, V v);
-              @Override boolean replace(K k, V expect, V update);
-              @Override Integer get(String o);
+              V replace(K k, V v);
+
+              @Override
+              boolean replace(K k, V expect, V update);
+
+              @Override
+              Integer get(String o);
             }
             """)
         .doTest();

@@ -23,6 +23,7 @@ import static com.google.errorprone.matchers.JUnitMatchers.containsTestMethod;
 import static com.google.errorprone.matchers.JUnitMatchers.isJUnit4TestClass;
 import static com.google.errorprone.matchers.JUnitMatchers.isJunit3TestCase;
 import static com.google.errorprone.matchers.Matchers.allOf;
+import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.hasModifier;
 import static com.google.errorprone.matchers.Matchers.methodReturns;
 import static com.google.errorprone.matchers.Matchers.not;
@@ -36,6 +37,7 @@ import static javax.lang.model.element.Modifier.STATIC;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
+import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
@@ -47,9 +49,11 @@ import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.suppliers.Suppliers;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Type;
@@ -57,6 +61,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import javax.inject.Inject;
 import javax.lang.model.element.Modifier;
 
 /**
@@ -72,16 +77,35 @@ public class JUnit4TestNotRun extends BugChecker implements ClassTreeMatcher {
       allOf(
           hasModifier(PUBLIC),
           methodReturns(VOID_TYPE),
-          (t, s) ->
-              t.getParameters().stream()
-                  .allMatch(
-                      v ->
-                          v.getModifiers().getAnnotations().stream()
-                              .anyMatch(a -> isParameterAnnotation(a, s))),
+          anyOf(
+              (t, s) -> hasParameterisationAnnotation(t.getModifiers().getAnnotations()),
+              (t, s) -> t.getParameters().stream().allMatch(v -> isInjectable(v, s))),
           not(JUnitMatchers::hasJUnitAnnotation));
+  ;
 
   private static final ImmutableSet<String> EXEMPTING_METHOD_ANNOTATIONS =
       ImmutableSet.of("com.pdsl.runners.PdslTest", "com.pholser.junit.quickcheck.Property");
+
+  private static boolean hasParameterisationAnnotation(List<? extends AnnotationTree> annotations) {
+    return annotations.stream()
+        .anyMatch(
+            a ->
+                getType(a)
+                    .tsym
+                    .getQualifiedName()
+                    .toString()
+                    .startsWith("com.google.testing.junit.testparameterinjector."));
+  }
+
+  private static boolean isInjectable(VariableTree variableTree, VisitorState state) {
+    if (variableTree.getModifiers().getAnnotations().stream()
+        .anyMatch(a -> isParameterAnnotation(a, state))) {
+      return true;
+    }
+    Type type = getType(variableTree);
+    // Enums and booleans are both injectable by TestParameterInjector, so don't block on those.
+    return type.tsym.isEnum() || isSameType(type, state.getSymtab().booleanType, state);
+  }
 
   private static boolean isParameterAnnotation(AnnotationTree annotation, VisitorState state) {
     Type annotationType = getType(annotation);
@@ -96,6 +120,14 @@ public class JUnit4TestNotRun extends BugChecker implements ClassTreeMatcher {
 
   private static final Matcher<Tree> NOT_STATIC = not(hasModifier(STATIC));
 
+  private final boolean removeAssertionRequirement;
+
+  @Inject
+  JUnit4TestNotRun(ErrorProneFlags flags) {
+    this.removeAssertionRequirement =
+        flags.getBoolean("JUnit4TestNotRun:RemoveAssertionRequirement").orElse(true);
+  }
+
   @Override
   public Description matchClass(ClassTree tree, VisitorState state) {
     if (!isJUnit4TestClass.matches(tree, state)) {
@@ -103,24 +135,31 @@ public class JUnit4TestNotRun extends BugChecker implements ClassTreeMatcher {
     }
     Map<MethodSymbol, MethodTree> suspiciousMethods = new HashMap<>();
     for (Tree member : tree.getMembers()) {
-      if (!(member instanceof MethodTree) || isSuppressed(member, state)) {
+      if (!(member instanceof MethodTree methodTree) || isSuppressed(member, state)) {
         continue;
       }
-      MethodTree methodTree = (MethodTree) member;
       if (POSSIBLE_TEST_METHOD.matches(methodTree, state) && !isSuppressed(tree, state)) {
         suspiciousMethods.put(getSymbol(methodTree), methodTree);
       }
     }
-    if (suspiciousMethods.isEmpty()) {
-      return NO_MATCH;
-    }
     tree.accept(
         new TreeScanner<Void, Void>() {
           @Override
-          public Void visitMethodInvocation(
-              MethodInvocationTree methodInvocationTree, Void unused) {
-            suspiciousMethods.remove(getSymbol(methodInvocationTree));
-            return super.visitMethodInvocation(methodInvocationTree, null);
+          public Void scan(Tree tree, Void unused) {
+            // stop when there are no more suspicious methods
+            return suspiciousMethods.isEmpty() ? null : super.scan(tree, null);
+          }
+
+          @Override
+          public Void visitMethodInvocation(MethodInvocationTree tree, Void unused) {
+            suspiciousMethods.remove(getSymbol(tree));
+            return super.visitMethodInvocation(tree, null);
+          }
+
+          @Override
+          public Void visitMemberReference(MemberReferenceTree tree, Void unused) {
+            suspiciousMethods.remove(getSymbol(tree));
+            return super.visitMemberReference(tree, null);
           }
         },
         null);
@@ -155,6 +194,12 @@ public class JUnit4TestNotRun extends BugChecker implements ClassTreeMatcher {
       return Optional.empty();
     }
 
+    if (hasParameterisationAnnotation(methodTree.getModifiers().getAnnotations())
+        || methodTree.getParameters().stream()
+            .anyMatch(p -> hasParameterisationAnnotation(p.getModifiers().getAnnotations()))) {
+      return Optional.of(describeFixes(methodTree, state));
+    }
+
     // Method appears to be a JUnit 3 test case (name prefixed with "test"), probably a test.
     if (isJunit3TestCase.matches(methodTree, state)) {
       return Optional.of(describeFixes(methodTree, state));
@@ -173,7 +218,8 @@ public class JUnit4TestNotRun extends BugChecker implements ClassTreeMatcher {
 
     // Method non-static and contains call(s) to testing method, probably a test,
     // unless it is called elsewhere in the class, in which case it is a helper method.
-    if (NOT_STATIC.matches(methodTree, state) && containsTestMethod(methodTree)) {
+    if (NOT_STATIC.matches(methodTree, state)
+        && (removeAssertionRequirement || containsTestMethod(methodTree))) {
       return Optional.of(describeFixes(methodTree, state));
     }
     return Optional.empty();

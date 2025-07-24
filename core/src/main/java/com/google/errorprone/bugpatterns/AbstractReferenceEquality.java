@@ -20,6 +20,7 @@ import static com.google.errorprone.dataflow.nullnesspropagation.Nullness.NONNUL
 import static com.google.errorprone.dataflow.nullnesspropagation.Nullness.NULL;
 import static com.google.errorprone.matchers.Matchers.instanceEqualsInvocation;
 import static com.google.errorprone.matchers.Matchers.staticEqualsInvocation;
+import static java.util.Arrays.stream;
 
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.BinaryTreeMatcher;
@@ -129,16 +130,11 @@ public abstract class AbstractReferenceEquality extends BugChecker implements Bi
     // If the lhs is possibly-null, provide both options.
     if (nullness != NONNULL) {
       Symbol existingObjects = FindIdentifiers.findIdent("Objects", state, KindSelector.TYP);
-      ObjectsFix preferredFix;
-      if (symbolsTypeHasName(existingObjects, ObjectsFix.GUAVA.className)) {
-        preferredFix = ObjectsFix.GUAVA;
-      } else if (symbolsTypeHasName(existingObjects, ObjectsFix.JAVA_UTIL.className)) {
-        preferredFix = ObjectsFix.JAVA_UTIL;
-      } else if (state.isAndroidCompatible()) {
-        preferredFix = ObjectsFix.GUAVA;
-      } else {
-        preferredFix = ObjectsFix.JAVA_UTIL;
-      }
+      ObjectsFix preferredFix =
+          stream(ObjectsFix.values())
+              .filter(f -> symbolsTypeHasName(existingObjects, f.className))
+              .findFirst()
+              .orElse(ObjectsFix.JAVA_UTIL);
       builder.addFix(preferredFix.fix(tree, prefix, lhsSource, rhsSource));
     }
     if (nullness != NULL) {
@@ -196,10 +192,9 @@ public abstract class AbstractReferenceEquality extends BugChecker implements Bi
     // If the other half of this or statement is foo.equals(bar) or Objects.equals(foo, bar)
     // replace the or statement with the other half as already written.
     ExpressionTree otherExpression = ASTHelpers.stripParentheses(p.getRightOperand());
-    if (!(otherExpression instanceof MethodInvocationTree)) {
+    if (!(otherExpression instanceof MethodInvocationTree other)) {
       return Optional.empty();
     }
-    MethodInvocationTree other = (MethodInvocationTree) otherExpression;
 
     // a == b || Objects.equals(a, b) => Objects.equals(a, b)
     if (EQUALS_STATIC_METHODS.matches(other, state)) {

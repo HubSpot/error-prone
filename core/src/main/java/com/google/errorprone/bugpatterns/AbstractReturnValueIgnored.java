@@ -45,10 +45,6 @@ import static com.google.errorprone.util.ASTHelpers.isSubtype;
 import static com.google.errorprone.util.ASTHelpers.isVoidType;
 import static com.google.errorprone.util.ASTHelpers.matchingMethods;
 import static com.google.errorprone.util.FindIdentifiers.findAllIdents;
-import static com.sun.source.tree.Tree.Kind.EXPRESSION_STATEMENT;
-import static com.sun.source.tree.Tree.Kind.MEMBER_SELECT;
-import static com.sun.source.tree.Tree.Kind.METHOD_INVOCATION;
-import static com.sun.source.tree.Tree.Kind.NEW_CLASS;
 import static com.sun.tools.javac.parser.Tokens.TokenKind.RPAREN;
 import static java.lang.String.format;
 import static java.util.stream.IntStream.range;
@@ -60,7 +56,6 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ListMultimap;
 import com.google.common.collect.MultimapBuilder;
-import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.MemberReferenceTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
@@ -74,6 +69,7 @@ import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.matchers.UnusedReturnValueMatcher;
+import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MemberReferenceTree;
@@ -136,11 +132,6 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
                   specializedMatcher()));
 
   private final ConstantExpressions constantExpressions;
-
-  // TODO(ghm): Remove once possible.
-  protected AbstractReturnValueIgnored() {
-    this(ConstantExpressions.fromFlags(ErrorProneFlags.empty()));
-  }
 
   protected AbstractReturnValueIgnored(ConstantExpressions constantExpressions) {
     this.constantExpressions = constantExpressions;
@@ -235,7 +226,7 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
 
   final ImmutableList<Fix> fixesAtCallSite(ExpressionTree invocationTree, VisitorState state) {
     checkArgument(
-        invocationTree.getKind() == METHOD_INVOCATION || invocationTree.getKind() == NEW_CLASS,
+        invocationTree instanceof MethodInvocationTree || invocationTree instanceof NewClassTree,
         "unexpected kind: %s",
         invocationTree.getKind());
 
@@ -249,8 +240,8 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
      * for is to check against `this`, and `x[y]` is not `this`.)
      */
     ExpressionTree identifierExpr =
-        invocationTree.getKind() == METHOD_INVOCATION
-            ? getRootAssignable((MethodInvocationTree) invocationTree)
+        invocationTree instanceof MethodInvocationTree methodInvocationTree
+            ? getRootAssignable(methodInvocationTree)
             : null; // null root assignable for constructor calls (as well as some method calls)
     Symbol symbol = getSymbol(identifierExpr);
     Type identifierType = getType(identifierExpr);
@@ -274,11 +265,9 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
     if (MOCKITO_VERIFY.matches(invocationTree, state)) {
       ExpressionTree maybeCallToMock =
           ((MethodInvocationTree) invocationTree).getArguments().get(0);
-      if (maybeCallToMock.getKind() == METHOD_INVOCATION) {
-        ExpressionTree maybeMethodSelectOnMock =
-            ((MethodInvocationTree) maybeCallToMock).getMethodSelect();
-        if (maybeMethodSelectOnMock.getKind() == MEMBER_SELECT) {
-          MemberSelectTree maybeSelectOnMock = (MemberSelectTree) maybeMethodSelectOnMock;
+      if (maybeCallToMock instanceof MethodInvocationTree methodInvocationTree) {
+        ExpressionTree maybeMethodSelectOnMock = methodInvocationTree.getMethodSelect();
+        if (maybeMethodSelectOnMock instanceof MemberSelectTree maybeSelectOnMock) {
           // For this suggestion, we want to move the closing parenthesis:
           // verify(foo .bar())
           //           ^      v
@@ -345,7 +334,7 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
      * we can find a good heuristic. We could consider "Is the return type a protobuf" and/or "Is
      * this a constructor call or build() call?"
      */
-    if (parent.getKind() == EXPRESSION_STATEMENT
+    if (parent instanceof ExpressionStatementTree
         && !constantExpressions.constantExpression(invocationTree, state).isPresent()
         && considerBlanketFixes) {
       ImmutableSet<String> identifiersInScope =
@@ -361,7 +350,7 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
                       "Suppress error by assigning to a variable",
                       prefixWith(parent, format("var %s = ", n))));
     }
-    if (parent.getKind() == EXPRESSION_STATEMENT && considerBlanketFixes) {
+    if (parent instanceof ExpressionStatementTree && considerBlanketFixes) {
       if (constantExpressions.constantExpression(invocationTree, state).isPresent()) {
         fixes.put("Delete call", delete(parent));
       } else {
@@ -462,8 +451,8 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
             }
           }
           for (Type toAdd : currentTypeParam.getBounds()) {
-            if (toAdd.tsym instanceof TypeVariableSymbol) {
-              queue.add((TypeVariableSymbol) toAdd.tsym);
+            if (toAdd.tsym instanceof TypeVariableSymbol typeVariableSymbol) {
+              queue.add(typeVariableSymbol);
             }
           }
         }
@@ -593,8 +582,7 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
     if (isSubtype(resultType, lostType, state)) {
       // Traverse enclosing nodes of this return tree until either a lambda or a Method is reached.
       for (Tree enclosing : state.getPath()) {
-        if (enclosing instanceof MethodTree) {
-          MethodTree methodTree = (MethodTree) enclosing;
+        if (enclosing instanceof MethodTree methodTree) {
           MethodSymbol symbol = getSymbol(methodTree);
           if (isSubtype(objectType, symbol.getReturnType(), state)
               && !isExemptedInterfaceMethod(symbol, state)) {
@@ -606,8 +594,7 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
             break;
           }
         }
-        if (enclosing instanceof LambdaExpressionTree) {
-          LambdaExpressionTree lambdaTree = (LambdaExpressionTree) enclosing;
+        if (enclosing instanceof LambdaExpressionTree lambdaTree) {
           if (isObjectReturningLambdaExpression(lambdaTree, state)) {
             return buildDescription(tree)
                 .setMessage(lostTypeMessage(resultType.toString(), "Object"))

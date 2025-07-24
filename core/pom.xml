@@ -21,7 +21,7 @@
   <parent>
     <groupId>com.google.errorprone</groupId>
     <artifactId>error_prone_parent</artifactId>
-    <version>2.36.0</version>
+    <version>2.40.0</version>
   </parent>
 
   <name>error-prone library</name>
@@ -52,12 +52,6 @@
     <dependency>
       <!-- Apache 2.0 -->
       <groupId>com.google.errorprone</groupId>
-      <artifactId>error_prone_type_annotations</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <!-- Apache 2.0 -->
-      <groupId>com.google.errorprone</groupId>
       <artifactId>error_prone_check_api</artifactId>
       <version>${project.version}</version>
     </dependency>
@@ -72,7 +66,7 @@
       <!-- Apache 2.0 -->
       <groupId>com.google.googlejavaformat</groupId>
       <artifactId>google-java-format</artifactId>
-      <version>1.19.1</version>
+      <version>${google-java-format.version}</version>
     </dependency>
     <dependency>
       <!-- MIT -->
@@ -424,7 +418,6 @@
                   <include>com.github.kevinstern:software-and-algorithms</include>
                   <include>com.google.errorprone:error_prone_annotation</include>
                   <include>com.google.errorprone:error_prone_annotations</include>
-                  <include>com.google.errorprone:error_prone_type_annotations</include>
                   <include>com.google.errorprone:error_prone_check_api</include>
                   <include>org.pcollections:pcollections</include>
                   <include>com.google.guava:guava</include>
@@ -438,8 +431,17 @@
                   <include>com.google.protobuf:protobuf-java</include>
                   <include>javax.inject:javax.inject</include>
                   <include>com.google.googlejavaformat:google-java-format</include>
+                  <include>org.jspecify:jspecify</include>
                 </includes>
               </artifactSet>
+              <filters>
+                <filter>
+                  <artifact>org.jspecify:jspecify</artifact>
+                  <excludes>
+                    <exclude>META-INF/versions/9/OSGI-INF/MANIFEST.MF</exclude>
+                  </excludes>
+                </filter>
+              </filters>
             </configuration>
           </execution>
         </executions>

@@ -68,29 +68,26 @@ public final class MockitoDoSetup extends BugChecker implements CompilationUnitT
         }
         TreePath whenPath = getCurrentPath().getParentPath().getParentPath();
         Tree whenCall = whenPath.getLeaf();
-        if (!(whenCall instanceof MethodInvocationTree)
-            || !INSTANCE_WHEN.matches((MethodInvocationTree) whenCall, state)) {
+        if (!(whenCall instanceof MethodInvocationTree whenMethod)
+            || !INSTANCE_WHEN.matches(whenMethod, state)) {
           return;
         }
-        if (isSpy(((MethodInvocationTree) whenCall).getArguments().get(0))) {
+        if (isSpy(whenMethod.getArguments().get(0))) {
           return;
         }
-        Tree mockedMethod = whenPath.getParentPath().getParentPath().getLeaf();
-
-        if (!(mockedMethod instanceof MethodInvocationTree)) {
+        if (!(whenPath.getParentPath().getParentPath().getLeaf()
+            instanceof MethodInvocationTree mockedMethod)) {
           return;
         }
         if (isSameType(
-            getSymbol((MethodInvocationTree) mockedMethod).getReturnType(),
-            state.getSymtab().voidType,
-            state)) {
+            getSymbol(mockedMethod).getReturnType(), state.getSymtab().voidType, state)) {
           return;
         }
 
         SuggestedFix.Builder fix = SuggestedFix.builder();
         var when = SuggestedFixes.qualifyStaticImport("org.mockito.Mockito.when", fix, state);
-        fix.replace(((MethodInvocationTree) whenCall).getMethodSelect(), when)
-            .replace(state.getEndPosition(whenCall) - 1, state.getEndPosition(whenCall), "")
+        fix.replace(whenMethod.getMethodSelect(), when)
+            .replace(state.getEndPosition(whenMethod) - 1, state.getEndPosition(whenMethod), "")
             .postfixWith(
                 mockedMethod,
                 format(
@@ -138,11 +135,11 @@ public final class MockitoDoSetup extends BugChecker implements CompilationUnitT
       public Void visitMethodInvocation(MethodInvocationTree tree, Void unused) {
         if (DO_THROW.matches(tree, state)) {
           var whenCall = getCurrentPath().getParentPath().getParentPath().getLeaf();
-          if ((whenCall instanceof MethodInvocationTree)
-              && INSTANCE_WHEN.matches((MethodInvocationTree) whenCall, state)) {
-            var whenTarget = getSymbol(((MethodInvocationTree) whenCall).getArguments().get(0));
-            if (whenTarget instanceof VarSymbol) {
-              spiesOrThrows.add((VarSymbol) whenTarget);
+          if (whenCall instanceof MethodInvocationTree methodInvocationTree
+              && INSTANCE_WHEN.matches(methodInvocationTree, state)) {
+            var whenTarget = getSymbol(methodInvocationTree.getArguments().get(0));
+            if (whenTarget instanceof VarSymbol varSymbol) {
+              spiesOrThrows.add(varSymbol);
             }
           }
         }
@@ -151,8 +148,8 @@ public final class MockitoDoSetup extends BugChecker implements CompilationUnitT
           if (STATIC_WHEN.matches(receiver, state)) {
             var mock = getReceiver(((MethodInvocationTree) receiver).getArguments().get(0));
             var mockSymbol = getSymbol(mock);
-            if (mockSymbol instanceof VarSymbol) {
-              spiesOrThrows.add((VarSymbol) mockSymbol);
+            if (mockSymbol instanceof VarSymbol varSymbol) {
+              spiesOrThrows.add(varSymbol);
             }
           }
         }
@@ -163,8 +160,8 @@ public final class MockitoDoSetup extends BugChecker implements CompilationUnitT
       public Void visitAssignment(AssignmentTree tree, Void unused) {
         if (SPY.matches(tree.getExpression(), state)) {
           var symbol = getSymbol(tree.getVariable());
-          if (symbol instanceof VarSymbol) {
-            spiesOrThrows.add((VarSymbol) symbol);
+          if (symbol instanceof VarSymbol varSymbol) {
+            spiesOrThrows.add(varSymbol);
           }
         }
         return super.visitAssignment(tree, null);

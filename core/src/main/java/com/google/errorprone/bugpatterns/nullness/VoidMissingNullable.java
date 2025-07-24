@@ -27,7 +27,6 @@ import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.hasExplicitSource;
 import static com.google.errorprone.util.ASTHelpers.hasImplicitType;
-import static com.sun.source.tree.Tree.Kind.METHOD;
 import static javax.lang.model.element.ElementKind.LOCAL_VARIABLE;
 
 import com.google.common.collect.ImmutableList;
@@ -92,17 +91,13 @@ public class VoidMissingNullable extends BugChecker
       return NO_MATCH;
     }
 
-    if (beingConservative && state.errorProneOptions().isTestOnlyTarget()) {
-      return NO_MATCH;
-    }
-
     if (beingConservative && !isInNullMarkedScope(state)) {
       return NO_MATCH;
     }
 
     for (Tree tree : parameterizedTypeTree.getTypeArguments()) {
-      if (tree instanceof WildcardTree) {
-        tree = ((WildcardTree) tree).getBound();
+      if (tree instanceof WildcardTree wildcardTree) {
+        tree = wildcardTree.getBound();
       }
       checkTree(tree, state);
     }
@@ -116,7 +111,7 @@ public class VoidMissingNullable extends BugChecker
    */
   private static boolean isInNullMarkedScope(VisitorState state) {
     for (Tree tree : state.getPath()) {
-      if (tree.getKind().asInterface().equals(ClassTree.class) || tree.getKind() == METHOD) {
+      if (tree.getKind().asInterface().equals(ClassTree.class) || tree instanceof MethodTree) {
         Symbol enclosingElement = getSymbol(tree);
         return NullnessUtils.isInNullMarkedScope(enclosingElement, state);
       }
@@ -127,10 +122,6 @@ public class VoidMissingNullable extends BugChecker
 
   @Override
   public Description matchMethod(MethodTree tree, VisitorState state) {
-    if (beingConservative && state.errorProneOptions().isTestOnlyTarget()) {
-      return NO_MATCH;
-    }
-
     MethodSymbol sym = getSymbol(tree);
     if (!typeMatches(sym.getReturnType(), sym, state)) {
       return NO_MATCH;
@@ -143,10 +134,6 @@ public class VoidMissingNullable extends BugChecker
 
   @Override
   public Description matchVariable(VariableTree tree, VisitorState state) {
-    if (beingConservative && state.errorProneOptions().isTestOnlyTarget()) {
-      return NO_MATCH;
-    }
-
     if (hasImplicitType(tree, state)) {
       /*
        * In the case of `var`, a declaration-annotation @Nullable would be valid. But a type-use
@@ -210,8 +197,8 @@ public class VoidMissingNullable extends BugChecker
   }
 
   private static List<? extends AnnotationTree> annotationsIfAnnotatedTypeTree(Tree tree) {
-    if (tree instanceof AnnotatedTypeTree) {
-      return ((AnnotatedTypeTree) tree).getAnnotations();
+    if (tree instanceof AnnotatedTypeTree annotatedTypeTree) {
+      return annotatedTypeTree.getAnnotations();
     }
     return ImmutableList.of();
   }

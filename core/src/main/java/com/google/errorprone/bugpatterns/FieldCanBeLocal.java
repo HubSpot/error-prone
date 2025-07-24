@@ -45,7 +45,6 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
-import com.sun.source.tree.Tree.Kind;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
@@ -76,7 +75,7 @@ public final class FieldCanBeLocal extends BugChecker implements CompilationUnit
     Map<VarSymbol, TreePath> potentialFields = new LinkedHashMap<>();
     SetMultimap<VarSymbol, TreePath> unconditionalAssignments =
         MultimapBuilder.linkedHashKeys().linkedHashSetValues().build();
-    SetMultimap<VarSymbol, Tree> uses =
+    SetMultimap<VarSymbol, TreePath> uses =
         MultimapBuilder.linkedHashKeys().linkedHashSetValues().build();
 
     new SuppressibleTreePathScanner<Void, Void>(state) {
@@ -160,10 +159,9 @@ public final class FieldCanBeLocal extends BugChecker implements CompilationUnit
           public Void visitAssignment(AssignmentTree assignmentTree, Void unused) {
             scan(assignmentTree.getExpression(), null);
             Symbol symbol = getSymbol(assignmentTree.getVariable());
-            if (!(symbol instanceof VarSymbol)) {
+            if (!(symbol instanceof VarSymbol varSymbol)) {
               return scan(assignmentTree.getVariable(), null);
             }
-            VarSymbol varSymbol = (VarSymbol) symbol;
             if (!potentialFields.containsKey(varSymbol)) {
               return scan(assignmentTree.getVariable(), null);
             }
@@ -190,11 +188,10 @@ public final class FieldCanBeLocal extends BugChecker implements CompilationUnit
 
           private void handleIdentifier(Tree tree) {
             Symbol symbol = getSymbol(tree);
-            if (!(symbol instanceof VarSymbol)) {
+            if (!(symbol instanceof VarSymbol varSymbol)) {
               return;
             }
-            VarSymbol varSymbol = (VarSymbol) symbol;
-            uses.put(varSymbol, tree);
+            uses.put(varSymbol, getCurrentPath());
             if (!unconditionallyAssigned.contains(varSymbol)) {
               potentialFields.remove(varSymbol);
             }
@@ -250,6 +247,15 @@ public final class FieldCanBeLocal extends BugChecker implements CompilationUnit
       if (assignmentLocations.isEmpty()) {
         continue;
       }
+      // Don't emit findings if the _only_ uses of the field are assignments: we'll be overlapping
+      // with UnusedVariable.
+      if (uses.get(varSymbol).stream()
+          .allMatch(
+              tp ->
+                  tp.getParentPath().getLeaf() instanceof AssignmentTree parent
+                      && parent.getVariable() == tp.getLeaf())) {
+        continue;
+      }
       SuggestedFix.Builder fix = SuggestedFix.builder();
       VariableTree variableTree = (VariableTree) declarationSite.getLeaf();
       String type = state.getSourceForNode(variableTree.getType());
@@ -277,17 +283,17 @@ public final class FieldCanBeLocal extends BugChecker implements CompilationUnit
         }
       }
       // Strip "this." off any uses of the field.
-      for (Tree usage : uses.get(varSymbol)) {
+      for (TreePath usagePath : uses.get(varSymbol)) {
+        var usage = usagePath.getLeaf();
         if (deletedTrees.contains(usage)
-            || usage.getKind() == Kind.IDENTIFIER
-            || usage.getKind() != Kind.MEMBER_SELECT) {
+            || usage instanceof IdentifierTree
+            || !(usage instanceof MemberSelectTree memberSelectTree)) {
           continue;
         }
-        ExpressionTree selected = ((MemberSelectTree) usage).getExpression();
-        if (!(selected instanceof IdentifierTree)) {
+        ExpressionTree selected = memberSelectTree.getExpression();
+        if (!(selected instanceof IdentifierTree ident)) {
           continue;
         }
-        IdentifierTree ident = (IdentifierTree) selected;
         if (ident.getName().contentEquals("this")) {
           fix.replace(getStartPosition(ident), state.getEndPosition(ident) + 1, "");
         }

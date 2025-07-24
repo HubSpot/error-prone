@@ -16,8 +16,6 @@
 
 package com.google.errorprone.refaster;
 
-import static com.google.common.base.Preconditions.checkState;
-
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
@@ -32,6 +30,7 @@ import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CaseTree;
+import com.sun.source.tree.CaseTree.CaseKind;
 import com.sun.source.tree.CatchTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompoundAssignmentTree;
@@ -74,6 +73,7 @@ import com.sun.tools.javac.tree.JCTree.JCAssignOp;
 import com.sun.tools.javac.tree.JCTree.JCBinary;
 import com.sun.tools.javac.tree.JCTree.JCBlock;
 import com.sun.tools.javac.tree.JCTree.JCCase;
+import com.sun.tools.javac.tree.JCTree.JCCaseLabel;
 import com.sun.tools.javac.tree.JCTree.JCCatch;
 import com.sun.tools.javac.tree.JCTree.JCClassDecl;
 import com.sun.tools.javac.tree.JCTree.JCConditional;
@@ -129,18 +129,11 @@ abstract class PlaceholderUnificationVisitor
    * state, the parameters of the placeholder method that have been bound, and a result used to
    * store additional state.
    */
-  @AutoValue
-  abstract static class State<R> {
+  record State<R>(List<UVariableDecl> seenParameters, Unifier unifier, @Nullable R result) {
     static <R> State<R> create(
         List<UVariableDecl> seenParameters, Unifier unifier, @Nullable R result) {
-      return new AutoValue_PlaceholderUnificationVisitor_State<>(seenParameters, unifier, result);
+      return new State<>(seenParameters, unifier, result);
     }
-
-    public abstract List<UVariableDecl> seenParameters();
-
-    public abstract Unifier unifier();
-
-    public abstract @Nullable R result();
 
     public <R2> State<R2> withResult(R2 result) {
       return create(seenParameters(), unifier(), result);
@@ -168,7 +161,7 @@ abstract class PlaceholderUnificationVisitor
    */
   Choice<State<PlaceholderParamIdent>> tryBindArguments(ExpressionTree node, State<?> state) {
     return Choice.from(arguments().entrySet())
-        .thenChoose(
+        .flatMap(
             (Map.Entry<UVariableDecl, UExpression> entry) ->
                 unifyParam(entry.getKey(), entry.getValue(), node, state.fork()));
   }
@@ -180,7 +173,7 @@ abstract class PlaceholderUnificationVisitor
       State<?> state) {
     return placeholderArg
         .unify(toUnify, state.unifier())
-        .transform(
+        .map(
             (Unifier unifier) ->
                 State.create(
                     state.seenParameters().prepend(placeholderParam),
@@ -189,8 +182,8 @@ abstract class PlaceholderUnificationVisitor
   }
 
   public Choice<? extends State<? extends JCTree>> unify(@Nullable Tree node, State<?> state) {
-    if (node instanceof ExpressionTree) {
-      return unifyExpression((ExpressionTree) node, state);
+    if (node instanceof ExpressionTree expressionTree) {
+      return unifyExpression(expressionTree, state);
     } else if (node == null) {
       return Choice.of(state.<JCTree>withResult(null));
     } else {
@@ -206,14 +199,14 @@ abstract class PlaceholderUnificationVisitor
     Choice<State<List<JCTree>>> choice = Choice.of(state.withResult(List.<JCTree>nil()));
     for (Tree node : nodes) {
       choice =
-          choice.thenChoose(
+          choice.flatMap(
               (State<List<JCTree>> s) ->
                   unify(node, s)
-                      .transform(
+                      .map(
                           treeState ->
                               treeState.withResult(s.result().prepend(treeState.result()))));
     }
-    return choice.transform(s -> s.withResult(s.result().reverse()));
+    return choice.map(s -> s.withResult(s.result().reverse()));
   }
 
   static boolean equivalentExprs(Unifier unifier, JCExpression expr1, JCExpression expr2) {
@@ -231,10 +224,9 @@ abstract class PlaceholderUnificationVisitor
       new SimpleTreeVisitor<Boolean, Unifier>() {
         @Override
         protected Boolean defaultAction(Tree node, Unifier unifier) {
-          if (!(node instanceof JCExpression)) {
+          if (!(node instanceof JCExpression expr)) {
             return false;
           }
-          JCExpression expr = (JCExpression) node;
           for (UFreeIdent.Key key :
               Iterables.filter(unifier.getBindings().keySet(), UFreeIdent.Key.class)) {
             JCExpression keyBinding = unifier.getBinding(key);
@@ -271,7 +263,7 @@ abstract class PlaceholderUnificationVisitor
     Choice<? extends State<? extends JCExpression>> tryBindArguments =
         tryBindArguments(node, state);
     if (!node.accept(FORBIDDEN_REFERENCE_VISITOR, state.unifier())) {
-      return tryBindArguments.or((Choice) node.accept(this, state));
+      return tryBindArguments.concat((Choice) node.accept(this, state));
     } else {
       return tryBindArguments;
     }
@@ -282,8 +274,7 @@ abstract class PlaceholderUnificationVisitor
    */
   public Choice<State<List<JCExpression>>> unifyExpressions(
       @Nullable Iterable<? extends ExpressionTree> nodes, State<?> state) {
-    return unify(nodes, state)
-        .transform(s -> s.withResult(List.convert(JCExpression.class, s.result())));
+    return unify(nodes, state).map(s -> s.withResult(List.convert(JCExpression.class, s.result())));
   }
 
   @SuppressWarnings("unchecked")
@@ -316,7 +307,7 @@ abstract class PlaceholderUnificationVisitor
       State<?> state,
       Function<State<?>, Choice<? extends State<? extends T>>> choice1,
       Function<T, R> finalizer) {
-    return choice1.apply(state).transform(s -> s.withResult(finalizer.apply(s.result())));
+    return choice1.apply(state).map(s -> s.withResult(finalizer.apply(s.result())));
   }
 
   private static <T1, T2, R> Choice<State<R>> chooseSubtrees(
@@ -326,11 +317,11 @@ abstract class PlaceholderUnificationVisitor
       BiFunction<T1, T2, R> finalizer) {
     return choice1
         .apply(state)
-        .thenChoose(
+        .flatMap(
             s1 ->
                 choice2
                     .apply(s1)
-                    .transform(s2 -> s2.withResult(finalizer.apply(s1.result(), s2.result()))));
+                    .map(s2 -> s2.withResult(finalizer.apply(s1.result(), s2.result()))));
   }
 
   @FunctionalInterface
@@ -346,15 +337,15 @@ abstract class PlaceholderUnificationVisitor
       TriFunction<T1, T2, T3, R> finalizer) {
     return choice1
         .apply(state)
-        .thenChoose(
+        .flatMap(
             s1 ->
                 choice2
                     .apply(s1)
-                    .thenChoose(
+                    .flatMap(
                         s2 ->
                             choice3
                                 .apply(s2)
-                                .transform(
+                                .map(
                                     s3 ->
                                         s3.withResult(
                                             finalizer.apply(
@@ -375,19 +366,19 @@ abstract class PlaceholderUnificationVisitor
       QuadFunction<T1, T2, T3, T4, R> finalizer) {
     return choice1
         .apply(state)
-        .thenChoose(
+        .flatMap(
             s1 ->
                 choice2
                     .apply(s1)
-                    .thenChoose(
+                    .flatMap(
                         s2 ->
                             choice3
                                 .apply(s2)
-                                .thenChoose(
+                                .flatMap(
                                     s3 ->
                                         choice4
                                             .apply(s3)
-                                            .transform(
+                                            .map(
                                                 s4 ->
                                                     s4.withResult(
                                                         finalizer.apply(
@@ -447,7 +438,7 @@ abstract class PlaceholderUnificationVisitor
     Tag tag = ((JCUnary) node).getTag();
     return chooseSubtrees(
             state, s -> unifyExpression(node.getExpression(), s), expr -> maker().Unary(tag, expr))
-        .condition(
+        .filter(
             s ->
                 !MUTATING_UNARY_TAGS.contains(tag)
                     || !(s.result().getExpression() instanceof PlaceholderParamIdent));
@@ -530,7 +521,7 @@ abstract class PlaceholderUnificationVisitor
             s -> unifyExpression(node.getVariable(), s),
             s -> unifyExpression(node.getExpression(), s),
             maker()::Assign)
-        .condition(s -> !(s.result().getVariable() instanceof PlaceholderParamIdent));
+        .filter(s -> !(s.result().getVariable() instanceof PlaceholderParamIdent));
   }
 
   @Override
@@ -541,7 +532,7 @@ abstract class PlaceholderUnificationVisitor
             s -> unifyExpression(node.getVariable(), s),
             s -> unifyExpression(node.getExpression(), s),
             (variable, expr) -> maker().Assignop(((JCAssignOp) node).getTag(), variable, expr))
-        .condition(assignOp -> !(assignOp.result().getVariable() instanceof PlaceholderParamIdent));
+        .filter(assignOp -> !(assignOp.result().getVariable() instanceof PlaceholderParamIdent));
   }
 
   @Override
@@ -686,59 +677,42 @@ abstract class PlaceholderUnificationVisitor
 
   @Override
   public Choice<State<JCCase>> visitCase(CaseTree node, State<?> state) {
-    return chooseSubtrees(
-        state, s -> unifyStatements(node.getStatements(), s), stmts -> makeCase(node, stmts));
-  }
-
-  private JCCase makeCase(CaseTree node, List<JCStatement> stmts) {
-    try {
-      if (Runtime.version().feature() >= 12) {
-        Enum<?> caseKind = (Enum) CaseTree.class.getMethod("getCaseKind").invoke(node);
-        checkState(
-            caseKind.name().contentEquals("STATEMENT"),
-            "expression switches are not supported yet");
-        if (Runtime.version().feature() >= 21) {
-          return (JCCase)
-              TreeMaker.class
-                  .getMethod(
-                      "Case",
-                      Class.forName("com.sun.source.tree.CaseTree$CaseKind"),
-                      List.class,
-                      JCExpression.class,
-                      List.class,
-                      JCTree.class)
-                  .invoke(
-                      maker(),
-                      caseKind,
-                      CaseTree.class.getMethod("getLabels").invoke(node),
-                      CaseTree.class.getMethod("getGuard").invoke(node),
+    if (Runtime.version().feature() >= 21) {
+      return chooseSubtrees(
+          state,
+          s -> unify(node.getLabels(), s),
+          s -> unifyExpression(node.getGuard(), s),
+          s -> unifyStatements(node.getStatements(), s),
+          s -> unify(node.getBody(), s),
+          (labels, guard, stmts, body) ->
+              maker()
+                  .Case(
+                      node.getCaseKind(),
+                      List.convert(JCCaseLabel.class, labels),
+                      guard,
                       stmts,
-                      /* body */ null);
-        }
-        return (JCCase)
-            TreeMaker.class
-                .getMethod(
-                    "Case",
-                    Class.forName("com.sun.source.tree.CaseTree$CaseKind"),
-                    List.class,
-                    List.class,
-                    JCTree.class)
-                .invoke(
-                    maker(),
-                    caseKind,
-                    Runtime.version().feature() >= 17
-                        ? CaseTree.class.getMethod("getLabels").invoke(node)
-                        : List.of((JCExpression) node.getExpression()),
-                    stmts,
-                    /* body */ null);
-      } else {
-        return (JCCase)
-            TreeMaker.class
-                .getMethod("Case", JCExpression.class, List.class)
-                .invoke(maker(), node.getExpression(), stmts);
-      }
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
+                      body));
+    } else {
+      return chooseSubtrees(
+          state,
+          s -> unify(node.getLabels(), s),
+          s -> unifyStatements(node.getStatements(), s),
+          s -> unify(node.getBody(), s),
+          (labels, stmts, body) -> {
+            try {
+              return (JCCase)
+                  TreeMaker.class
+                      .getMethod("Case", CaseKind.class, List.class, List.class, JCTree.class)
+                      .invoke(
+                          maker(),
+                          node.getCaseKind(),
+                          List.convert(JCCaseLabel.class, labels),
+                          stmts,
+                          body);
+            } catch (ReflectiveOperationException e) {
+              throw new LinkageError(e.getMessage(), e);
+            }
+          });
     }
   }
 

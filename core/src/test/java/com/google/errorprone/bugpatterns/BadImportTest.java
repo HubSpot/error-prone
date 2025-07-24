@@ -88,7 +88,7 @@ public final class BadImportTest {
     compilationTestHelper
         .addSourceLines(
             "Test.java",
-            """
+"""
 import static com.google.common.collect.ImmutableList.of;
 import com.google.common.collect.ImmutableList;
 
@@ -184,7 +184,7 @@ class Test {
     compilationTestHelper
         .addSourceLines(
             "BadImportPositiveCases.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import com.google.common.collect.ImmutableList;
@@ -211,8 +211,8 @@ class BadImportPositiveCases {
     ImmutableList.Builder<Builder> builder2Raw;
   }
 
-  @Nullable
-      Builder<@Nullable Builder<@Nullable String>> parameterizedWithTypeUseAnnotationMethod() {
+  @Nullable Builder<@Nullable Builder<@Nullable String>>
+      parameterizedWithTypeUseAnnotationMethod() {
     return null;
   }
 
@@ -243,7 +243,7 @@ class BadImportPositiveCases {
   void classLiteral() {
     System.out.println(Builder.class);
   }
-}\
+}
 """)
         .doTest();
   }
@@ -381,7 +381,7 @@ class BadImportPositiveCases {
     refactoringTestHelper
         .addInputLines(
             "BadImportPositiveCases.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import com.google.common.collect.ImmutableList;
@@ -408,8 +408,8 @@ class BadImportPositiveCases {
     ImmutableList.Builder<Builder> builder2Raw;
   }
 
-  @Nullable
-      Builder<@Nullable Builder<@Nullable String>> parameterizedWithTypeUseAnnotationMethod() {
+  @Nullable Builder<@Nullable Builder<@Nullable String>>
+      parameterizedWithTypeUseAnnotationMethod() {
     return null;
   }
 
@@ -440,11 +440,11 @@ class BadImportPositiveCases {
   void classLiteral() {
     System.out.println(Builder.class);
   }
-}\
+}
 """)
         .addOutputLines(
             "BadImportPositiveCases_expected.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 import com.google.common.collect.ImmutableList;

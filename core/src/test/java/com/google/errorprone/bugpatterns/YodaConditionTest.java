@@ -197,7 +197,14 @@ public final class YodaConditionTest {
   @Test
   public void nullIntolerantFix() {
     refactoring
-        .addInputLines("E.java", "enum E {A, B}")
+        .addInputLines(
+            "E.java",
+            """
+            enum E {
+              A,
+              B
+            }
+            """)
         .expectUnchanged()
         .addInputLines(
             "Test.java",
@@ -224,7 +231,14 @@ public final class YodaConditionTest {
   @Test
   public void nullTolerantFix() {
     refactoring
-        .addInputLines("E.java", "enum E {A, B}")
+        .addInputLines(
+            "E.java",
+            """
+            enum E {
+              A,
+              B
+            }
+            """)
         .expectUnchanged()
         .addInputLines(
             "Test.java",
@@ -252,7 +266,14 @@ public final class YodaConditionTest {
   @Test
   public void provablyNonNull_nullIntolerantFix() {
     refactoring
-        .addInputLines("E.java", "enum E {A, B}")
+        .addInputLines(
+            "E.java",
+            """
+            enum E {
+              A,
+              B
+            }
+            """)
         .expectUnchanged()
         .addInputLines(
             "Test.java",
@@ -350,6 +371,34 @@ public final class YodaConditionTest {
 
               public boolean foo(Object other) {
                 return equals(other);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void negativeSdkInt() {
+    testHelper
+        .addSourceLines(
+            "Build.java",
+            """
+            package android.os;
+
+            public class Build {
+              public static class VERSION {
+                public static final int SDK_INT = 0;
+              }
+            }
+            """)
+        .addSourceLines(
+            "Test.java",
+            """
+            import android.os.Build;
+
+            class Test {
+              public boolean foo(int x) {
+                return Build.VERSION.SDK_INT < x;
               }
             }
             """)

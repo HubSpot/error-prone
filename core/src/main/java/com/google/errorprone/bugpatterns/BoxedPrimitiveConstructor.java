@@ -34,6 +34,7 @@ import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.util.ASTHelpers;
+import com.google.errorprone.util.TargetType;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.NewClassTree;
@@ -96,9 +97,8 @@ public class BoxedPrimitiveConstructor extends BugChecker implements NewClassTre
       Object value = literalValue(tree.getArguments().iterator().next());
       if (value instanceof Boolean) {
         return SuggestedFix.replace(tree, literalFix((boolean) value, autoboxFix));
-      } else if (value instanceof String) {
-        return SuggestedFix.replace(
-            tree, literalFix(Boolean.parseBoolean((String) value), autoboxFix));
+      } else if (value instanceof String string) {
+        return SuggestedFix.replace(tree, literalFix(Boolean.parseBoolean(string), autoboxFix));
       }
     }
 
@@ -207,7 +207,7 @@ public class BoxedPrimitiveConstructor extends BugChecker implements NewClassTre
     }
     // primitive widening conversions can't be combined with autoboxing, so add a
     // explicit widening cast unless we're sure the expression doesn't get autoboxed
-    ASTHelpers.TargetType targetType = ASTHelpers.targetType(state);
+    TargetType targetType = TargetType.targetType(state);
     if (targetType != null
         && !isSameType(type, argType, state)
         && !isSameType(targetType.type(), type, state)) {
@@ -260,9 +260,9 @@ public class BoxedPrimitiveConstructor extends BugChecker implements NewClassTre
   }
 
   private static @Nullable Object literalValue(Tree arg) {
-    if (!(arg instanceof LiteralTree)) {
+    if (!(arg instanceof LiteralTree literalTree)) {
       return null;
     }
-    return ((LiteralTree) arg).getValue();
+    return literalTree.getValue();
   }
 }

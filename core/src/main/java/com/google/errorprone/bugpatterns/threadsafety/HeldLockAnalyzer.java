@@ -20,7 +20,6 @@ import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.staticMethod;
 import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
 
-import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.VisitorState;
@@ -126,11 +125,10 @@ public final class HeldLockAnalyzer {
     if (newClassTree == null) {
       return locks;
     }
-    Symbol clazzSym = ASTHelpers.getSymbol(newClassTree.clazz);
-    if (!(clazzSym instanceof ClassSymbol)) {
+    if (!(ASTHelpers.getSymbol(newClassTree.clazz) instanceof ClassSymbol classSymbol)) {
       return locks;
     }
-    if (!((ClassSymbol) clazzSym).fullname.contentEquals(MONITOR_GUARD_CLASS)) {
+    if (!classSymbol.fullname.contentEquals(MONITOR_GUARD_CLASS)) {
       return locks;
     }
     Optional<GuardedByExpression> lockExpression =
@@ -179,7 +177,7 @@ public final class HeldLockAnalyzer {
 
       // @GuardedBy annotations on methods are trusted for declarations, and checked
       // for invocations.
-      for (String guard : GuardedByUtils.getGuardValues(tree, visitorState)) {
+      for (String guard : GuardedByUtils.getGuardValues(tree, flags)) {
         Optional<GuardedByExpression> bound =
             GuardedByBinder.bindString(
                 guard, GuardedBySymbolResolver.from(tree, visitorState), flags);
@@ -245,8 +243,8 @@ public final class HeldLockAnalyzer {
     @Override
     public Void visitLambdaExpression(LambdaExpressionTree node, HeldLockSet heldLockSet) {
       var parent = getCurrentPath().getParentPath().getLeaf();
-      if (parent instanceof MethodInvocationTree
-          && INVOKES_LAMBDAS_IMMEDIATELY.matches((ExpressionTree) parent, visitorState)) {
+      if (parent instanceof MethodInvocationTree methodInvocationTree
+          && INVOKES_LAMBDAS_IMMEDIATELY.matches(methodInvocationTree, visitorState)) {
         return super.visitLambdaExpression(node, heldLockSet);
       }
       // Don't descend into lambdas; they will be analyzed separately.
@@ -271,7 +269,7 @@ public final class HeldLockAnalyzer {
     }
 
     private void checkMatch(ExpressionTree tree, HeldLockSet locks) {
-      for (String guardString : GuardedByUtils.getGuardValues(tree, visitorState)) {
+      for (String guardString : GuardedByUtils.getGuardValues(tree, flags)) {
         Optional<GuardedByExpression> guard =
             GuardedByBinder.bindString(
                 guardString,
@@ -300,22 +298,19 @@ public final class HeldLockAnalyzer {
     }
   }
 
-  /** An abstraction over the lock classes we understand. */
-  @AutoValue
-  abstract static class LockResource {
-
-    /** The fully-qualified name of the lock class. */
-    abstract String className();
-
-    /** The method that releases the lock. */
-    abstract String unlockMethod();
-
+  /**
+   * An abstraction over the lock classes we understand.
+   *
+   * @param className The fully-qualified name of the lock class.
+   * @param unlockMethod The method that releases the lock.
+   */
+  private record LockResource(String className, String unlockMethod) {
     public Matcher<ExpressionTree> createUnlockMatcher() {
       return instanceMethod().onDescendantOf(className()).named(unlockMethod());
     }
 
     static LockResource create(String className, String unlockMethod) {
-      return new AutoValue_HeldLockAnalyzer_LockResource(className, unlockMethod);
+      return new LockResource(className, unlockMethod);
     }
   }
 
@@ -495,8 +490,8 @@ public final class HeldLockAnalyzer {
 
     /** Gets the base expression of a (possibly nested) member select expression. */
     private static GuardedByExpression getSelectInstance(GuardedByExpression guard) {
-      if (guard instanceof Select) {
-        return getSelectInstance(((Select) guard).base());
+      if (guard instanceof Select select) {
+        return getSelectInstance(select.base());
       }
       return guard;
     }

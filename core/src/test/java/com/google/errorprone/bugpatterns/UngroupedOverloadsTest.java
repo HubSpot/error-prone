@@ -286,7 +286,7 @@ public final class UngroupedOverloadsTest {
     compilationHelper
         .addSourceLines(
             "UngroupedOverloadsPositiveCasesCoveringOnlyOnFirst.java",
-            """
+"""
 package com.google.errorprone.bugpatterns.testdata;
 
 /**
@@ -636,8 +636,11 @@ public class UngroupedOverloadsPositiveCasesCoveringOnlyOnFirst {
             """
             class BelowLimit {
               BelowLimit() {}
+
               void foo() {}
+
               void bar() {}
+
               void foo(int x) {}
             }
             """)
@@ -646,8 +649,11 @@ public class UngroupedOverloadsPositiveCasesCoveringOnlyOnFirst {
             """
             class BelowLimit {
               BelowLimit() {}
+
               void foo() {}
+
               void foo(int x) {}
+
               void bar() {}
             }
             """)
@@ -662,9 +668,13 @@ public class UngroupedOverloadsPositiveCasesCoveringOnlyOnFirst {
             """
             class AboveLimit {
               AboveLimit() {}
+
               void foo() {}
+
               void bar() {}
+
               void foo(int x) {}
+
               void baz() {}
             }
             """)
@@ -673,9 +683,13 @@ public class UngroupedOverloadsPositiveCasesCoveringOnlyOnFirst {
             """
             class AboveLimit {
               AboveLimit() {}
+
               void foo() {}
+
               void foo(int x) {}
+
               void bar() {}
+
               void baz() {}
             }
             """)
@@ -691,7 +705,9 @@ public class UngroupedOverloadsPositiveCasesCoveringOnlyOnFirst {
             """
             class Test {
               void foo() {}
+
               void bar() {}
+
               static void foo(int x) {}
             }
             """)
@@ -707,7 +723,9 @@ public class UngroupedOverloadsPositiveCasesCoveringOnlyOnFirst {
             """
             class Test {
               private void foo(int x) {}
+
               private static void foo(int x, int y, int z) {}
+
               private void foo(int x, int y) {}
             }
             """)
@@ -722,8 +740,11 @@ public class UngroupedOverloadsPositiveCasesCoveringOnlyOnFirst {
             """
             class Test {
               void foo() {}
+
               void bar() {}
-              @SuppressWarnings("UngroupedOverloads") void foo(int x) {}
+
+              @SuppressWarnings("UngroupedOverloads")
+              void foo(int x) {}
             }
             """)
         .doTest();
@@ -737,7 +758,9 @@ public class UngroupedOverloadsPositiveCasesCoveringOnlyOnFirst {
             """
             class Test {
               void foo() {}
+
               void bar() {}
+
               /** doc */
               void foo(int x) {}
             }
@@ -748,6 +771,7 @@ public class UngroupedOverloadsPositiveCasesCoveringOnlyOnFirst {
             class Test {
 
               void foo() {}
+
               /** doc */
               void foo(int x) {}
 
@@ -764,16 +788,21 @@ public class UngroupedOverloadsPositiveCasesCoveringOnlyOnFirst {
             "Test.java",
             """
             class Test {
-              // BUG: Diagnostic contains: ungrouped overloads of 'foo' on line(s): 8, 10, 12
+              // BUG: Diagnostic contains: ungrouped overloads of 'foo' on line(s): 11, 14, 17
               private void foo() {}
-              // BUG: Diagnostic contains: ungrouped overloads of 'foo' on line(s): 8, 10, 12
+
+              // BUG: Diagnostic contains: ungrouped overloads of 'foo' on line(s): 11, 14, 17
               private void foo(int a) {}
+
               private void bar() {}
-              // BUG: Diagnostic contains: ungrouped overloads of 'foo' on line(s): 3, 5
+
+              // BUG: Diagnostic contains: ungrouped overloads of 'foo' on line(s): 3, 6
               private void foo(int a, int b) {}
-              // BUG: Diagnostic contains: ungrouped overloads of 'foo' on line(s): 3, 5
+
+              // BUG: Diagnostic contains: ungrouped overloads of 'foo' on line(s): 3, 6
               private void foo(int a, int b, int c) {}
-              // BUG: Diagnostic contains: ungrouped overloads of 'foo' on line(s): 3, 5
+
+              // BUG: Diagnostic contains: ungrouped overloads of 'foo' on line(s): 3, 6
               private void foo(int a, int b, int c, int d) {}
             }
             """)
@@ -839,7 +868,9 @@ public class UngroupedOverloadsPositiveCasesCoveringOnlyOnFirst {
             class Test {
               // BUG: Diagnostic contains: constructor overloads
               Test() {}
+
               private void bar() {}
+
               // BUG: Diagnostic contains: constructor overloads
               Test(int i) {}
             }

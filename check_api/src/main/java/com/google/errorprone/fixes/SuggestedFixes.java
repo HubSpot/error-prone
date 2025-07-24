@@ -28,18 +28,16 @@ import static com.google.errorprone.util.ASTHelpers.getModifiers;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasImplicitType;
-import static com.sun.source.tree.Tree.Kind.ASSIGNMENT;
-import static com.sun.source.tree.Tree.Kind.CONDITIONAL_EXPRESSION;
-import static com.sun.source.tree.Tree.Kind.NEW_ARRAY;
+import static com.google.errorprone.util.ASTHelpers.isRecord;
 import static com.sun.tools.javac.code.TypeTag.CLASS;
 import static com.sun.tools.javac.util.Position.NOPOS;
+import static java.util.Arrays.stream;
 import static java.util.stream.Collectors.joining;
 
 import com.google.auto.value.AutoValue;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Objects;
-import com.google.common.base.Predicates;
 import com.google.common.base.Splitter;
 import com.google.common.base.Verify;
 import com.google.common.collect.ImmutableList;
@@ -66,6 +64,7 @@ import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.CompoundAssignmentTree;
+import com.sun.source.tree.ConditionalExpressionTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.InstanceOfTree;
@@ -109,7 +108,6 @@ import com.sun.tools.javac.util.Options;
 import com.sun.tools.javac.util.Position;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.lang.annotation.ElementType;
 import java.lang.annotation.Target;
 import java.lang.reflect.Method;
 import java.net.JarURLConnection;
@@ -130,6 +128,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -192,7 +191,7 @@ public final class SuggestedFixes {
       for (Modifier mod : toAdd) {
         modifierPositions.put(mod, -1);
       }
-      List<ErrorProneToken> tokens = state.getOffsetTokensForNode(originalModifiers);
+      ImmutableList<ErrorProneToken> tokens = state.getOffsetTokensForNode(originalModifiers);
       for (ErrorProneToken tok : tokens) {
         Modifier mod = getTokModifierKind(tok);
         if (mod != null) {
@@ -303,7 +302,7 @@ public final class SuggestedFixes {
       return sym.getSimpleName().toString();
     }
     if (sym.getKind() == ElementKind.CLASS) {
-      if (ASTHelpers.isLocal(sym)) {
+      if (sym.isDirectlyOrIndirectlyLocal()) {
         if (!sym.isAnonymous()) {
           return sym.getSimpleName().toString();
         }
@@ -625,7 +624,8 @@ public final class SuggestedFixes {
       if (sym == null) {
         return false;
       }
-      if (member instanceof MethodTree && ASTHelpers.isGeneratedConstructor((MethodTree) member)) {
+      if (member instanceof MethodTree methodTree
+          && ASTHelpers.isGeneratedConstructor(methodTree)) {
         return false;
       }
 
@@ -705,29 +705,7 @@ public final class SuggestedFixes {
    */
   public static SuggestedFix renameVariableUsages(
       VariableTree tree, String replacement, VisitorState state) {
-    SuggestedFix.Builder fix = SuggestedFix.builder();
-    Symbol.VarSymbol sym = getSymbol(tree);
-    new TreeScanner<Void, Void>() {
-      @Override
-      public Void visitIdentifier(IdentifierTree tree, Void unused) {
-        if (sym.equals(getSymbol(tree))) {
-          fix.replace(tree, replacement);
-        }
-        return super.visitIdentifier(tree, null);
-      }
-
-      @Override
-      public Void visitMemberSelect(MemberSelectTree tree, Void unused) {
-        if (sym.equals(getSymbol(tree))) {
-          fix.replace(
-              state.getEndPosition(tree.getExpression()),
-              state.getEndPosition(tree),
-              "." + replacement);
-        }
-        return super.visitMemberSelect(tree, null);
-      }
-    }.scan(state.getPath().getCompilationUnit(), null);
-    return fix.build();
+    return renameSymbolOccurrences(getSymbol(tree), replacement, state);
   }
 
   /** Be warned, only changes method name at the declaration. */
@@ -753,8 +731,71 @@ public final class SuggestedFixes {
    */
   public static SuggestedFix renameMethodWithInvocations(
       MethodTree tree, String replacement, VisitorState state) {
-    SuggestedFix.Builder fix = renameMethod(tree, replacement, state).toBuilder();
     MethodSymbol sym = getSymbol(tree);
+    return SuggestedFix.merge(
+        renameMethod(tree, replacement, state), renameSymbolOccurrences(sym, replacement, state));
+  }
+
+  /** Replaces the name of the method being invoked in {@code tree} with {@code replacement}. */
+  public static SuggestedFix renameMethodInvocation(
+      MethodInvocationTree tree, String replacement, VisitorState state) {
+    Tree methodSelect = tree.getMethodSelect();
+    Name identifier;
+    int startPos;
+    if (methodSelect instanceof MemberSelectTree memberSelectTree) {
+      identifier = memberSelectTree.getIdentifier();
+      startPos = state.getEndPosition(memberSelectTree.getExpression());
+    } else if (methodSelect instanceof IdentifierTree identifierTree) {
+      identifier = identifierTree.getName();
+      startPos = getStartPosition(tree);
+    } else {
+      throw malformedMethodInvocationTree(tree);
+    }
+    int endPos =
+        tree.getArguments().isEmpty()
+            ? state.getEndPosition(tree)
+            : getStartPosition(tree.getArguments().get(0));
+    List<ErrorProneToken> tokens = state.getOffsetTokens(startPos, endPos);
+    for (ErrorProneToken token : Lists.reverse(tokens)) {
+      if (token.kind() == TokenKind.IDENTIFIER && token.name().equals(identifier)) {
+        return SuggestedFix.replace(token.pos(), token.endPos(), replacement);
+      }
+    }
+    throw malformedMethodInvocationTree(tree);
+  }
+
+  /** Rename a class and all uses of it in the current file. */
+  public static SuggestedFix renameClassWithUses(
+      ClassTree tree, String replacement, VisitorState state) {
+    return SuggestedFix.merge(
+        renameClass(tree, replacement, state),
+        renameSymbolOccurrences(getSymbol(tree), replacement, state));
+  }
+
+  /** Be warned, this only renames the class declaration. */
+  private static SuggestedFix renameClass(ClassTree tree, String replacement, VisitorState state) {
+    // Search tokens from start of class to first member (if present).
+    int basePos = getStartPosition(tree);
+    int endPos =
+        tree.getMembers().stream()
+            .map(state::getEndPosition)
+            .filter(p -> p != NOPOS)
+            .findFirst()
+            .orElse(state.getEndPosition(tree));
+    List<ErrorProneToken> tokens = state.getOffsetTokens(basePos, endPos);
+
+    for (ErrorProneToken token : tokens) {
+      if (token.kind() == TokenKind.IDENTIFIER && token.name().equals(tree.getSimpleName())) {
+        return SuggestedFix.replace(token.pos(), token.endPos(), replacement);
+      }
+    }
+    // Class name not found.
+    throw new AssertionError();
+  }
+
+  private static SuggestedFix renameSymbolOccurrences(
+      Symbol sym, String replacement, VisitorState state) {
+    SuggestedFix.Builder fix = SuggestedFix.builder();
     new TreeScanner<Void, Void>() {
       @Override
       public Void visitIdentifier(IdentifierTree tree, Void unused) {
@@ -787,34 +828,6 @@ public final class SuggestedFixes {
       }
     }.scan(state.getPath().getCompilationUnit(), null);
     return fix.build();
-  }
-
-  /** Replaces the name of the method being invoked in {@code tree} with {@code replacement}. */
-  public static SuggestedFix renameMethodInvocation(
-      MethodInvocationTree tree, String replacement, VisitorState state) {
-    Tree methodSelect = tree.getMethodSelect();
-    Name identifier;
-    int startPos;
-    if (methodSelect instanceof MemberSelectTree) {
-      identifier = ((MemberSelectTree) methodSelect).getIdentifier();
-      startPos = state.getEndPosition(((MemberSelectTree) methodSelect).getExpression());
-    } else if (methodSelect instanceof IdentifierTree) {
-      identifier = ((IdentifierTree) methodSelect).getName();
-      startPos = getStartPosition(tree);
-    } else {
-      throw malformedMethodInvocationTree(tree);
-    }
-    int endPos =
-        tree.getArguments().isEmpty()
-            ? state.getEndPosition(tree)
-            : getStartPosition(tree.getArguments().get(0));
-    List<ErrorProneToken> tokens = state.getOffsetTokens(startPos, endPos);
-    for (ErrorProneToken token : Lists.reverse(tokens)) {
-      if (token.kind() == TokenKind.IDENTIFIER && token.name().equals(identifier)) {
-        return SuggestedFix.replace(token.pos(), token.endPos(), replacement);
-      }
-    }
-    throw malformedMethodInvocationTree(tree);
   }
 
   private static IllegalStateException malformedMethodInvocationTree(MethodInvocationTree tree) {
@@ -1099,11 +1112,11 @@ public final class SuggestedFixes {
             tree ->
                 tree instanceof MethodTree
                     // Anonymous classes can't be suppressed
-                    || (tree instanceof ClassTree
-                        && ((ClassTree) tree).getSimpleName().length() != 0)
+                    || (tree instanceof ClassTree classTree
+                        && classTree.getSimpleName().length() != 0)
                     // Lambda parameters can't be suppressed unless they have Type decls
-                    || (tree instanceof VariableTree
-                        && !hasImplicitType((VariableTree) tree, state)))
+                    || (tree instanceof VariableTree variableTree
+                        && !hasImplicitType(variableTree, state)))
         .findFirst()
         .orElse(null);
   }
@@ -1137,13 +1150,12 @@ public final class SuggestedFixes {
     }
 
     ExpressionTree existingArgument = maybeExistingArgument.get();
-    if (!existingArgument.getKind().equals(NEW_ARRAY)) {
+    if (!(existingArgument instanceof NewArrayTree newArray)) {
       return SuggestedFix.builder()
           .replace(
               existingArgument, newArgument(state.getSourceForNode(existingArgument), newValues));
     }
 
-    NewArrayTree newArray = (NewArrayTree) existingArgument;
     if (newArray.getInitializers().isEmpty()) {
       return SuggestedFix.builder().replace(newArray, newArgument(newValues));
     } else {
@@ -1224,11 +1236,9 @@ public final class SuggestedFixes {
   private static Optional<ExpressionTree> findArgument(
       AnnotationTree annotation, String parameter) {
     for (ExpressionTree argument : annotation.getArguments()) {
-      if (argument.getKind().equals(ASSIGNMENT)) {
-        AssignmentTree assignment = (AssignmentTree) argument;
-        if (assignment.getVariable().toString().equals(parameter)) {
-          return Optional.of(ASTHelpers.stripParentheses(assignment.getExpression()));
-        }
+      if (argument instanceof AssignmentTree assignment
+          && assignment.getVariable().toString().equals(parameter)) {
+        return Optional.of(ASTHelpers.stripParentheses(assignment.getExpression()));
       }
     }
     return Optional.empty();
@@ -1555,25 +1565,28 @@ public final class SuggestedFixes {
     }
     SuggestedFix.Builder builder = SuggestedFix.builder();
     Type exemptingAnnotationType = state.getTypeFromString(exemptingAnnotation);
-    ImmutableSet<Tree.Kind> supportedExemptingAnnotationLocationKinds;
+    ImmutableSet<Class<? extends Tree>> supportedExemptingAnnotationLocationTypes;
     String annotationName;
 
     if (exemptingAnnotationType != null) {
-      supportedExemptingAnnotationLocationKinds =
+      supportedExemptingAnnotationLocationTypes =
           supportedTreeTypes(exemptingAnnotationType.asElement());
       annotationName = qualifyType(state, builder, exemptingAnnotationType);
     } else {
       // If we can't resolve the type, fall back to an approximation.
       int idx = exemptingAnnotation.lastIndexOf('.');
       Verify.verify(idx > 0 && idx + 1 < exemptingAnnotation.length());
-      supportedExemptingAnnotationLocationKinds = TREE_TYPE_UNKNOWN_ANNOTATION;
+      supportedExemptingAnnotationLocationTypes = TREE_TYPE_UNKNOWN_ANNOTATION;
       annotationName = exemptingAnnotation.substring(idx + 1);
       builder.addImport(exemptingAnnotation);
     }
     Optional<Tree> exemptingAnnotationLocation =
         stream(where)
-            .filter(tree -> supportedExemptingAnnotationLocationKinds.contains(tree.getKind()))
-            .filter(Predicates.not(SuggestedFixes::isAnonymousClassTree))
+            .filter(
+                tree ->
+                    supportedExemptingAnnotationLocationTypes.stream()
+                            .anyMatch(clazz -> clazz.isInstance(tree))
+                        && !isAnonymousClassTree(tree))
             .findFirst();
 
     return exemptingAnnotationLocation.map(
@@ -1590,37 +1603,31 @@ public final class SuggestedFixes {
    * <p>These are reasonable for exempting annotations which annotate a block of code, e.g. they
    * don't usually make sense on a variable declaration.
    */
-  private static final ImmutableSet<Tree.Kind> TREE_TYPE_UNKNOWN_ANNOTATION =
-      ImmutableSet.of(
-          Tree.Kind.CLASS,
-          Tree.Kind.ENUM,
-          Tree.Kind.INTERFACE,
-          Tree.Kind.ANNOTATION_TYPE,
-          Tree.Kind.METHOD);
+  private static final ImmutableSet<Class<? extends Tree>> TREE_TYPE_UNKNOWN_ANNOTATION =
+      ImmutableSet.of(ClassTree.class, MethodTree.class);
 
   /** Returns true iff {@code suggestExemptingAnnotation()} supports this annotation. */
   public static boolean suggestedExemptingAnnotationSupported(Element exemptingAnnotation) {
     return !supportedTreeTypes(exemptingAnnotation).isEmpty();
   }
 
-  private static ImmutableSet<Tree.Kind> supportedTreeTypes(Element exemptingAnnotation) {
+  private static ImmutableSet<Class<? extends Tree>> supportedTreeTypes(
+      Element exemptingAnnotation) {
     Target targetAnnotation = exemptingAnnotation.getAnnotation(Target.class);
     if (targetAnnotation == null) {
       // in the absence of further information, we assume the annotation is supported on classes and
       // methods.
       return TREE_TYPE_UNKNOWN_ANNOTATION;
     }
-    ImmutableSet.Builder<Tree.Kind> types = ImmutableSet.builder();
-    for (ElementType t : targetAnnotation.value()) {
-      switch (t) {
-        case TYPE ->
-            types.add(
-                Tree.Kind.CLASS, Tree.Kind.ENUM, Tree.Kind.INTERFACE, Tree.Kind.ANNOTATION_TYPE);
-        case METHOD -> types.add(Tree.Kind.METHOD);
-        default -> {}
-      }
-    }
-    return types.build();
+    return stream(targetAnnotation.value())
+        .flatMap(
+            t ->
+                switch (t) {
+                  case TYPE -> Stream.of(ClassTree.class);
+                  case METHOD -> Stream.of(MethodTree.class);
+                  default -> Stream.empty();
+                })
+        .collect(toImmutableSet());
   }
 
   /**
@@ -1634,14 +1641,17 @@ public final class SuggestedFixes {
       TreePath path, String replacement, VisitorState state) {
     Tree tree = path.getLeaf();
     Tree parent = path.getParentPath().getLeaf();
-    if (!(parent instanceof ClassTree)) {
+    if (!(parent instanceof ClassTree classTree)) {
       return SuggestedFix.replace(tree, replacement);
     }
     Tree previousMember = null;
-    ClassTree classTree = (ClassTree) parent;
     int startTokenization;
     for (Tree member : classTree.getMembers()) {
-      if (member instanceof MethodTree && ASTHelpers.isGeneratedConstructor((MethodTree) member)) {
+      if (member instanceof MethodTree methodTree
+          && ASTHelpers.isGeneratedConstructor(methodTree)) {
+        continue;
+      }
+      if (member instanceof VariableTree && isRecord(getSymbol(member))) {
         continue;
       }
       if (member.equals(tree)) {
@@ -1714,7 +1724,7 @@ public final class SuggestedFixes {
             || expressionTree instanceof AssignmentTree
             || expressionTree instanceof CompoundAssignmentTree
             || expressionTree instanceof InstanceOfTree
-            || expressionTree.getKind() == CONDITIONAL_EXPRESSION;
+            || expressionTree instanceof ConditionalExpressionTree;
 
     return "("
         + toType

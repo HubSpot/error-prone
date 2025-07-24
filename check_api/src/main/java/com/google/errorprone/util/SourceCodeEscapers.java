@@ -35,7 +35,7 @@ public final class SourceCodeEscapers {
   // For each xxxEscaper() method, please add links to external reference pages
   // that are considered authoritative for the behavior of that escaper.
 
-  // From: http://en.wikipedia.org/wiki/ASCII#ASCII_printable_characters
+  // From: https://en.wikipedia.org/wiki/ASCII#ASCII_printable_characters
   private static final char PRINTABLE_ASCII_MIN = 0x20; // ' '
   private static final char PRINTABLE_ASCII_MAX = 0x7E; // '~'
 
@@ -46,7 +46,7 @@ public final class SourceCodeEscapers {
    * safely be included in either a Java character literal or string literal. This is the preferred
    * way to escape Java characters for use in String or character literals.
    *
-   * <p>See: <a href= "http://java.sun.com/docs/books/jls/third_edition/html/lexical.html#101089"
+   * <p>See: <a href= "https://java.sun.com/docs/books/jls/third_edition/html/lexical.html#101089"
    * >The Java Language Specification</a> for more details.
    */
   public static CharEscaper javaCharEscaper() {
@@ -65,8 +65,35 @@ public final class SourceCodeEscapers {
               '\\', "\\\\",
               '\'', "\\'"));
 
+  /**
+   * Returns an {@link Escaper} instance that escapes special characters in a string so it can
+   * safely be included in either a Java text block.
+   *
+   * <p>Double quotes are not escaped. If the string contents contain a run of three or more
+   * consecutive double quotes, additional action is required to make it safe to include in a text
+   * block.
+   *
+   * <p>See: <a href= "https://docs.oracle.com/javase/specs/jls/se21/html/jls-3.html#jls-3.10.6"
+   * >The Java Language Specification</a> for more details.
+   *
+   * <p>The Guava FR for this is: https://github.com/google/guava/issues/7421
+   */
+  public static CharEscaper getJavaTextBlockEscaper() {
+    return JAVA_TEXT_BLOCK_ESCAPER;
+  }
+
+  private static final CharEscaper JAVA_TEXT_BLOCK_ESCAPER =
+      new JavaCharEscaper(
+          ImmutableMap.of(
+              '\b', "\\b",
+              '\f', "\\f",
+              '\n', "\\n",
+              '\r', "\\r",
+              '\t', "\\t",
+              '\\', "\\\\"));
+
   // This escaper does not produce octal escape sequences. See:
-  // http://java.sun.com/docs/books/jls/third_edition/html/lexical.html#101089
+  // https://java.sun.com/docs/books/jls/third_edition/html/lexical.html#101089
   //  "Octal escapes are provided for compatibility with C, but can express
   //   only Unicode values \u0000 through \u00FF, so Unicode escapes are
   //   usually preferred."
@@ -88,11 +115,11 @@ public final class SourceCodeEscapers {
     r[0] = '\\';
     r[1] = 'u';
     r[5] = HEX_DIGITS[c & 0xF];
-    c >>>= 4;
+    c = (char) (c >>> 4);
     r[4] = HEX_DIGITS[c & 0xF];
-    c >>>= 4;
+    c = (char) (c >>> 4);
     r[3] = HEX_DIGITS[c & 0xF];
-    c >>>= 4;
+    c = (char) (c >>> 4);
     r[2] = HEX_DIGITS[c & 0xF];
     return r;
   }

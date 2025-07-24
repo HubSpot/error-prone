@@ -24,7 +24,6 @@ import com.google.common.collect.DiscreteDomain;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Range;
-import com.google.errorprone.refaster.UStatement.UnifierWithUnconsumedStatements;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TreeVisitor;
@@ -98,7 +97,7 @@ abstract class UBlank implements UStatement {
     ImmutableSortedSet<Integer> breakPoints =
         ContiguousSet.create(Range.closed(0, goodIndex), DiscreteDomain.integers());
     return Choice.from(breakPoints)
-        .transform(
+        .map(
             (Integer k) -> {
               Unifier unifier = state.unifier().fork();
               unifier.putBinding(key(), state.unconsumedStatements().subList(0, k));
@@ -112,7 +111,7 @@ abstract class UBlank implements UStatement {
   public com.sun.tools.javac.util.List<JCStatement> inlineStatements(Inliner inliner) {
     ListBuffer<JCStatement> buffer = new ListBuffer<>();
     for (StatementTree stmt :
-        inliner.getOptionalBinding(key()).or(ImmutableList.<StatementTree>of())) {
+        inliner.getOptionalBinding(key()).orElse(ImmutableList.<StatementTree>of())) {
       buffer.add((JCStatement) stmt);
     }
     return buffer.toList();

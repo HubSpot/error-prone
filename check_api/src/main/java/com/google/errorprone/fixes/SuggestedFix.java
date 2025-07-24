@@ -22,6 +22,7 @@ import com.google.auto.value.AutoValue;
 import com.google.auto.value.extension.memoized.Memoized;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.errorprone.VisitorState;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.fixes.Replacements.CoalescePolicy;
 import com.google.errorprone.util.ASTHelpers;
@@ -35,6 +36,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collector;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -148,9 +150,9 @@ public abstract class SuggestedFix implements Fix {
     return builder().delete(node).build();
   }
 
-  /** {@link Builder#swap(Tree, Tree)} */
-  public static SuggestedFix swap(Tree node1, Tree node2) {
-    return builder().swap(node1, node2).build();
+  /** {@link Builder#swap(Tree, Tree, VisitorState)} */
+  public static SuggestedFix swap(Tree node1, Tree node2, VisitorState state) {
+    return builder().swap(node1, node2, state).build();
   }
 
   private static final SuggestedFix EMPTY = builder().build();
@@ -166,6 +168,11 @@ public abstract class SuggestedFix implements Fix {
       builder.merge(fix);
     }
     return builder.build();
+  }
+
+  public static Collector<SuggestedFix, ?, SuggestedFix> mergeFixes() {
+    return Collector.of(
+        SuggestedFix::builder, Builder::merge, Builder::merge, SuggestedFix.Builder::build);
   }
 
   public static Builder builder() {
@@ -282,13 +289,11 @@ public abstract class SuggestedFix implements Fix {
     }
 
     @CanIgnoreReturnValue
-    public Builder swap(Tree node1, Tree node2) {
+    public Builder swap(Tree node1, Tree node2, VisitorState state) {
       checkNotSyntheticConstructor(node1);
       checkNotSyntheticConstructor(node2);
-      // calling Tree.toString() is kind of cheesy, but we don't currently have a better option
-      // TODO(cushon): consider an approach that doesn't rewrite the original tokens
-      fixes.add(ReplacementFix.create((DiagnosticPosition) node1, node2.toString()));
-      fixes.add(ReplacementFix.create((DiagnosticPosition) node2, node1.toString()));
+      fixes.add(ReplacementFix.create((DiagnosticPosition) node1, state.getSourceForNode(node2)));
+      fixes.add(ReplacementFix.create((DiagnosticPosition) node2, state.getSourceForNode(node1)));
       return this;
     }
 
@@ -371,7 +376,7 @@ public abstract class SuggestedFix implements Fix {
      * synthetic constructs added to the AST early enough to be visible from Error Prone.
      */
     private static void checkNotSyntheticConstructor(Tree tree) {
-      if (tree instanceof MethodTree && ASTHelpers.isGeneratedConstructor((MethodTree) tree)) {
+      if (tree instanceof MethodTree methodTree && ASTHelpers.isGeneratedConstructor(methodTree)) {
         throw new IllegalArgumentException("Cannot edit synthetic AST nodes");
       }
     }
@@ -427,15 +432,14 @@ public abstract class SuggestedFix implements Fix {
   }
 
   /** Replaces an entire diagnostic position (from start to end) with the given string. */
-  @AutoValue
-  abstract static class ReplacementFix implements FixOperation {
-    abstract DiagnosticPosition original();
-
-    abstract String replacement();
-
-    public static ReplacementFix create(DiagnosticPosition original, String replacement) {
+  private record ReplacementFix(DiagnosticPosition original, String replacement)
+      implements FixOperation {
+    ReplacementFix {
       checkArgument(original.getStartPosition() >= 0, "invalid start position");
-      return new AutoValue_SuggestedFix_ReplacementFix(original, replacement);
+    }
+
+    static ReplacementFix create(DiagnosticPosition original, String replacement) {
+      return new ReplacementFix(original, replacement);
     }
 
     @Override

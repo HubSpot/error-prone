@@ -17,6 +17,7 @@
 package com.google.errorprone.bugpatterns.threadsafety;
 
 import static com.google.errorprone.bugpatterns.threadsafety.IllegalGuardedBy.checkGuardedBy;
+import static com.google.errorprone.util.ASTHelpers.enclosingClass;
 import static com.google.errorprone.util.ASTHelpers.isStatic;
 
 import com.google.errorprone.VisitorState;
@@ -264,18 +265,14 @@ public final class GuardedByBinder {
           Symbol symbol = context.resolver.resolveIdentifier(node);
           checkGuardedBy(symbol != null, "Could not resolve %s", node);
           if (symbol instanceof Symbol.VarSymbol varSymbol) {
-            switch (varSymbol.getKind()) {
-              case LOCAL_VARIABLE, PARAMETER -> {
-                return F.localVariable(varSymbol);
-              }
-              case FIELD -> {
-                if (symbol.name.contentEquals("this")) {
-                  return F.thisliteral();
-                }
-                return F.select(computeBase(context, varSymbol), varSymbol);
-              }
+            return switch (varSymbol.getKind()) {
+              case LOCAL_VARIABLE, PARAMETER, BINDING_VARIABLE -> F.localVariable(varSymbol);
+              case FIELD ->
+                  symbol.name.contentEquals("this")
+                      ? F.thisliteral()
+                      : F.select(computeBase(context, varSymbol), varSymbol);
               default -> throw new IllegalGuardedBy(varSymbol.getKind().toString());
-            }
+            };
           } else if (symbol instanceof Symbol.MethodSymbol methodSymbol) {
             return F.select(computeBase(context, symbol), methodSymbol);
           } else if (symbol instanceof Symbol.ClassSymbol) {
@@ -310,7 +307,7 @@ public final class GuardedByBinder {
         private GuardedByExpression normalizeBase(
             BinderContext context, Symbol symbol, GuardedByExpression base) {
           if (isStatic(symbol)) {
-            return F.typeLiteral(symbol.owner.enclClass());
+            return F.typeLiteral(enclosingClass(symbol));
           }
 
           if (base != null && base.kind() != GuardedByExpression.Kind.THIS) {
@@ -335,9 +332,9 @@ public final class GuardedByBinder {
          */
         private @Nullable ClassSymbol isEnclosedIn(
             ClassSymbol startingClass, Symbol member, Types types) {
-          for (ClassSymbol scope = startingClass.owner.enclClass();
+          for (ClassSymbol scope = enclosingClass(startingClass);
               scope != null;
-              scope = scope.owner.enclClass()) {
+              scope = enclosingClass(scope)) {
             if (member.isMemberOf(scope.type.tsym, types)) {
               return scope;
             }

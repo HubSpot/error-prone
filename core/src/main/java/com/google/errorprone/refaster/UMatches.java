@@ -56,7 +56,7 @@ abstract class UMatches extends UExpression {
     Tree exprTarget = ASTHelpers.stripParentheses(target);
     return expression()
         .unify(exprTarget, unifier)
-        .condition((Unifier success) -> matches(exprTarget, success) == positive());
+        .filter((Unifier success) -> matches(exprTarget, success) == positive());
   }
 
   @Override
@@ -80,8 +80,8 @@ abstract class UMatches extends UExpression {
     if (matcher == null) {
       matcher = makeMatcher(matcherClass());
     }
-    return target instanceof ExpressionTree
-        && matcher.matches((ExpressionTree) target, makeVisitorState(target, unifier));
+    return target instanceof ExpressionTree expressionTree
+        && matcher.matches(expressionTree, makeVisitorState(target, unifier));
   }
 
   static <T> T makeMatcher(Class<T> klass) {
