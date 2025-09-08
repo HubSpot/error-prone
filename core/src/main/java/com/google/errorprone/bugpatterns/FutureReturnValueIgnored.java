@@ -16,12 +16,6 @@
 
 package com.google.errorprone.bugpatterns;
 
-import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
-import static com.google.errorprone.matchers.Matchers.anyOf;
-import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
-import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
-import static com.google.errorprone.util.AnnotationNames.CAN_IGNORE_RETURN_VALUE_ANNOTATION;
-
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.BugPattern.StandardTags;
 import com.google.errorprone.VisitorState;
@@ -34,10 +28,17 @@ import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Type;
+
+import javax.inject.Inject;
 import java.util.Optional;
 import java.util.concurrent.CompletionService;
 import java.util.concurrent.ForkJoinTask;
-import javax.inject.Inject;
+
+import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
+import static com.google.errorprone.matchers.Matchers.anyOf;
+import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
+import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
+import static com.google.errorprone.util.AnnotationNames.CAN_IGNORE_RETURN_VALUE_ANNOTATION;
 
 /** See BugPattern annotation. */
 @BugPattern(
@@ -120,10 +121,11 @@ public class FutureReturnValueIgnored extends AbstractReturnValueIgnored
             return false;
           }
           Type returnType = sym.getReturnType();
+          Type treeReturnType = ASTHelpers.getType(tree);
           return ASTHelpers.isSubtype(
-              ASTHelpers.getUpperBound(returnType, state.getTypes()), futureType, state);
+                  ASTHelpers.getUpperBound(treeReturnType != null ? treeReturnType : returnType, state.getTypes()), futureType, state);
         }
-      };
+  };
 
   @Inject
   public FutureReturnValueIgnored(ConstantExpressions constantExpressions) {
