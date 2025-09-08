@@ -610,4 +610,31 @@ public class FutureReturnValueIgnoredNegativeCases {
             """)
         .doTest();
   }
+
+    @Test
+    public void positiveCaseWithGeneric() {
+        compilationHelper
+                .addSourceLines(
+                        "test.java",
+                        """
+                        import java.util.concurrent.Callable;
+                        import java.util.concurrent.CompletableFuture;
+  
+                        class Test {
+                          void f() {
+                            // BUG: Diagnostic contains: Future must be checked
+                            g(() -> CompletableFuture.completedFuture("foo"));
+                          }
+  
+                          <T> T g(Callable<T> callable) {
+                            try {
+                              return callable.call();
+                            } catch (Exception e) {
+                              throw new RuntimeException(e);
+                            }
+                          }
+                        }
+                        """)
+                .doTest();
+    }
 }
