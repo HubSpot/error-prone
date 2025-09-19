@@ -1,8 +1,5 @@
 buildpack:
-  name: Blazar-Buildpack-Java
-
-provides:
-  - parent
+  name: Blazar-Buildpack-Java-oss-fork
 
 env:
   SET_VERSION_OVERRIDE: "2.40.0-$GIT_BRANCH-SNAPSHOT"
