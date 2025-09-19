@@ -1,6 +1,5 @@
 buildpack:
   name: Blazar-Buildpack-Java-oss-fork
-  branch: js-mvn-munge-sans-mgmt
 
 env:
   SET_VERSION_OVERRIDE: "2.40.0-$GIT_BRANCH-SNAPSHOT"
