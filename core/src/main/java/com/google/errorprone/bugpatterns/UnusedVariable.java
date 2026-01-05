@@ -34,7 +34,6 @@ import static com.google.errorprone.util.ASTHelpers.hasExplicitSource;
 import static com.google.errorprone.util.ASTHelpers.isAbstract;
 import static com.google.errorprone.util.ASTHelpers.isStatic;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
-import static com.google.errorprone.util.ASTHelpers.shouldKeep;
 import static com.google.errorprone.util.SideEffectAnalysis.hasSideEffect;
 import static com.sun.source.tree.Tree.Kind.POSTFIX_DECREMENT;
 import static com.sun.source.tree.Tree.Kind.POSTFIX_INCREMENT;
@@ -65,7 +64,6 @@ import com.google.errorprone.matchers.Description;
 import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.suppliers.Suppliers;
 import com.google.errorprone.util.ASTHelpers;
-import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ArrayAccessTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BindingPatternTree;
@@ -100,12 +98,8 @@ import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
-import com.sun.tools.javac.code.Symbol.TypeSymbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
 import com.sun.tools.javac.code.Type;
-import com.sun.tools.javac.tree.JCTree;
-import com.sun.tools.javac.tree.JCTree.JCAssign;
-import com.sun.tools.javac.tree.JCTree.JCAssignOp;
 import com.sun.tools.javac.util.Position;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -134,35 +128,6 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
   private final ImmutableSet<String> exemptPrefixes;
 
   private final ImmutableSet<String> exemptNames;
-
-  /**
-   * The set of annotation full names which exempt annotated element from being reported as unused.
-   *
-   * <p>Try to avoid adding more annotations here. Annotating these annotations with {@code @Keep}
-   * has the same effect; this list is chiefly for third-party annotations which cannot be
-   * annotated.
-   */
-  private static final ImmutableSet<String> EXEMPTING_VARIABLE_ANNOTATIONS =
-      ImmutableSet.of(
-          "jakarta.persistence.Basic",
-          "jakarta.persistence.Column",
-          "jakarta.persistence.Id",
-          "jakarta.persistence.Version",
-          "jakarta.xml.bind.annotation.XmlElement",
-          "javax.persistence.Basic",
-          "javax.persistence.Column",
-          "javax.persistence.Id",
-          "javax.persistence.Version",
-          "javax.xml.bind.annotation.XmlElement",
-          "net.starlark.java.annot.StarlarkBuiltin",
-          "org.junit.Rule",
-          "org.junit.jupiter.api.extension.RegisterExtension",
-          "org.openqa.selenium.support.FindAll",
-          "org.openqa.selenium.support.FindBy",
-          "org.openqa.selenium.support.FindBys",
-          "org.apache.beam.sdk.transforms.DoFn.TimerId",
-          "org.apache.beam.sdk.transforms.DoFn.StateId",
-          "org.springframework.boot.test.mock.mockito.MockBean");
 
   // TODO(ghm): Find a sensible place to dedupe this with UnnecessarilyVisible.
   private static final ImmutableSet<String> ANNOTATIONS_INDICATING_PARAMETERS_SHOULD_BE_CHECKED =
@@ -200,10 +165,13 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
 
   private final boolean reportInjectedFields;
 
+  private final WellKnownKeep wellKnownKeep;
+
   @Inject
-  public UnusedVariable(ErrorProneFlags flags) {
+  public UnusedVariable(ErrorProneFlags flags, WellKnownKeep wellKnownKeep) {
     this.methodAnnotationsExemptingParameters =
         ImmutableSet.<String>builder()
+            .add("com.google.common.eventbus.Subscribe")
             .add("org.robolectric.annotation.Implementation")
             .addAll(flags.getListOrEmpty("Unused:methodAnnotationsExemptingParameters"))
             .build();
@@ -221,6 +189,8 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
             .add("unused")
             .addAll(flags.getSetOrEmpty("Unused:exemptPrefixes"))
             .build();
+
+    this.wellKnownKeep = wellKnownKeep;
   }
 
   @Override
@@ -505,7 +475,7 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
         }
         continue;
       } else if (statement instanceof ExpressionStatementTree expressionStatementTree) {
-        JCTree tree = (JCTree) expressionStatementTree.getExpression();
+        ExpressionTree tree = expressionStatementTree.getExpression();
 
         if (tree instanceof CompoundAssignmentTree compoundAssignmentTree) {
           if (hasSideEffect(compoundAssignmentTree.getExpression())) {
@@ -513,8 +483,8 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
             // so don't set `encounteredSideEffects` based on this usage.
             SuggestedFix replacement =
                 SuggestedFix.replace(
-                    tree.getStartPosition(),
-                    ((JCAssignOp) tree).getExpression().getStartPosition(),
+                    getStartPosition(tree),
+                    getStartPosition(compoundAssignmentTree.getExpression()),
                     "");
             keepSideEffectsFix.merge(replacement);
             removeSideEffectsFix.merge(replacement);
@@ -524,7 +494,7 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
           if (hasSideEffect(assignmentTree.getExpression())) {
             encounteredSideEffects = true;
             keepSideEffectsFix.replace(
-                tree.getStartPosition(), ((JCAssign) tree).getExpression().getStartPosition(), "");
+                getStartPosition(tree), getStartPosition(assignmentTree.getExpression()), "");
             removeSideEffectsFix.replace(statement, "");
             continue;
           }
@@ -615,24 +585,6 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
         && enhancedForLoopTree.getVariable() == tree;
   }
 
-  /**
-   * Looks at the list of {@code annotations} and see if there is any annotation which exists {@code
-   * exemptingAnnotations}.
-   */
-  private static boolean exemptedByAnnotation(List<? extends AnnotationTree> annotations) {
-    for (AnnotationTree annotation : annotations) {
-      Type annotationType = ASTHelpers.getType(annotation);
-      if (annotationType == null) {
-        continue;
-      }
-      TypeSymbol tsym = annotationType.tsym;
-      if (EXEMPTING_VARIABLE_ANNOTATIONS.contains(tsym.getQualifiedName().toString())) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   private boolean exemptedByName(Name name) {
     String nameString = name.toString();
     String nameStringLower = Ascii.toLowerCase(nameString);
@@ -689,8 +641,7 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
         return;
       }
       // Return if the element is exempted by an annotation.
-      if (exemptedByAnnotation(variableTree.getModifiers().getAnnotations())
-          || shouldKeep(variableTree)) {
+      if (wellKnownKeep.shouldKeep(variableTree)) {
         return;
       }
       switch (symbol.getKind()) {

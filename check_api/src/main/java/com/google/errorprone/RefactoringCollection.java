@@ -20,7 +20,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.nio.file.StandardOpenOption.APPEND;
 import static java.nio.file.StandardOpenOption.CREATE;
 
-import com.google.auto.value.AutoValue;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.SetMultimap;
@@ -64,16 +63,7 @@ public class RefactoringCollection implements DescriptionListener.Factory {
   private final DescriptionListener.Factory descriptionsFactory;
   private final ImportOrganizer importOrganizer;
 
-  @AutoValue
-  abstract static class RefactoringResult {
-    abstract String message();
-
-    abstract RefactoringResultType type();
-
-    private static RefactoringResult create(String message, RefactoringResultType type) {
-      return new AutoValue_RefactoringCollection_RefactoringResult(message, type);
-    }
-  }
+  record RefactoringResult(String message, RefactoringResultType type) {}
 
   enum RefactoringResultType {
     NO_CHANGES,
@@ -88,13 +78,14 @@ public class RefactoringCollection implements DescriptionListener.Factory {
     if (patchingOptions.inPlace()) {
       fileDestination = new FsFileDestination(rootPath);
       postProcess =
-          uri ->
-              RefactoringResult.create(
-                  String.format(
-                      "Refactoring changes were successfully applied to %s,"
-                          + " please check the refactored code and recompile.",
-                      uri),
-                  RefactoringResultType.CHANGED);
+          uri -> {
+            String message =
+                String.format(
+                    "Refactoring changes were successfully applied to %s,"
+                        + " please check the refactored code and recompile.",
+                    uri);
+            return new RefactoringResult(message, RefactoringResultType.CHANGED);
+          };
     } else {
       Path baseDir = rootPath.resolve(patchingOptions.baseDirectory());
       Path patchFilePath = HubSpotPatchUtils.resolvePatchFile(baseDir);
@@ -108,7 +99,7 @@ public class RefactoringCollection implements DescriptionListener.Factory {
             public RefactoringResult apply(URI uri) {
               try {
                 writePatchFile(first, uri, patchFileDestination, patchFilePath);
-                return RefactoringResult.create(
+                return new RefactoringResult(
                     "Changes were written to "
                         + patchFilePath
                         + ". Please inspect the file and apply with: "
@@ -166,7 +157,7 @@ public class RefactoringCollection implements DescriptionListener.Factory {
       return postProcess.apply(uri);
     }
 
-    return RefactoringResult.create("", RefactoringResultType.NO_CHANGES);
+    return new RefactoringResult("", RefactoringResultType.NO_CHANGES);
   }
 
   private static void writePatchFile(

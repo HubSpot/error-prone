@@ -120,38 +120,6 @@ public class ImmutableCheckerTest {
         .doTest();
   }
 
-  @Ignore("b/25630189") // don't check annotations for immutability yet
-  @Test
-  public void customImplementionsOfImplicitlyImmutableAnnotationsMustBeImmutable() {
-    compilationHelper
-        .addSourceLines("Anno.java", "@interface Anno {}")
-        .addSourceLines(
-            "MyAnno.java",
-            """
-            import java.lang.annotation.Annotation;
-
-            final class MyAnno implements Anno {
-              // BUG: Diagnostic contains:
-              public Object[] xs = {};
-
-              public Class<? extends Annotation> annotationType() {
-                return null;
-              }
-            }
-            """)
-        .addSourceLines(
-            "Test.java",
-            """
-            import com.google.errorprone.annotations.Immutable;
-
-            @Immutable
-            class Test {
-              private final Anno anno = new MyAnno();
-            }
-            """)
-        .doTest();
-  }
-
   @Test
   public void customAnnotationsSubtype() {
     compilationHelper
@@ -1930,24 +1898,6 @@ class Test extends Super {
         .doTest();
   }
 
-  @Ignore("b/25630189") // don't check annotations for immutability yet
-  @Test
-  public void mutableExtendsAnnotation() {
-    compilationHelper
-        .addSourceLines(
-            "Anno.java", //
-            "@interface Anno {}")
-        .addSourceLines(
-            "Test.java",
-            """
-            abstract class Test implements Anno {
-              // BUG: Diagnostic contains: @Immutable class has mutable field
-              final Object o = null;
-            }
-            """)
-        .doTest();
-  }
-
   @Test
   public void mutableEnclosing() {
     compilationHelper
@@ -2790,7 +2740,7 @@ class Test {
             class Test {
               final WithContainerOf<ImmutableInterface> a = null;
               final WithoutContainerOf<ImmutableInterface> b = null;
-              // BUG: Diagnostic contains: field 'c' of type 'WithContainerOf<MutableImpl>'
+              // MutableImpl is assumed to be immutable given it subclasses ImmutableInterface.
               final WithContainerOf<MutableImpl> c = null;
               final WithoutContainerOf<MutableImpl> d = null;
             }
@@ -3794,6 +3744,33 @@ abstract class Test {
   }
 
   @Test
+  public void methodReference_onSubtypeOfImmutableType() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.errorprone.annotations.Immutable;
+            import java.util.HashMap;
+            import java.util.Map;
+
+            abstract class Test {
+              @Immutable
+              interface ImmutableFunction {
+                String apply(String b);
+              }
+
+              interface SubFunction extends ImmutableFunction {}
+
+              void test(ImmutableFunction f) {
+                SubFunction sf = null;
+                test(sf::apply);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
   public void methodReference_onExpressionWithMutableType() {
     compilationHelper
         .addSourceLines(
@@ -4210,6 +4187,37 @@ abstract class Test {
 
             @Immutable
             record R(ImmutableList<String> xs) {}
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void subtyping() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.errorprone.annotations.Immutable;
+
+            @Immutable
+            interface ImmutableInterface {}
+
+            @Immutable
+            abstract class ImmutableAbstractClass {}
+
+            class B implements ImmutableInterface {}
+
+            class D extends ImmutableAbstractClass {}
+
+            class F implements ImmutableInterface {
+              // BUG: Diagnostic contains: has non-final field
+              Object unsafe;
+            }
+
+            class H extends ImmutableAbstractClass {
+              // BUG: Diagnostic contains: has non-final field
+              Object unsafe;
+            }
             """)
         .doTest();
   }

@@ -156,6 +156,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 import javax.lang.model.element.AnnotationMirror;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.type.TypeKind;
@@ -1018,29 +1019,46 @@ public class ASTHelpers {
     if (sym instanceof VarSymbol varSymbol) {
       return hasDirectAnnotationWithSimpleName(varSymbol, simpleName);
     }
-    return hasDirectAnnotationWithSimpleName(sym.getAnnotationMirrors().stream(), simpleName);
+    return hasDirectAnnotation(
+        sym.getAnnotationMirrors().stream(),
+        element -> element.getSimpleName().contentEquals(simpleName));
   }
 
   public static boolean hasDirectAnnotationWithSimpleName(MethodSymbol sym, String simpleName) {
-    return hasDirectAnnotationWithSimpleName(
+    return hasDirectAnnotation(
         Streams.concat(
             sym.getAnnotationMirrors().stream(),
             sym.getReturnType().getAnnotationMirrors().stream()),
-        simpleName);
+        element -> element.getSimpleName().contentEquals(simpleName));
   }
 
   public static boolean hasDirectAnnotationWithSimpleName(VarSymbol sym, String simpleName) {
-    return hasDirectAnnotationWithSimpleName(
+    return hasDirectAnnotation(
         Streams.concat(
             sym.getAnnotationMirrors().stream(), sym.asType().getAnnotationMirrors().stream()),
-        simpleName);
+        element -> element.getSimpleName().contentEquals(simpleName));
   }
 
-  private static boolean hasDirectAnnotationWithSimpleName(
-      Stream<? extends AnnotationMirror> annotations, String simpleName) {
+  /**
+   * Check for the presence of an annotation with the given qualified name directly on this symbol
+   * or its type. (If the given symbol is a method symbol, the type searched for annotations is its
+   * return type.)
+   *
+   * <p>This method looks only a annotations that are directly present. It does <b>not</b> consider
+   * annotation inheritance (see JLS 9.6.4.3).
+   */
+  public static boolean hasDirectAnnotation(MethodSymbol sym, String qualifiedName) {
+    return hasDirectAnnotation(
+        Streams.concat(
+            sym.getAnnotationMirrors().stream(),
+            sym.getReturnType().getAnnotationMirrors().stream()),
+        element -> ((Symbol) element).getQualifiedName().contentEquals(qualifiedName));
+  }
+
+  private static boolean hasDirectAnnotation(
+      Stream<? extends AnnotationMirror> annotations, Predicate<Element> matcher) {
     return annotations.anyMatch(
-        annotation ->
-            annotation.getAnnotationType().asElement().getSimpleName().contentEquals(simpleName));
+        annotation -> matcher.test(annotation.getAnnotationType().asElement()));
   }
 
   /**
@@ -1056,13 +1074,9 @@ public class ASTHelpers {
   }
 
   /**
-   * Returns true if any of the given tree is a declaration annotated with an annotation with the
-   * simple name {@code @UsedReflectively} or {@code @Keep}, or any annotations meta-annotated with
-   * an annotation with that simple name.
-   *
-   * <p>This indicates the annotated element is used (e.g. by reflection, or referenced by generated
-   * code) and should not be removed.
+   * @deprecated use {@code @com.google.errorprone.bugpatterns.WellKnownKeep} instead.
    */
+  @Deprecated
   public static boolean shouldKeep(Tree tree) {
     ModifiersTree modifiers = getModifiers(tree);
     if (modifiers == null) {
@@ -1529,30 +1543,8 @@ public class ASTHelpers {
     if (compound == null) {
       return null;
     }
-    return annotationTargetType(TypeAnnotations.instance(state.context), anno, compound, target);
-  }
-
-  private static AnnotationType annotationTargetType(
-      TypeAnnotations typeAnnotations,
-      AnnotationTree tree,
-      Compound compound,
-      @Nullable Symbol target) {
-    try {
-      try {
-        // the JCTree argument was added in JDK 21
-        return (AnnotationType)
-            TypeAnnotations.class
-                .getMethod("annotationTargetType", JCTree.class, Compound.class, Symbol.class)
-                .invoke(typeAnnotations, tree, compound, target);
-      } catch (NoSuchMethodException e1) {
-        return (AnnotationType)
-            TypeAnnotations.class
-                .getMethod("annotationTargetType", Compound.class, Symbol.class)
-                .invoke(typeAnnotations, compound, target);
-      }
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
+    return TypeAnnotations.instance(state.context)
+        .annotationTargetType((JCTree) anno, compound, target);
   }
 
   /**
@@ -1685,9 +1677,10 @@ public class ASTHelpers {
   }
 
   public static boolean isSuper(Tree tree) {
-    return switch (tree.getKind()) {
-      case IDENTIFIER -> ((IdentifierTree) tree).getName().contentEquals("super");
-      case MEMBER_SELECT -> ((MemberSelectTree) tree).getIdentifier().contentEquals("super");
+    return switch (tree) {
+      case IdentifierTree identifierTree -> identifierTree.getName().contentEquals("super");
+      case MemberSelectTree memberSelectTree ->
+          memberSelectTree.getIdentifier().contentEquals("super");
       default -> false;
     };
   }
@@ -2011,9 +2004,23 @@ public class ASTHelpers {
     return method.getModifiers().contains(Modifier.ABSTRACT);
   }
 
-  public static EnumSet<Flags.Flag> asFlagSet(long flags) {
+  /**
+   * Returns a set of strings representing the flags in the given long. This uses the bit encoding
+   * from {@link Flags}.
+   *
+   * @return a set of strings representing the flags in the given long, in lowercase. Elements of
+   *     the set are strings like "static" or "final".
+   */
+  public static ImmutableSet<String> asFlagSet(long flags) {
     flags &= ~(Flags.ANONCONSTR_BASED | POTENTIALLY_AMBIGUOUS);
-    return Flags.asFlagSet(flags);
+    // The cast to EnumSet<?> is because Flags.asFlagSet() returns an EnumSet<Flags.Flag> in some
+    // versions of JDK, and an EnumSet<FlagsEnum> in others. Without the cast, whichever enum type
+    // it is gets referenced by the stream, so the code won't work if compiled with a JDK that has
+    // the change and executed with one that doesn't, or vice versa. Erasure means that the call to
+    // Flags.asFlagSet doesn't itself cause problems because EnumSet<Flags.Flag> gets erased to just
+    // EnumSet in the bytecode.
+    return ((EnumSet<?>) Flags.asFlagSet(flags))
+        .stream().map(Object::toString).collect(toImmutableSet());
   }
 
   // Removed in JDK 21 by JDK-8026369
@@ -2123,7 +2130,9 @@ public class ASTHelpers {
 
   /** Returns whether the given tree has an explicit source code representation. */
   public static boolean hasExplicitSource(Tree tree, VisitorState state) {
-    return getStartPosition(tree) != Position.NOPOS && state.getEndPosition(tree) != Position.NOPOS;
+    int pos = getStartPosition(tree);
+    int endPos = state.getEndPosition(tree);
+    return pos != Position.NOPOS && endPos != Position.NOPOS && pos != endPos;
   }
 
   /** Returns {@code true} if this symbol was declared in Kotlin source. */

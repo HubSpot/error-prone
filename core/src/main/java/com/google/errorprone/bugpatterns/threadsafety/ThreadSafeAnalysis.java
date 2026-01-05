@@ -41,27 +41,37 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
+import javax.inject.Inject;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.type.TypeKind;
 
 /** Analyzes types for deep thread safety. */
-public class ThreadSafeAnalysis {
+public final class ThreadSafeAnalysis {
+  /** Factory for {@link ThreadSafeAnalysis}. */
+  public static final class Factory {
+    private final WellKnownThreadSafety wellKnownThreadSafety;
+
+    @Inject
+    Factory(WellKnownThreadSafety wellKnownThreadSafety) {
+      this.wellKnownThreadSafety = wellKnownThreadSafety;
+    }
+
+    public ThreadSafeAnalysis create(BugChecker bugChecker, VisitorState state) {
+      return new ThreadSafeAnalysis(bugChecker, state, wellKnownThreadSafety);
+    }
+  }
+
   private final BugChecker bugChecker;
   private final VisitorState state;
   private final WellKnownThreadSafety wellKnownThreadSafety;
   private final ThreadSafety threadSafety;
-  private final GuardedByFlags flags;
 
-  public ThreadSafeAnalysis(
-      BugChecker bugChecker,
-      VisitorState state,
-      WellKnownThreadSafety wellKnownThreadSafety,
-      GuardedByFlags flags) {
+  private ThreadSafeAnalysis(
+      BugChecker bugChecker, VisitorState state, WellKnownThreadSafety wellKnownThreadSafety) {
     this.bugChecker = bugChecker;
     this.state = state;
     this.wellKnownThreadSafety = wellKnownThreadSafety;
-    this.flags = flags;
 
     this.threadSafety = ThreadSafety.threadSafeBuilder(wellKnownThreadSafety).build(state);
   }
@@ -141,7 +151,8 @@ public class ThreadSafeAnalysis {
       return Violation.absent();
     }
     if (WellKnownMutability.isAnnotation(state, type)) {
-      // TODO(b/25630189): add enforcement
+      // Annotations are always immutable
+      // (https://errorprone.info/bugpattern/ImmutableAnnotationChecker)
       return Violation.absent();
     }
 
@@ -217,16 +228,15 @@ public class ThreadSafeAnalysis {
       ClassSymbol classSym,
       ClassType classType,
       VarSymbol var) {
-    if (bugChecker.isSuppressed(var)
+    if (bugChecker.isSuppressed(var, state)
         || bugChecker.customSuppressionAnnotations().stream()
-            .map(a -> hasAnnotation(var, a.getName(), state))
-            .anyMatch(v -> v)) {
+            .anyMatch(a -> hasAnnotation(var, a.getName(), state))) {
       return Violation.absent();
     }
     if (var.getModifiers().contains(Modifier.STATIC)) {
       return Violation.absent();
     }
-    if (!GuardedByUtils.getGuardValues(var, flags).isEmpty()) {
+    if (!GuardedByUtils.getGuardValues(var).isEmpty()) {
       return Violation.absent();
     }
 

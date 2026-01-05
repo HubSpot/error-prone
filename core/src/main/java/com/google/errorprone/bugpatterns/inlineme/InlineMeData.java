@@ -161,7 +161,7 @@ record InlineMeData(
     private final VisitorState state;
     private final IdentityHashMap<IdentifierTree, JCExpression> qualifications;
 
-    public QualifyingTreeCopier(
+    QualifyingTreeCopier(
         VisitorState state, IdentityHashMap<IdentifierTree, JCExpression> qualifications) {
       super(state.getTreeMaker());
       this.state = state;
@@ -192,7 +192,7 @@ record InlineMeData(
   private static class GooglePrinter extends Pretty {
     private final StringWriter writer;
 
-    public GooglePrinter(StringWriter writer) {
+    GooglePrinter(StringWriter writer) {
       super(writer, false /* don't dump extra comments */);
       this.writer = writer;
     }
@@ -305,7 +305,8 @@ record InlineMeData(
             qualifications.put(identifierTree, treeMaker.Ident(classSymbol));
           }
         } else {
-          if (parentNode instanceof NewClassTree) {
+          if (parentNode instanceof NewClassTree nct
+              && nct.getIdentifier().equals(identifierTree)) {
             // This Identifier is the class being constructed
             addImport(symbol.getQualifiedName().toString());
           } else {

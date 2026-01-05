@@ -98,16 +98,21 @@ public class ImmutableChecker extends BugChecker
         MethodTreeMatcher,
         MemberReferenceTreeMatcher {
 
+  private final ImmutableAnalysis.Factory immutableAnalysisFactory;
   private final WellKnownMutability wellKnownMutability;
   private final ImmutableSet<String> immutableAnnotations;
 
   @Inject
-  ImmutableChecker(WellKnownMutability wellKnownMutability) {
-    this(wellKnownMutability, ImmutableSet.of(Immutable.class.getName()));
+  ImmutableChecker(
+      ImmutableAnalysis.Factory immutableAnalysisFactory, WellKnownMutability wellKnownMutability) {
+    this(immutableAnalysisFactory, wellKnownMutability, ImmutableSet.of(Immutable.class.getName()));
   }
 
   ImmutableChecker(
-      WellKnownMutability wellKnownMutability, ImmutableSet<String> immutableAnnotations) {
+      ImmutableAnalysis.Factory immutableAnalysisFactory,
+      WellKnownMutability wellKnownMutability,
+      ImmutableSet<String> immutableAnnotations) {
+    this.immutableAnalysisFactory = immutableAnalysisFactory;
     this.wellKnownMutability = wellKnownMutability;
     this.immutableAnnotations = immutableAnnotations;
   }
@@ -123,17 +128,12 @@ public class ImmutableChecker extends BugChecker
     if (info.isPresent()) {
       state.reportMatch(buildDescription(tree).setMessage(info.message()).build());
     }
-    if (!hasImmutableAnnotation(lambdaType, state)) {
+    if (!typeOrSuperHasImmutableAnnotation(lambdaType, state)) {
       return NO_MATCH;
     }
     checkClosedTypes(tree, state, lambdaType, analysis);
 
     return NO_MATCH;
-  }
-
-  private boolean hasImmutableAnnotation(TypeSymbol tsym, VisitorState state) {
-    return immutableAnnotations.stream()
-        .anyMatch(annotation -> hasAnnotation(tsym, annotation, state));
   }
 
   @Override
@@ -149,7 +149,7 @@ public class ImmutableChecker extends BugChecker
     if (info.isPresent()) {
       state.reportMatch(buildDescription(tree).setMessage(info.message()).build());
     }
-    if (!hasImmutableAnnotation(memberReferenceType, state)) {
+    if (!typeOrSuperHasImmutableAnnotation(memberReferenceType, state)) {
       return NO_MATCH;
     }
     if (getSymbol(getReceiver(tree)) instanceof ClassSymbol) {
@@ -213,8 +213,7 @@ public class ImmutableChecker extends BugChecker
   }
 
   private ImmutableAnalysis createImmutableAnalysis(VisitorState state) {
-    return new ImmutableAnalysis(
-        this::isSuppressed, state, wellKnownMutability, immutableAnnotations);
+    return immutableAnalysisFactory.create(this::isSuppressed, state, immutableAnnotations);
   }
 
   private void checkInvocation(
@@ -479,7 +478,7 @@ public class ImmutableChecker extends BugChecker
     for (var entry : typesClosed.asMap().entrySet()) {
       var classSymbol = entry.getKey();
       var methods = entry.getValue();
-      if (!hasImmutableAnnotation(classSymbol.type.tsym, state)) {
+      if (!typeOrSuperHasImmutableAnnotation(classSymbol.type.tsym, state)) {
         String message =
             format(
                 "%s, but accesses instance method(s) '%s' on '%s' which is not @Immutable.",
@@ -572,18 +571,19 @@ public class ImmutableChecker extends BugChecker
       if (hasImmutableAnnotation(superType.tsym, state)) {
         return superType;
       }
-      // We currently trust that @interface annotations are immutable, but don't enforce that
-      // custom interface implementations are also immutable. That means the check can be
-      // defeated by writing a custom mutable annotation implementation, and passing it around
-      // using the superclass type.
-      //
-      // TODO(b/25630189): fix this
-      //
-      // if (superType.tsym.getKind() == ElementKind.ANNOTATION_TYPE) {
-      //   return superType;
-      // }
+      // Annotations could be checked here, but are checked separately by
+      // https://errorprone.info/bugpattern/ImmutableAnnotationChecker.
     }
     return null;
+  }
+
+  private boolean hasImmutableAnnotation(TypeSymbol tsym, VisitorState state) {
+    return immutableAnnotations.stream()
+        .anyMatch(annotation -> hasAnnotation(tsym, annotation, state));
+  }
+
+  private boolean typeOrSuperHasImmutableAnnotation(TypeSymbol tsym, VisitorState state) {
+    return hasImmutableAnnotation(tsym, state) || immutableSupertype(tsym, state) != null;
   }
 
   /**

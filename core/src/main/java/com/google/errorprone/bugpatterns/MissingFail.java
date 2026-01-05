@@ -228,7 +228,7 @@ public class MissingFail extends BugChecker implements TryTreeMatcher {
   public Description matchTry(TryTree tree, VisitorState state) {
     if (tryTreeMatches(tree, state)) {
       List<? extends StatementTree> tryStatements = tree.getBlock().getStatements();
-      StatementTree lastTryStatement = tryStatements.get(tryStatements.size() - 1);
+      StatementTree lastTryStatement = tryStatements.getLast();
 
       Optional<Fix> assertThrowsFix =
           AssertThrowsUtils.tryFailToAssertThrows(tree, tryStatements, Optional.empty(), state);
@@ -496,7 +496,7 @@ public class MissingFail extends BugChecker implements TryTreeMatcher {
 
   private static class ChildOfTryMatcher extends ChildMultiMatcher<TryTree, Tree> {
 
-    public ChildOfTryMatcher(MatchType matchType, Matcher<Tree> nodeMatcher) {
+    ChildOfTryMatcher(MatchType matchType, Matcher<Tree> nodeMatcher) {
       super(matchType, nodeMatcher);
     }
 

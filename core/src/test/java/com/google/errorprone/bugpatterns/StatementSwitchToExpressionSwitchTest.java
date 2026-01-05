@@ -17,7 +17,6 @@
 package com.google.errorprone.bugpatterns;
 
 import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.TruthJUnit.assume;
 import static com.google.errorprone.BugCheckerRefactoringTestHelper.TestMode.TEXT_MATCH;
 
 import com.google.errorprone.BugCheckerRefactoringTestHelper;
@@ -1207,6 +1206,52 @@ public final class StatementSwitchToExpressionSwitchTest {
   }
 
   @Test
+  public void switchOnString_patterns_error() {
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            public class Test {
+              public static void main(String[] args) {
+                switch (args[0]) {
+                  case String s
+                  when s.startsWith("a sale"):
+                    {
+                      System.out.println("it all starts with a sale");
+                      break;
+                    }
+                  case "one":
+                    System.out.println("one");
+                    break;
+                  case "two", "three":
+                    System.out.println("two or three");
+                    break;
+                  case String s:
+                    System.out.println("some other string");
+                    break;
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            public class Test {
+              public static void main(String[] args) {
+                switch (args[0]) {
+                  case String s when s.startsWith("a sale") -> System.out.println("it all starts with a sale");
+                  case "one" -> System.out.println("one");
+                  case "two", "three" -> System.out.println("two or three");
+                  case String s -> System.out.println("some other string");
+                }
+              }
+            }
+            """)
+        .setArgs("-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion=true")
+        .doTest(TEXT_MATCH);
+  }
+
+  @Test
   public void unnecessaryBreaks() {
     refactoringHelper
         .addInputLines(
@@ -1345,9 +1390,107 @@ public final class StatementSwitchToExpressionSwitchTest {
   }
 
   @Test
+  public void switchByEnum_casePatternAndGuard_error() {
+
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                switch (suit) {
+                  case HEART:
+                  case DIAMOND:
+                    return 1;
+                  case SPADE:
+                    System.out.println("spade");
+                    throw new RuntimeException();
+                  case CLUB:
+                    throw new NullPointerException();
+                  case Suit s
+                  when s == Suit.HEART:
+                    throw new NullPointerException();
+                  default:
+                    throw new NullPointerException();
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                return switch (suit) {
+                  case HEART, DIAMOND -> 1;
+                  case SPADE -> {
+                    System.out.println("spade");
+                    throw new RuntimeException();
+                  }
+                  case CLUB -> throw new NullPointerException();
+                  case Suit s when s == Suit.HEART -> throw new NullPointerException();
+                  default -> throw new NullPointerException();
+                };
+              }
+            }
+            """)
+        .setArgs(
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableReturnSwitchConversion",
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion=false")
+        .setFixChooser(FixChoosers.FIRST)
+        .doTest();
+
+    refactoringHelper2
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                switch (suit) {
+                  case HEART:
+                  case DIAMOND:
+                    return 1;
+                  case SPADE:
+                    System.out.println("spade");
+                    throw new RuntimeException();
+                  case CLUB:
+                    throw new NullPointerException();
+                  case Suit s
+                  when s == Suit.HEART:
+                    throw new NullPointerException();
+                  default:
+                    throw new NullPointerException();
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                return switch (suit) {
+                  case HEART, DIAMOND -> 1;
+                  case SPADE -> {
+                    System.out.println("spade");
+                    throw new RuntimeException();
+                  }
+                  case CLUB -> throw new NullPointerException();
+                  case Suit s when s == Suit.HEART -> throw new NullPointerException();
+                };
+              }
+            }
+            """)
+        .setArgs(
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableReturnSwitchConversion",
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion=false")
+        .setFixChooser(FixChoosers.SECOND)
+        .doTest();
+  }
+
+  @Test
   public void switchByEnum_middleNullCase_noError() {
     // The HEART case cannot be grouped with the null case per Java syntax
-    assume().that(Runtime.version().feature()).isAtLeast(21);
     helper
         .addSourceLines(
             "Test.java",
@@ -1380,7 +1523,6 @@ public final class StatementSwitchToExpressionSwitchTest {
   @Test
   public void switchByEnum_firstNullCase_noError() {
     // The null case cannot be grouped with a following regular case per Java syntax
-    assume().that(Runtime.version().feature()).isAtLeast(21);
     helper
         .addSourceLines(
             "Test.java",
@@ -1408,9 +1550,7 @@ public final class StatementSwitchToExpressionSwitchTest {
   }
 
   @Test
-  public void switchByEnum_nullGroupedWithDefault_error() {
-    assume().that(Runtime.version().feature()).isAtLeast(21);
-    // Null can be grouped with default
+  public void switchByEnum_nullGroupedWithDefault_error() { // Null can be grouped with default
     refactoringHelper
         .addInputLines(
             "Test.java",
@@ -1455,9 +1595,94 @@ public final class StatementSwitchToExpressionSwitchTest {
   }
 
   @Test
+  public void switchByEnumReturnSwitch_nullDefaultSameProduction_error() {
+    // Null can be grouped together with default in a single SwitchLabelProduction in Java 21+
+    // as `case null [, default]`
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                switch (suit) {
+                  case HEART:
+                  case DIAMOND:
+                    return 1;
+                  case SPADE, CLUB:
+                    System.out.println("hello");
+                    throw new RuntimeException();
+                  case null, default:
+                    throw new NullPointerException();
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                return switch (suit) {
+                  case HEART, DIAMOND -> 1;
+                  case SPADE, CLUB -> {
+                    System.out.println("hello");
+                    throw new RuntimeException();
+                  }
+                  case null, default -> throw new NullPointerException();
+                };
+              }
+            }
+            """)
+        .setArgs(
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableReturnSwitchConversion",
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion=false")
+        .doTest();
+
+    refactoringHelper2
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                switch (suit) {
+                  case HEART:
+                  case DIAMOND:
+                    return 1;
+                  case SPADE, CLUB:
+                    System.out.println("hello");
+                    throw new RuntimeException();
+                  case null, default:
+                    throw new NullPointerException();
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                return switch (suit) {
+                  case HEART, DIAMOND -> 1;
+                  case SPADE, CLUB -> {
+                    System.out.println("hello");
+                    throw new RuntimeException();
+                  }
+                  case null -> throw new NullPointerException();
+                };
+              }
+            }
+            """)
+        .setArgs(
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableReturnSwitchConversion",
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion=false")
+        .setFixChooser(FixChoosers.SECOND)
+        .doTest();
+  }
+
+  @Test
   public void switchByEnum_middleNullCase3_error() {
     // null case is converted without being grouped with default
-    assume().that(Runtime.version().feature()).isAtLeast(21);
     refactoringHelper
         .addInputLines(
             "Test.java",
@@ -2553,8 +2778,6 @@ public final class StatementSwitchToExpressionSwitchTest {
 
   @Test
   public void switchByEnumExhaustive_qualifiedCaseLabels() {
-    assume().that(Runtime.version().feature()).isAtLeast(21);
-
     refactoringHelper
         .addInputLines(
             "Test.java",
@@ -3625,6 +3848,102 @@ public final class StatementSwitchToExpressionSwitchTest {
   }
 
   @Test
+  public void switchByEnumAssignment_nullDefaultSameProduction_error() {
+    // Null can be grouped together with default in a single SwitchLabel production in Java 21+
+    // as `case null [, default]`
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                int x = 0;
+                switch (suit) {
+                  case HEART:
+                  case DIAMOND:
+                    x = x + 1;
+                    break;
+                  case SPADE:
+                    throw new RuntimeException();
+                  case CLUB:
+                    throw new NullPointerException();
+                  case null, default:
+                    throw new IllegalArgumentException();
+                }
+                return x;
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                int x = 0;
+                x =
+                    switch (suit) {
+                      case HEART, DIAMOND -> x + 1;
+                      case SPADE -> throw new RuntimeException();
+                      case CLUB -> throw new NullPointerException();
+                      case null, default -> throw new IllegalArgumentException();
+                    };
+                return x;
+              }
+            }
+            """)
+        .setArgs(
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableAssignmentSwitchConversion",
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion=false")
+        .doTest(TEXT_MATCH);
+
+    refactoringHelper2
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                int x = 0;
+                switch (suit) {
+                  case HEART:
+                  case DIAMOND:
+                    x = x + 1;
+                    break;
+                  case SPADE:
+                    throw new RuntimeException();
+                  case CLUB:
+                    throw new NullPointerException();
+                  case null, default:
+                    throw new IllegalArgumentException();
+                }
+                return x;
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                int x = 0;
+                x =
+                    switch (suit) {
+                      case HEART, DIAMOND -> x + 1;
+                      case SPADE -> throw new RuntimeException();
+                      case CLUB -> throw new NullPointerException();
+                      case null -> throw new IllegalArgumentException();
+                    };
+                return x;
+              }
+            }
+            """)
+        .setArgs(
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableAssignmentSwitchConversion",
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion=false")
+        .setFixChooser(FixChoosers.SECOND)
+        .doTest(TEXT_MATCH);
+  }
+
+  @Test
   public void switchByEnum_canRemoveDefault_error() {
     // Switch contain all enum values, so `default:` can likely be removed, unless the author
     // explicitly desires the behavior it would provide (for example, in contemplation that the
@@ -3722,6 +4041,116 @@ public final class StatementSwitchToExpressionSwitchTest {
                           (((x + 1) * (x * x)) << 2);
                       case SPADE -> throw new RuntimeException();
                       case CLUB -> throw new NullPointerException();
+                    };
+                return x;
+              }
+            }
+            """)
+        .setArgs(
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableAssignmentSwitchConversion",
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion=false")
+        .setFixChooser(FixChoosers.SECOND)
+        .doTest(TEXT_MATCH);
+  }
+
+  @Test
+  public void switchByEnum_canRemoveDefaultFromNullDefault_error() {
+    // The default case is originally together with the null case.  It should be removed without
+    // affecting the null case.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                int x = 0;
+                switch (suit) {
+                  case HEART:
+                  // Heart comment
+                  // Fall through
+                  case DIAMOND:
+                    x = (((x + 1) * (x * x)) << 2);
+                    break;
+                  case SPADE:
+                    throw new RuntimeException();
+                  case CLUB:
+                    throw new NullPointerException();
+                  case null, default:
+                    // This is unlikely to be reached
+                    throw new RuntimeException();
+                }
+                return x;
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                int x = 0;
+                x =
+                    switch (suit) {
+                      case HEART, DIAMOND ->
+                          // Heart comment
+                          (((x + 1) * (x * x)) << 2);
+                      case SPADE -> throw new RuntimeException();
+                      case CLUB -> throw new NullPointerException();
+                      case null, default ->
+                          // This is unlikely to be reached
+                          throw new RuntimeException();
+                    };
+                return x;
+              }
+            }
+            """)
+        .setArgs(
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableAssignmentSwitchConversion",
+            "-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion=false")
+        .doTest(TEXT_MATCH);
+
+    refactoringHelper2
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                int x = 0;
+                switch (suit) {
+                  case HEART:
+                  // Heart comment
+                  // Fall through
+                  case DIAMOND:
+                    x = (((x + 1) * (x * x)) << 2);
+                    break;
+                  case SPADE:
+                    throw new RuntimeException();
+                  case CLUB:
+                    throw new NullPointerException();
+                  case null, default:
+                    // This is unlikely to be reached
+                    throw new RuntimeException();
+                }
+                return x;
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                int x = 0;
+                x =
+                    switch (suit) {
+                      case HEART, DIAMOND ->
+                          // Heart comment
+                          (((x + 1) * (x * x)) << 2);
+                      case SPADE -> throw new RuntimeException();
+                      case CLUB -> throw new NullPointerException();
+                      case null ->
+                          // This is unlikely to be reached
+                          throw new RuntimeException();
                     };
                 return x;
               }
@@ -4062,8 +4491,6 @@ public final class StatementSwitchToExpressionSwitchTest {
   @Test
   public void directConversion_casePatternWithGuard_noError() {
     // Case patterns are not currently supported by the checker.
-    assume().that(Runtime.version().feature()).isAtLeast(21);
-
     helper
         .addSourceLines(
             "Test.java",
@@ -4100,7 +4527,6 @@ public final class StatementSwitchToExpressionSwitchTest {
   @Test
   public void switchByEnum_nullDefaultFallsOut_error() {
     // Null can be grouped with default
-    assume().that(Runtime.version().feature()).isAtLeast(21);
     refactoringHelper
         .addInputLines(
             "Test.java",
@@ -4116,6 +4542,54 @@ public final class StatementSwitchToExpressionSwitchTest {
                     throw new RuntimeException();
                   case null:
                   default:
+                    System.out.println("fall out");
+                }
+                return 2;
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                switch (suit) {
+                  case HEART, DIAMOND -> {
+                    return 1;
+                  }
+                  case SPADE -> {
+                    System.out.println("hello");
+                    throw new RuntimeException();
+                  }
+                  case null, default -> System.out.println("fall out");
+                }
+                return 2;
+              }
+            }
+            """)
+        .setArgs("-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion")
+        .setFixChooser(StatementSwitchToExpressionSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void switchByEnum_nullDefaultSameProduction_error() {
+    // Null can be grouped together with default in a single SwitchLabel production in Java 21+
+    // as `case null [, default]`
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                switch (suit) {
+                  case HEART:
+                  case DIAMOND:
+                    return 1;
+                  case SPADE:
+                    System.out.println("hello");
+                    throw new RuntimeException();
+                  case null, default:
                     System.out.println("fall out");
                 }
                 return 2;
@@ -4181,8 +4655,6 @@ public final class StatementSwitchToExpressionSwitchTest {
   @Test
   public void directConversion_casePatternWithoutGuard_noError() {
     // Case patterns are not currently supported by the checker.
-    assume().that(Runtime.version().feature()).isAtLeast(21);
-
     helper
         .addSourceLines(
             "Test.java",
@@ -4422,6 +4894,94 @@ public final class StatementSwitchToExpressionSwitchTest {
                     foo = null;
                 }
                 return x;
+              }
+            }
+            """)
+        .setArgs("-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion")
+        .doTest();
+  }
+
+  @Test
+  public void directConversion_hoistWithNamingConflictAbove_noError() {
+    // The checker currently does not have the ability to hoist variables whose names conflict
+    // with other variables in the switch statement's enclosing scope.  Here the conflict is above
+    // the variable to be hoisted.
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+
+              public Test() {}
+
+              public void foo() {
+                int z = 0;
+                switch (z) {
+                  case 0:
+                  // Fall thru
+                  case 1:
+                    var anotherString = "salut";
+                    if (anotherString.length() > 0) {
+                      // Note that this would pose a naming conflict with `foo` below (if hoisted)
+                      String foo = "salut salut";
+                      anotherString = foo;
+                    }
+                    double dontHoistMe = 2.0d;
+                    break;
+                  case 2:
+                    String foo = "there";
+                    anotherString = "bonjour";
+                    break;
+                  case 3:
+                    anotherString = "just this var";
+                    foo = "baz";
+                    int staysHere;
+                }
+                return;
+              }
+            }
+            """)
+        .setArgs("-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion")
+        .doTest();
+  }
+
+  @Test
+  public void directConversion_hoistWithNamingConflictSameCase_noError() {
+    // The checker currently does not have the ability to hoist variables whose names conflict
+    // with other variables in the switch statement's enclosing scope.  Here the conflict is in the
+    // same case as the variable to be hoisted.
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+
+              public Test() {}
+
+              public void foo() {
+                int z = 0;
+                switch (z) {
+                  case 0:
+                  // Fall thru
+                  case 1:
+                    var anotherString = "salut";
+                    double dontHoistMe = 2.0d;
+                    break;
+                  case 2:
+                    anotherString = "bonjour";
+                    if (anotherString.length() > 0) {
+                      // Note that this would pose a naming conflict with `foo` below (if hoisted)
+                      String foo = "salut salut";
+                      anotherString = foo;
+                    }
+                    String foo = "there";
+                    break;
+                  case 3:
+                    anotherString = "just this var";
+                    foo = "baz";
+                    int staysHere;
+                }
+                return;
               }
             }
             """)

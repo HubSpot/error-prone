@@ -117,22 +117,15 @@ public final class FindIdentifiers {
     }
   }
 
-  // Signature was changed in Java 13: https://bugs.openjdk.java.net/browse/JDK-8223305
   private static Symbol findIdent(
       String name, VisitorState state, KindSelector kind, Env<AttrContext> env)
       throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
-    if (Runtime.version().feature() >= 13) {
-      Method method =
-          Resolve.class.getDeclaredMethod(
-              "findIdent", DiagnosticPosition.class, Env.class, Name.class, KindSelector.class);
-      method.setAccessible(true);
-      return (Symbol)
-          method.invoke(Resolve.instance(state.context), null, env, state.getName(name), kind);
-    }
     Method method =
-        Resolve.class.getDeclaredMethod("findIdent", Env.class, Name.class, KindSelector.class);
+        Resolve.class.getDeclaredMethod(
+            "findIdent", DiagnosticPosition.class, Env.class, Name.class, KindSelector.class);
     method.setAccessible(true);
-    return (Symbol) method.invoke(Resolve.instance(state.context), env, state.getName(name), kind);
+    return (Symbol)
+        method.invoke(Resolve.instance(state.context), null, env, state.getName(name), kind);
   }
 
   private static @Nullable ClassTree getEnclosingClass(TreePath treePath) {
@@ -196,9 +189,9 @@ public final class FindIdentifiers {
 
     prev = state.getPath().getLeaf();
     for (Tree curr : state.getPath().getParentPath()) {
-      switch (curr.getKind()) {
-        case BLOCK -> {
-          for (StatementTree stmt : ((BlockTree) curr).getStatements()) {
+      switch (curr) {
+        case BlockTree blockTree -> {
+          for (StatementTree stmt : blockTree.getStatements()) {
             if (stmt.equals(prev)) {
               break;
             }
@@ -208,22 +201,22 @@ public final class FindIdentifiers {
             }
           }
         }
-        case LAMBDA_EXPRESSION -> {
-          for (VariableTree param : ((LambdaExpressionTree) curr).getParameters()) {
+        case LambdaExpressionTree lambdaExpressionTree -> {
+          for (VariableTree param : lambdaExpressionTree.getParameters()) {
             result.add(ASTHelpers.getSymbol(param));
           }
         }
-        case METHOD -> {
-          for (VariableTree param : ((MethodTree) curr).getParameters()) {
+        case MethodTree methodTree -> {
+          for (VariableTree param : methodTree.getParameters()) {
             result.add(ASTHelpers.getSymbol(param));
           }
         }
-        case CATCH -> result.add(ASTHelpers.getSymbol(((CatchTree) curr).getParameter()));
-        case CLASS, INTERFACE, ENUM, ANNOTATION_TYPE -> {
+        case CatchTree catchTree -> result.add(ASTHelpers.getSymbol(catchTree.getParameter()));
+        case ClassTree classTree -> {
           // Collect fields declared in this class.  If we are in a field initializer, only
           // include fields declared before this one. JLS 8.3.3 allows forward references if the
           // field is referred to by qualified name, but we don't support that.
-          for (Tree member : ((ClassTree) curr).getMembers()) {
+          for (Tree member : classTree.getMembers()) {
             if (member.equals(prev)) {
               break;
             }
@@ -246,11 +239,10 @@ public final class FindIdentifiers {
             result.addAll(varsList.build().reverse());
           }
         }
-        case FOR_LOOP -> addAllIfVariable(((ForLoopTree) curr).getInitializer(), result);
-        case ENHANCED_FOR_LOOP ->
-            result.add(ASTHelpers.getSymbol(((EnhancedForLoopTree) curr).getVariable()));
-        case TRY -> {
-          TryTree tryTree = (TryTree) curr;
+        case ForLoopTree forLoopTree -> addAllIfVariable(forLoopTree.getInitializer(), result);
+        case EnhancedForLoopTree enhancedForLoopTree ->
+            result.add(ASTHelpers.getSymbol(enhancedForLoopTree.getVariable()));
+        case TryTree tryTree -> {
           boolean inResources = false;
           for (Tree resource : tryTree.getResources()) {
             if (resource.equals(prev)) {
@@ -271,8 +263,7 @@ public final class FindIdentifiers {
             addAllIfVariable(tryTree.getResources(), result);
           }
         }
-        case IF -> {
-          var ifTree = (IfTree) curr;
+        case IfTree ifTree -> {
           if (prev == ifTree.getThenStatement()) {
             findBindingVariables(ifTree.getCondition(), result, /* startNegated= */ false);
           }
@@ -280,8 +271,7 @@ public final class FindIdentifiers {
             findBindingVariables(ifTree.getCondition(), result, /* startNegated= */ true);
           }
         }
-        case CONDITIONAL_EXPRESSION -> {
-          ConditionalExpressionTree conditionalExpressionTree = (ConditionalExpressionTree) curr;
+        case ConditionalExpressionTree conditionalExpressionTree -> {
           if (prev == conditionalExpressionTree.getTrueExpression()) {
             findBindingVariables(
                 conditionalExpressionTree.getCondition(), result, /* startNegated= */ false);
@@ -291,8 +281,8 @@ public final class FindIdentifiers {
                 conditionalExpressionTree.getCondition(), result, /* startNegated= */ true);
           }
         }
-        case COMPILATION_UNIT -> {
-          for (ImportTree importTree : ((CompilationUnitTree) curr).getImports()) {
+        case CompilationUnitTree compilationUnitTree -> {
+          for (ImportTree importTree : compilationUnitTree.getImports()) {
             if (importTree.isStatic()
                 && importTree.getQualifiedIdentifier()
                     instanceof MemberSelectTree memberSelectTree) {
@@ -383,10 +373,10 @@ public final class FindIdentifiers {
     Tree prev = state.getPath().getLeaf();
     for (Tree curr : state.getPath().getParentPath()) {
       createFindIdentifiersScanner(usedSymbols, prev).scan(curr, null);
-      switch (curr.getKind()) {
-        case BLOCK -> {
+      switch (curr) {
+        case BlockTree blockTree -> {
           // If we see a block then walk over each statement to see if it defines a variable
-          for (StatementTree statement : ((BlockTree) curr).getStatements()) {
+          for (StatementTree statement : blockTree.getStatements()) {
             if (statement.equals(prev)) {
               // break if we see the tree we have just processed so that we only consider things
               // declared/used before us in the tree
@@ -395,14 +385,10 @@ public final class FindIdentifiers {
             addIfVariable(statement, definedVariables);
           }
         }
-        case FOR_LOOP -> {
-          ForLoopTree forLoop = (ForLoopTree) curr;
-          forLoop.getInitializer().stream().forEach(t -> addIfVariable(t, definedVariables));
-        }
-        case ENHANCED_FOR_LOOP -> {
-          EnhancedForLoopTree enhancedFor = (EnhancedForLoopTree) curr;
-          addIfVariable(enhancedFor.getVariable(), definedVariables);
-        }
+        case ForLoopTree forLoop ->
+            forLoop.getInitializer().stream().forEach(t -> addIfVariable(t, definedVariables));
+        case EnhancedForLoopTree enhancedFor ->
+            addIfVariable(enhancedFor.getVariable(), definedVariables);
         default -> {}
       }
       prev = curr;
@@ -561,27 +547,26 @@ public final class FindIdentifiers {
     path = path.getParentPath();
 
     for (Tree tree : path) {
-      switch (tree.getKind()) {
-        case METHOD -> {
+      switch (tree) {
+        case MethodTree methodTree -> {
           return isStatic(ASTHelpers.getSymbol(tree));
         }
-        case BLOCK -> {
+        case BlockTree blockTree -> {
           // static initializer
-          if (((BlockTree) tree).isStatic()) {
+          if (blockTree.isStatic()) {
             return true;
           }
         }
-        case VARIABLE -> {
+        case VariableTree variableTree -> {
           // variable initializer of static variable
-          VariableTree variableTree = (VariableTree) tree;
           VarSymbol variableSym = ASTHelpers.getSymbol(variableTree);
           if (variableSym.getKind() == ElementKind.FIELD) {
             return Objects.equals(variableTree.getInitializer(), prev) && variableSym.isStatic();
           }
         }
-        case METHOD_INVOCATION -> {
+        case MethodInvocationTree methodInvocationTree -> {
           // JLS 8.8.7.1 explicit constructor invocation
-          MethodSymbol methodSym = ASTHelpers.getSymbol((MethodInvocationTree) tree);
+          MethodSymbol methodSym = ASTHelpers.getSymbol(methodInvocationTree);
           if (methodSym.isConstructor()
               && (Objects.equals(methodSym.owner, enclosingClass)
                   || Objects.equals(methodSym.owner, directSuperClass))) {

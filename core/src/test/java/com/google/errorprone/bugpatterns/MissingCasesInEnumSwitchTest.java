@@ -16,9 +16,6 @@
 
 package com.google.errorprone.bugpatterns;
 
-import static com.google.common.truth.TruthJUnit.assume;
-import static org.junit.Assert.assertThrows;
-
 import com.google.errorprone.CompilationTestHelper;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -59,7 +56,6 @@ public class MissingCasesInEnumSwitchTest {
 
   @Test
   public void exhaustive_allowsQualifying() {
-    assume().that(Runtime.version().feature()).isAtLeast(21);
     compilationHelper
         .addSourceLines(
             "Test.java",
@@ -137,7 +133,6 @@ public class MissingCasesInEnumSwitchTest {
 
   @Test
   public void nonExhaustive_withCombinedDefault() {
-    assume().that(Runtime.version().feature()).isAtLeast(21);
     compilationHelper
         .addSourceLines(
             "Test.java",
@@ -369,7 +364,6 @@ public class MissingCasesInEnumSwitchTest {
 
   @Test
   public void i4684() {
-    assume().that(Runtime.version().feature()).isAtLeast(21);
     compilationHelper
         .addSourceLines(
             "ErrorProneBug.java",
@@ -510,26 +504,27 @@ public class MissingCasesInEnumSwitchTest {
   }
 
   @Test
-  public void defaultInRuleCase_crash() {
-    compilationHelper.addSourceLines(
-        "Test.java",
-        """
-        public class Test {
-          public enum E {
-            A,
-            B
-          }
+  public void defaultInRuleCase() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            public class Test {
+              public enum E {
+                A,
+                B
+              }
 
-          public static Object test(E e) {
-            return switch (e) {
-              case A:
-                yield new Object();
-              default:
-                yield null;
-            };
-          }
-        }
-        """);
-    assertThrows(AssertionError.class, () -> compilationHelper.doTest());
+              public static Object test(E e) {
+                return switch (e) {
+                  case A:
+                    yield new Object();
+                  default:
+                    yield null;
+                };
+              }
+            }
+            """)
+        .doTest();
   }
 }

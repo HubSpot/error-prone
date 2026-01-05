@@ -171,7 +171,7 @@ public class AutoValueBoxedValues extends BugChecker implements ClassTreeMatcher
                         && matchGetterAndSetter(getter.method(), methodTree, allGettersPrefixed))
             .findAny();
     if (fixedGetter.isPresent()) {
-      var parameter = methodTree.getParameters().get(0);
+      var parameter = methodTree.getParameters().getFirst();
       Type type = getType(parameter);
       if (isBoxedPrimitive(state, type) && !hasNullableAnnotation(parameter)) {
         suggestRemoveUnnecessaryBoxing(parameter.getType(), state, type, fixedGetter.get().fix());
@@ -330,7 +330,7 @@ public class AutoValueBoxedValues extends BugChecker implements ClassTreeMatcher
     // Trivial factory method must have one argument for each getter and a single return statement.
     if (params.size() != gettersCount
         || statements.size() != 1
-        || !(statements.get(0) instanceof ReturnTree returnTree)) {
+        || !(statements.getFirst() instanceof ReturnTree returnTree)) {
       return false;
     }
     // Trivial factory method must return a new instance.
@@ -364,14 +364,9 @@ public class AutoValueBoxedValues extends BugChecker implements ClassTreeMatcher
     fix.replace(tree, unbox(state, type).tsym.getSimpleName().toString());
   }
 
-  @AutoValue
-  abstract static class Getter {
-    abstract MethodTree method();
-
-    abstract SuggestedFix.Builder fix();
-
+  private record Getter(MethodTree method, SuggestedFix.Builder fix) {
     static Getter of(MethodTree method) {
-      return new AutoValue_AutoValueBoxedValues_Getter(method, SuggestedFix.builder());
+      return new Getter(method, SuggestedFix.builder());
     }
   }
 }

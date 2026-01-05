@@ -38,7 +38,6 @@ import static com.sun.tools.javac.parser.Tokens.TokenKind.DOT;
 import static java.lang.Boolean.TRUE;
 import static java.util.Objects.requireNonNull;
 
-import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.VisitorState;
@@ -244,7 +243,7 @@ class NullnessUtils {
       }
       case ANNOTATED_TYPE -> {
         return nullableAnnotationToUse.fixPrefixingOnto(
-            ((AnnotatedTypeTree) typeTree).getAnnotations().get(0), state, suppressionToRemove);
+            ((AnnotatedTypeTree) typeTree).getAnnotations().getFirst(), state, suppressionToRemove);
       }
       case IDENTIFIER -> {
         return nullableAnnotationToUse.fixPrefixingOnto(typeTree, state, suppressionToRemove);
@@ -270,10 +269,10 @@ class NullnessUtils {
     return enclosingClass(constructedClass) != null && !constructedClass.isStatic();
   }
 
-  @AutoValue
-  abstract static class NullableAnnotationToUse {
+  record NullableAnnotationToUse(
+      @Nullable String importToAdd, String use, boolean isTypeUse, boolean isAlreadyInScope) {
     static NullableAnnotationToUse annotationToBeImported(String qualifiedName, boolean isTypeUse) {
-      return new AutoValue_NullnessUtils_NullableAnnotationToUse(
+      return new NullableAnnotationToUse(
           qualifiedName,
           qualifiedName.replaceFirst(".*[.]", ""),
           isTypeUse,
@@ -282,8 +281,7 @@ class NullnessUtils {
 
     static NullableAnnotationToUse annotationWithoutImporting(
         String name, boolean isTypeUse, boolean isAlreadyInScope) {
-      return new AutoValue_NullnessUtils_NullableAnnotationToUse(
-          null, name, isTypeUse, isAlreadyInScope);
+      return new NullableAnnotationToUse(null, name, isTypeUse, isAlreadyInScope);
     }
 
     /**
@@ -311,14 +309,6 @@ class NullnessUtils {
         Tree tree, VisitorState state, @Nullable String suppressionToRemove) {
       return prepareBuilder(state, suppressionToRemove).prefixWith(tree, "@" + use() + " ").build();
     }
-
-    abstract @Nullable String importToAdd();
-
-    abstract String use();
-
-    abstract boolean isTypeUse();
-
-    abstract boolean isAlreadyInScope();
 
     private SuggestedFix.Builder prepareBuilder(
         VisitorState state, @Nullable String suppressionToRemove) {
@@ -420,13 +410,16 @@ class NullnessUtils {
 
     Name name = nullChecked instanceof IdentifierTree id ? id.getName() : null;
 
-    VarSymbol varSymbol = getSymbol(nullChecked) instanceof VarSymbol vs ? vs : null;
+    Symbol symbol = getSymbol(nullChecked);
+    VarSymbol varSymbol = symbol instanceof VarSymbol vs ? vs : null;
+    MethodSymbol methodSymbol = symbol instanceof MethodSymbol ms ? ms : null;
 
-    return new NullCheck(name, varSymbol, polarity);
+    return new NullCheck(name, varSymbol, methodSymbol, polarity);
   }
 
   /**
-   * A check of a variable against {@code null}, like {@code foo == null}.
+   * A check of a variable or method call against {@code null}, like {@code foo == null}, or {@code
+   * foo.method() == null}.
    *
    * <p>This class exposes the variable in two forms: the {@link VarSymbol} (if available) and the
    * {@link Name} (if the null check was performed on a bare identifier, like {@code foo}). Many
@@ -455,10 +448,13 @@ class NullnessUtils {
    *     documentation.
    * @param varSymbolButUsuallyPreferBareIdentifier Returns the symbol that was checked against
    *     {@code null}.
+   * @param methodSymbol Returns the method symbol that was checked against {@code null}, if the
+   *     null check took that form.
    */
   record NullCheck(
       @Nullable Name bareIdentifier,
       @Nullable VarSymbol varSymbolButUsuallyPreferBareIdentifier,
+      @Nullable MethodSymbol methodSymbol,
       Polarity polarity) {
     boolean bareIdentifierMatches(ExpressionTree other) {
       return other instanceof IdentifierTree identifierTree
@@ -551,7 +547,7 @@ class NullnessUtils {
       boolean isOptionalOrNull(MethodInvocationTree tree) {
         return OPTIONAL_OR_NULL.matches(tree, stateForCompilationUnit)
             || (OPTIONAL_OR_ELSE.matches(tree, stateForCompilationUnit)
-                && tree.getArguments().get(0).getKind() == NULL_LITERAL);
+                && tree.getArguments().getFirst().getKind() == NULL_LITERAL);
         /*
          * TODO(cpovirk): Instead of checking only for NULL_LITERAL, call hasDefinitelyNullBranch?
          * But consider whether that would interfere with the TODO at the top of that method.

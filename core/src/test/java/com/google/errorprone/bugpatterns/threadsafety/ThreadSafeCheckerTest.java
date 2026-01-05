@@ -1354,6 +1354,38 @@ class Test {
   }
 
   @Test
+  public void immutableTypeParam_alsoThreadSafe() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.errorprone.annotations.ThreadSafe;
+            import com.google.errorprone.annotations.ImmutableTypeParameter;
+
+            @ThreadSafe
+            class Test<@ImmutableTypeParameter T> {
+              final T t = null;
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void immutableTypeParam_notInThreadSafeClass_ok() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.errorprone.annotations.ImmutableTypeParameter;
+
+            class Test<@ImmutableTypeParameter T> {
+              final T t = null;
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
   public void threadSafeTypeParameterInstantiation() {
     compilationHelper
         .addSourceLines(
@@ -1598,6 +1630,40 @@ abstract class Recursive<T extends Recursive<T>> {
             @ThreadSafe
             class Test {
               final E x = null;
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void subtyping() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            package a;
+
+            import com.google.errorprone.annotations.ThreadSafe;
+
+            @ThreadSafe
+            interface ThreadSafeInterface {}
+
+            @ThreadSafe
+            abstract class ThreadSafeAbstractClass {}
+
+            // BUG: Diagnostic contains: is not annotated
+            class A implements ThreadSafeInterface {}
+
+            class C extends ThreadSafeAbstractClass {}
+
+            // BUG: Diagnostic contains: is not annotated
+            class E implements ThreadSafeInterface {
+              Object unsafe;
+            }
+
+            class G extends ThreadSafeAbstractClass {
+              // BUG: Diagnostic contains: fields should be final or annotated with @GuardedBy
+              Object unsafe;
             }
             """)
         .doTest();

@@ -23,7 +23,6 @@ import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.isSuper;
 import static com.google.errorprone.util.ASTHelpers.methodCanBeOverridden;
 
-import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.util.ASTHelpers;
@@ -55,14 +54,10 @@ import javax.lang.model.element.Modifier;
 import org.jspecify.annotations.Nullable;
 
 /** Whether an API can have {@code @InlineMe} applied to it or not. */
-@AutoValue
-abstract class InlinabilityResult {
-
-  abstract @Nullable InlineValidationErrorReason error();
-
-  abstract @Nullable ExpressionTree body();
-
-  abstract @Nullable String additionalErrorInfo();
+record InlinabilityResult(
+    @Nullable InlineValidationErrorReason error,
+    @Nullable ExpressionTree body,
+    @Nullable String additionalErrorInfo) {
 
   final String errorMessage() {
     checkState(error() != null);
@@ -84,11 +79,11 @@ abstract class InlinabilityResult {
 
   static InlinabilityResult fromError(
       InlineValidationErrorReason errorReason, ExpressionTree body, String additionalErrorInfo) {
-    return new AutoValue_InlinabilityResult(errorReason, body, additionalErrorInfo);
+    return new InlinabilityResult(errorReason, body, additionalErrorInfo);
   }
 
   static InlinabilityResult inlinable(ExpressionTree body) {
-    return new AutoValue_InlinabilityResult(null, body, null);
+    return new InlinabilityResult(null, body, null);
   }
 
   boolean isValidForSuggester() {
@@ -158,7 +153,7 @@ abstract class InlinabilityResult {
       return fromError(InlineValidationErrorReason.API_IS_PRIVATE);
     }
 
-    StatementTree statement = methodTree.getBody().getStatements().get(0);
+    StatementTree statement = methodTree.getBody().getStatements().getFirst();
 
     if (state.getSourceForNode(statement) == null) {
       return fromError(InlineValidationErrorReason.NO_BODY);
@@ -168,10 +163,10 @@ abstract class InlinabilityResult {
     ExpressionTree body;
     // The statement is either an ExpressionStatement or a ReturnStatement, given
     // InlinabilityResult.forMethod
-    switch (statement.getKind()) {
-      case EXPRESSION_STATEMENT -> body = ((ExpressionStatementTree) statement).getExpression();
-      case RETURN -> {
-        body = ((ReturnTree) statement).getExpression();
+    switch (statement) {
+      case ExpressionStatementTree est -> body = est.getExpression();
+      case ReturnTree rt -> {
+        body = rt.getExpression();
         if (body == null) {
           return fromError(InlineValidationErrorReason.EMPTY_VOID);
         }

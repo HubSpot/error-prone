@@ -196,6 +196,23 @@ public final class UnnecessaryQualifierTest {
   }
 
   @Test
+  public void exemptedClassAnnotation_subcomponentFactory_noFinding() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            import dagger.BindsInstance;
+            import dagger.Subcomponent;
+
+            @Subcomponent.Factory
+            interface Factory {
+              Object create(@BindsInstance @Qual boolean isEnabled);
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
   public void lambdas_neverMeaningful() {
     helper
         .addSourceLines(
@@ -206,6 +223,114 @@ public final class UnnecessaryQualifierTest {
             interface Test {
               // BUG: Diagnostic contains:
               Function<Integer, Integer> F = (@Qual Integer a) -> a;
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void interface_noFinding() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            interface Test {
+              @Qual
+              Object frobnicator();
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void recordWithExplicitlyAnnotatedConstructor_noFinding() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            import javax.inject.Inject;
+
+            record Test(@Qual int x) {
+              @Inject
+              Test {}
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void recordWithoutExplicitlyAnnotatedConstructor_finding() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            import javax.inject.Inject;
+
+            // BUG: Diagnostic contains:
+            record Test(@Qual int x) {
+              Test {}
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void jukitoTestRunner_noFinding() {
+    helper
+        .addSourceLines(
+            "org/jukito/All.java",
+            """
+            package org.jukito;
+
+            import java.lang.annotation.Retention;
+            import java.lang.annotation.RetentionPolicy;
+            import javax.inject.Qualifier;
+
+            @Retention(RetentionPolicy.RUNTIME)
+            @Qualifier
+            public @interface All {}
+            """)
+        .addSourceLines(
+            "org/jukito/JukitoRunner.java",
+            """
+            package org.jukito;
+
+            import org.junit.runner.Runner;
+
+            public abstract class JukitoRunner extends Runner {}
+            """)
+        .addSourceLines(
+            "SubRunner.java",
+            """
+            import org.jukito.JukitoRunner;
+
+            public abstract class SubRunner extends JukitoRunner {}
+            """)
+        .addSourceLines(
+            "JukitoTest.java",
+            """
+            import org.jukito.All;
+            import org.jukito.JukitoRunner;
+            import org.junit.Test;
+            import org.junit.runner.RunWith;
+
+            @RunWith(JukitoRunner.class)
+            public class JukitoTest {
+              @Test
+              void test(@All int x) {}
+            }
+            """)
+        .addSourceLines(
+            "SubrunnerTest.java",
+            """
+            import org.jukito.All;
+            import org.junit.Test;
+            import org.junit.runner.RunWith;
+
+            @RunWith(SubRunner.class)
+            public class SubrunnerTest {
+              @Test
+              void test(@All int x) {}
             }
             """)
         .doTest();

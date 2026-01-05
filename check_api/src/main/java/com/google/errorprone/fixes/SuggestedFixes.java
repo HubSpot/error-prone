@@ -34,7 +34,6 @@ import static com.sun.tools.javac.util.Position.NOPOS;
 import static java.util.Arrays.stream;
 import static java.util.stream.Collectors.joining;
 
-import com.google.auto.value.AutoValue;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Objects;
@@ -109,7 +108,6 @@ import com.sun.tools.javac.util.Position;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.annotation.Target;
-import java.lang.reflect.Method;
 import java.net.JarURLConnection;
 import java.net.URI;
 import java.util.ArrayDeque;
@@ -498,15 +496,6 @@ public final class SuggestedFixes {
 
   private static int endPosition(
       DCTree.DCEndPosTree<?> node, DCTree.DCDocComment comment, DocTreePath docPath) {
-    try {
-      Method method = DCTree.DCEndPosTree.class.getMethod("getEndPos", DCTree.DCDocComment.class);
-      return (int) method.invoke(node, comment);
-    } catch (NoSuchMethodException e) {
-      // continue below
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
-
     JCDiagnostic.DiagnosticPosition pos = node.pos(comment);
     EndPosTable endPositions =
         ((JCCompilationUnit) docPath.getTreePath().getCompilationUnit()).endPositions;
@@ -592,7 +581,7 @@ public final class SuggestedFixes {
           // is just as good.
           return LAST.pos(tree, state);
         }
-        JCTree firstMember = (JCTree) members.get(0);
+        JCTree firstMember = (JCTree) members.getFirst();
         int firstMemberStart = firstMember.getStartPosition();
         List<ErrorProneToken> methodTokens = state.getOffsetTokens(classStart, firstMemberStart);
         ListIterator<ErrorProneToken> iter = methodTokens.listIterator(methodTokens.size());
@@ -754,7 +743,7 @@ public final class SuggestedFixes {
     int endPos =
         tree.getArguments().isEmpty()
             ? state.getEndPosition(tree)
-            : getStartPosition(tree.getArguments().get(0));
+            : getStartPosition(tree.getArguments().getFirst());
     List<ErrorProneToken> tokens = state.getOffsetTokens(startPos, endPos);
     for (ErrorProneToken token : Lists.reverse(tokens)) {
       if (token.kind() == TokenKind.IDENTIFIER && token.name().equals(identifier)) {
@@ -779,7 +768,7 @@ public final class SuggestedFixes {
     int endPos =
         tree.getMembers().stream()
             .map(state::getEndPosition)
-            .filter(p -> p != NOPOS)
+            .filter(p -> p != NOPOS && p != basePos)
             .findFirst()
             .orElse(state.getEndPosition(tree));
     List<ErrorProneToken> tokens = state.getOffsetTokens(basePos, endPos);
@@ -919,7 +908,7 @@ public final class SuggestedFixes {
             .map(state::getSourceForNode)
             .collect(joining(", "));
     return SuggestedFix.replace(
-        getStartPosition(tree.getThrows().get(0)),
+        getStartPosition(tree.getThrows().getFirst()),
         state.getEndPosition(getLast(tree.getThrows())),
         replacement);
   }
@@ -1142,10 +1131,10 @@ public final class SuggestedFixes {
                   .replaceFirst("\\(\\)", "(" + parameterPrefix + newArgument(newValues) + ")"));
     }
     Optional<ExpressionTree> maybeExistingArgument = findArgument(annotation, parameterName);
-    if (!maybeExistingArgument.isPresent()) {
+    if (maybeExistingArgument.isEmpty()) {
       return SuggestedFix.builder()
           .prefixWith(
-              annotation.getArguments().get(0),
+              annotation.getArguments().getFirst(),
               parameterName + " = " + newArgument(newValues) + ", ");
     }
 
@@ -1202,10 +1191,10 @@ public final class SuggestedFixes {
                   + ')');
     }
     Optional<ExpressionTree> maybeExistingArgument = findArgument(annotation, parameterName);
-    if (!maybeExistingArgument.isPresent()) {
+    if (maybeExistingArgument.isEmpty()) {
       return SuggestedFix.builder()
           .prefixWith(
-              annotation.getArguments().get(0),
+              annotation.getArguments().getFirst(),
               parameterName + " = " + newArgument(newValues) + ", ");
     }
 
@@ -1385,7 +1374,7 @@ public final class SuggestedFixes {
       } catch (IOException e) {
         throw new UncheckedIOException(e);
       }
-      return Result.create(diagnosticListener.getDiagnostics());
+      return new Result(diagnosticListener.getDiagnostics());
     }
 
     private Context createContext() {
@@ -1458,14 +1447,7 @@ public final class SuggestedFixes {
     }
 
     /** The result of the compilation. */
-    @AutoValue
-    public abstract static class Result {
-      public abstract List<Diagnostic<? extends JavaFileObject>> diagnostics();
-
-      private static Result create(List<Diagnostic<? extends JavaFileObject>> diagnostics) {
-        return new AutoValue_SuggestedFixes_FixCompiler_Result(diagnostics);
-      }
-    }
+    public record Result(List<Diagnostic<? extends JavaFileObject>> diagnostics) {}
   }
 
   private static final ImmutableSet<String> SOURCE_TARGET_OPTIONS =
@@ -1677,19 +1659,19 @@ public final class SuggestedFixes {
     //  int deletingThisVariable;
     // }
     // Treat this as morally part of the previous member.
-    if (!tokens.isEmpty() && tokens.get(0).kind() == TokenKind.SEMI) {
+    if (!tokens.isEmpty() && tokens.getFirst().kind() == TokenKind.SEMI) {
       tokens = tokens.subList(1, tokens.size());
     }
     if (tokens.isEmpty()) {
       return SuggestedFix.replace(tree, replacement);
     }
-    if (tokens.get(0).comments().isEmpty()) {
-      return SuggestedFix.replace(tokens.get(0).pos(), state.getEndPosition(tree), replacement);
+    if (tokens.getFirst().comments().isEmpty()) {
+      return SuggestedFix.replace(tokens.getFirst().pos(), state.getEndPosition(tree), replacement);
     }
     ImmutableList<ErrorProneComment> comments =
         ImmutableList.sortedCopyOf(
             Comparator.<ErrorProneComment>comparingInt(c -> c.getSourcePos(0)).reversed(),
-            tokens.get(0).comments());
+            tokens.getFirst().comments());
     int startPos = getStartPosition(tree);
     // This can happen for desugared expressions like `int a, b;`.
     if (startPos < startTokenization) {

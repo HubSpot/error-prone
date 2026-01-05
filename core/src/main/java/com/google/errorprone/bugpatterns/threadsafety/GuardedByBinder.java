@@ -46,13 +46,12 @@ import org.jspecify.annotations.Nullable;
  * @author cushon@google.com (Liam Miller-Cushon)
  */
 public final class GuardedByBinder {
-
   /**
    * Creates a {@link GuardedByExpression} from a bound AST node, or returns {@code
    * Optional.empty()} if the AST node doesn't correspond to a 'simple' lock expression.
    */
   public static Optional<GuardedByExpression> bindExpression(
-      JCTree.JCExpression exp, VisitorState visitorState, GuardedByFlags flags) {
+      JCTree.JCExpression exp, VisitorState visitorState) {
     try {
       return Optional.of(
           bind(
@@ -61,8 +60,7 @@ public final class GuardedByBinder {
                   ALREADY_BOUND_RESOLVER,
                   ASTHelpers.getSymbol(visitorState.findEnclosing(ClassTree.class)),
                   visitorState.getTypes(),
-                  visitorState.getNames(),
-                  flags)));
+                  visitorState.getNames())));
     } catch (IllegalGuardedBy expected) {
       return Optional.empty();
     }
@@ -70,7 +68,7 @@ public final class GuardedByBinder {
 
   /** Creates a {@link GuardedByExpression} from a string, given the resolution context. */
   public static Optional<GuardedByExpression> bindString(
-      String string, GuardedBySymbolResolver resolver, GuardedByFlags flags) {
+      String string, GuardedBySymbolResolver resolver) {
     try {
       return Optional.of(
           bind(
@@ -79,8 +77,7 @@ public final class GuardedByBinder {
                   resolver,
                   resolver.enclosingClass(),
                   resolver.visitorState().getTypes(),
-                  resolver.visitorState().getNames(),
-                  flags)));
+                  resolver.visitorState().getNames())));
     } catch (IllegalGuardedBy expected) {
       return Optional.empty();
     }
@@ -91,20 +88,16 @@ public final class GuardedByBinder {
     final ClassSymbol thisClass;
     final Types types;
     final Names names;
-    final GuardedByFlags flags;
 
-    public BinderContext(
-        Resolver resolver, ClassSymbol thisClass, Types types, Names names, GuardedByFlags flags) {
+    BinderContext(Resolver resolver, ClassSymbol thisClass, Types types, Names names) {
       this.resolver = resolver;
       this.thisClass = thisClass;
       this.types = types;
       this.names = names;
-      this.flags = flags;
     }
 
-    public static BinderContext of(
-        Resolver resolver, ClassSymbol thisClass, Types types, Names names, GuardedByFlags flags) {
-      return new BinderContext(resolver, thisClass, types, names, flags);
+    static BinderContext of(Resolver resolver, ClassSymbol thisClass, Types types, Names names) {
+      return new BinderContext(resolver, thisClass, types, names);
     }
   }
 
@@ -192,16 +185,14 @@ public final class GuardedByBinder {
               node.getArguments().isEmpty() && node.getTypeArguments().isEmpty(),
               "Only nullary methods are allowed.");
           ExpressionTree methodSelect = node.getMethodSelect();
-          switch (methodSelect.getKind()) {
-            case IDENTIFIER -> {
-              IdentifierTree identifier = (IdentifierTree) methodSelect;
+          switch (methodSelect) {
+            case IdentifierTree identifier -> {
               Symbol.MethodSymbol method =
                   context.resolver.resolveMethod(node, identifier.getName());
               checkGuardedBy(method != null, identifier.toString());
               return bindSelect(computeBase(context, method), method);
             }
-            case MEMBER_SELECT -> {
-              MemberSelectTree select = (MemberSelectTree) methodSelect;
+            case MemberSelectTree select -> {
               GuardedByExpression base = visit(select.getExpression(), context);
               checkGuardedBy(base != null, select.getExpression().toString());
               Symbol.MethodSymbol method =

@@ -96,7 +96,7 @@ public final class JUnitIncompatibleType extends BugChecker implements MethodInv
   /** Returns the number of arguments to skip so we ignore {@code message} arguments. */
   private static int argumentsToSkip(MethodInvocationTree tree, VisitorState state) {
     return isSameType(
-            getSymbol(tree).getParameters().get(0).type, state.getSymtab().stringType, state)
+            getSymbol(tree).getParameters().getFirst().type, state.getSymtab().stringType, state)
         ? 1
         : 0;
   }
@@ -119,10 +119,9 @@ public final class JUnitIncompatibleType extends BugChecker implements MethodInv
     return buildDescription(tree)
         .setMessage(
             String.format(
-                "The types of this assertion are mismatched: type `%s` is not compatible with `%s`"
-                    + compatibilityReport.extraReason(),
-                sourceTypeName,
-                targetTypeName))
+                "The types of this assertion are mismatched: type `%s` is not compatible with"
+                    + " `%s`%s",
+                sourceTypeName, targetTypeName, compatibilityReport.extraReason()))
         .build();
   }
 }

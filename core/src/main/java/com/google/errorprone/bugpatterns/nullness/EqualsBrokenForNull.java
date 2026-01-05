@@ -132,11 +132,11 @@ public class EqualsBrokenForNull extends BugChecker implements MethodTreeMatcher
        */
       private @Nullable VarSymbol findVariable(Tree tree) {
         while (tree != null) {
-          switch (tree.getKind()) {
-            case TYPE_CAST -> tree = ((TypeCastTree) tree).getExpression();
-            case PARENTHESIZED -> tree = ((ParenthesizedTree) tree).getExpression();
-            case IDENTIFIER -> {
-              Symbol symbol = getSymbol(tree);
+          switch (tree) {
+            case TypeCastTree typeCastTree -> tree = typeCastTree.getExpression();
+            case ParenthesizedTree parenthesizedTree -> tree = parenthesizedTree.getExpression();
+            case IdentifierTree identifierTree -> {
+              Symbol symbol = getSymbol(identifierTree);
               return symbol instanceof VarSymbol varSymbol ? varSymbol : null;
             }
             default -> {
@@ -151,7 +151,7 @@ public class EqualsBrokenForNull extends BugChecker implements MethodTreeMatcher
       return NO_MATCH;
     }
     String stringAddition = String.format("if (%s == null) { return false; }\n", varSymbol.name);
-    Fix fix = SuggestedFix.prefixWith(tree.getBody().getStatements().get(0), stringAddition);
+    Fix fix = SuggestedFix.prefixWith(tree.getBody().getStatements().getFirst(), stringAddition);
     return describeMatch(tree, fix);
   }
 }
