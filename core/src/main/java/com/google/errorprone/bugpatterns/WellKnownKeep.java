@@ -141,6 +141,10 @@ public final class WellKnownKeep {
 
   private final ImmutableSet<String> exemptingMethodAnnotations;
 
+  public static WellKnownKeep getDefault() {
+    return new WellKnownKeep(ErrorProneFlags.empty());
+  }
+
   @Inject
   WellKnownKeep(ErrorProneFlags flags) {
     this.exemptingMethodAnnotations =
