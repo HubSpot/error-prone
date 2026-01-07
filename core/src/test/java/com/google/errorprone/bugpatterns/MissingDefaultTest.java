@@ -16,7 +16,6 @@
 
 package com.google.errorprone.bugpatterns;
 
-import static com.google.common.truth.TruthJUnit.assume;
 import static com.google.errorprone.BugCheckerRefactoringTestHelper.TestMode.TEXT_MATCH;
 
 import com.google.errorprone.BugCheckerRefactoringTestHelper;
@@ -316,7 +315,6 @@ public class MissingDefaultTest {
 
   @Test
   public void exhaustiveExpressionSwitch() {
-    assume().that(Runtime.version().feature()).isAtLeast(21);
     compilationHelper
         .addSourceLines(
             "Test.java",
@@ -336,6 +334,35 @@ public class MissingDefaultTest {
                   case B b -> System.err.println(b);
                 }
                 ;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void arrowSwitchPositive() {
+    BugCheckerRefactoringTestHelper.newInstance(MissingDefault.class, getClass())
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              void f(int i) {
+                switch (i) {
+                  case 0 -> System.err.println(i);
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              void f(int i) {
+                switch (i) {
+                  case 0 -> System.err.println(i);
+                  default -> {}
+                }
               }
             }
             """)

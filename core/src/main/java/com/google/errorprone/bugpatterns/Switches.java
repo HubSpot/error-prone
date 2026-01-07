@@ -56,7 +56,7 @@ final class Switches {
     if (defaultCase.getBody() != null) {
       endPos = getStartPosition(defaultCase.getBody());
     } else if (!defaultCase.getStatements().isEmpty()) {
-      endPos = getStartPosition(defaultCase.getStatements().get(0));
+      endPos = getStartPosition(defaultCase.getStatements().getFirst());
     } else if (indexOfDefault + 1 < switchTree.getCases().size()) {
       endPos = getStartPosition(switchTree.getCases().get(indexOfDefault + 1));
     } else {
@@ -95,7 +95,12 @@ final class Switches {
 
     // End position will be the start of the body of the default case. In switch expressions the
     // default case will always have a body as it cannot be combined with other cases.
-    int endPos = getStartPosition(defaultCase.getBody());
+    int endPos =
+        getStartPosition(
+            switch (defaultCase.getCaseKind()) {
+              case STATEMENT -> defaultCase.getStatements().getFirst();
+              case RULE -> defaultCase.getBody();
+            });
 
     var tokens =
         ErrorProneTokens.getTokens(

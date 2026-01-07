@@ -161,7 +161,7 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
   public Description matchMemberReference(MemberReferenceTree tree, VisitorState state) {
     Description description =
         matcher.get().matches(tree, state) ? describeReturnValueIgnored(tree, state) : NO_MATCH;
-    if (!lostType(state).isPresent() || !description.equals(NO_MATCH)) {
+    if (lostType(state).isEmpty() || !description.equals(NO_MATCH)) {
       return description;
     }
     if (lostReferenceTreeMatcher.get().matches(tree, state)) {
@@ -264,7 +264,7 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
     ImmutableMap.Builder<String, SuggestedFix> fixes = ImmutableMap.builder();
     if (MOCKITO_VERIFY.matches(invocationTree, state)) {
       ExpressionTree maybeCallToMock =
-          ((MethodInvocationTree) invocationTree).getArguments().get(0);
+          ((MethodInvocationTree) invocationTree).getArguments().getFirst();
       if (maybeCallToMock instanceof MethodInvocationTree methodInvocationTree) {
         ExpressionTree maybeMethodSelectOnMock = methodInvocationTree.getMethodSelect();
         if (maybeMethodSelectOnMock instanceof MemberSelectTree maybeSelectOnMock) {
@@ -335,7 +335,7 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
      * this a constructor call or build() call?"
      */
     if (parent instanceof ExpressionStatementTree
-        && !constantExpressions.constantExpression(invocationTree, state).isPresent()
+        && constantExpressions.constantExpression(invocationTree, state).isEmpty()
         && considerBlanketFixes) {
       ImmutableSet<String> identifiersInScope =
           findAllIdents(state).stream().map(v -> v.name.toString()).collect(toImmutableSet());
@@ -407,7 +407,7 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
 
   private Description checkLostType(MethodInvocationTree tree, VisitorState state) {
     Optional<Type> optionalType = lostType(state);
-    if (!optionalType.isPresent()) {
+    if (optionalType.isEmpty()) {
       return NO_MATCH;
     }
 
@@ -420,7 +420,7 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
         && !returnedFutureType.hasTag(TypeTag.ERROR) // work around error-prone#996
         && !returnedFutureType.isRaw()) {
       if (isSubtype(
-          getUpperBound(returnedFutureType.getTypeArguments().get(0), state.getTypes()),
+          getUpperBound(returnedFutureType.getTypeArguments().getFirst(), state.getTypes()),
           lostType,
           state)) {
         return buildDescription(tree)
@@ -567,7 +567,7 @@ public abstract class AbstractReturnValueIgnored extends BugChecker
   @Override
   public Description matchReturn(ReturnTree tree, VisitorState state) {
     Optional<Type> optionalType = lostType(state);
-    if (!optionalType.isPresent()) {
+    if (optionalType.isEmpty()) {
       return NO_MATCH;
     }
     Type objectType = state.getSymtab().objectType;

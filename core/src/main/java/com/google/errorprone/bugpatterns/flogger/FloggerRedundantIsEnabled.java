@@ -80,7 +80,7 @@ public class FloggerRedundantIsEnabled extends BugChecker implements IfTreeMatch
 
     // If then-block contains exactly one expression and it is a `log` invocation, extract it.
     Optional<MethodInvocationTree> methodCall = extractLoneLogInvocation(ifTree, state);
-    if (!methodCall.isPresent()) {
+    if (methodCall.isEmpty()) {
       return NO_MATCH;
     }
     MethodInvocationTree logInvocation = methodCall.get();
@@ -187,10 +187,9 @@ public class FloggerRedundantIsEnabled extends BugChecker implements IfTreeMatch
 
     private final ExpressionTree logInvocation;
     private final VisitorState state;
-    public Optional<SuggestedFix> fix;
+    Optional<SuggestedFix> fix;
 
-    public LoggerIsEnabledBinaryIfConditionScanner(
-        ExpressionTree logInvocation, VisitorState state) {
+    LoggerIsEnabledBinaryIfConditionScanner(ExpressionTree logInvocation, VisitorState state) {
       this.logInvocation = logInvocation;
       this.state = state;
       this.fix = Optional.empty();

@@ -46,6 +46,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
+import javax.inject.Inject;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.type.TypeKind;
@@ -54,12 +55,30 @@ import org.jspecify.annotations.Nullable;
 /** Analyzes types for deep immutability. */
 public final class ImmutableAnalysis {
 
+  /** Factory for {@link ImmutableAnalysis}. */
+  public static final class Factory {
+    private final WellKnownMutability wellKnownMutability;
+
+    @Inject
+    Factory(WellKnownMutability wellKnownMutability) {
+      this.wellKnownMutability = wellKnownMutability;
+    }
+
+    public ImmutableAnalysis create(
+        BiPredicate<Symbol, VisitorState> suppressionChecker,
+        VisitorState state,
+        ImmutableSet<String> immutableAnnotations) {
+      return new ImmutableAnalysis(
+          suppressionChecker, state, wellKnownMutability, immutableAnnotations);
+    }
+  }
+
   private final BiPredicate<Symbol, VisitorState> suppressionChecker;
   private final VisitorState state;
   private final WellKnownMutability wellKnownMutability;
   private final ThreadSafety threadSafety;
 
-  ImmutableAnalysis(
+  private ImmutableAnalysis(
       BiPredicate<Symbol, VisitorState> suppressionChecker,
       VisitorState state,
       WellKnownMutability wellKnownMutability,
@@ -69,10 +88,11 @@ public final class ImmutableAnalysis {
     this.wellKnownMutability = wellKnownMutability;
     this.threadSafety =
         ThreadSafety.builder()
-            .setPurpose(Purpose.FOR_IMMUTABLE_CHECKER)
+            .purpose(Purpose.FOR_IMMUTABLE_CHECKER)
+            .markerAnnotationInherited(true)
             .knownTypes(wellKnownMutability)
             .markerAnnotations(immutableAnnotations)
-            .typeParameterAnnotation(ImmutableTypeParameter.class)
+            .typeParameterAnnotation(ImmutableSet.of(ImmutableTypeParameter.class.getName()))
             .build(state);
   }
 
@@ -172,7 +192,8 @@ public final class ImmutableAnalysis {
       return Violation.absent();
     }
     if (WellKnownMutability.isAnnotation(state, type)) {
-      // TODO(b/25630189): add enforcement
+      // Annotations are always immutable
+      // (https://errorprone.info/bugpattern/ImmutableAnnotationChecker)
       return Violation.absent();
     }
 

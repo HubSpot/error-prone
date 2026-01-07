@@ -25,9 +25,7 @@ import static com.google.errorprone.matchers.Matchers.isSameType;
 import static com.google.errorprone.matchers.Matchers.kindIs;
 import static com.google.errorprone.util.ASTHelpers.getReceiver;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
-import static com.google.errorprone.util.ASTHelpers.shouldKeep;
 
-import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableListMultimap;
 import com.google.common.collect.ImmutableMap;
@@ -64,6 +62,7 @@ import java.util.NavigableSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
+import javax.inject.Inject;
 import javax.lang.model.element.Modifier;
 
 /** Refactoring to suggest Immutable types for member collection that are not mutated. */
@@ -114,16 +113,21 @@ public final class ImmutableMemberCollection extends BugChecker implements Class
 
   // TODO(ashishkedia) : Share this with ImmutableSetForContains.
   private static final Matcher<Tree> EXCLUSIONS =
-      anyOf(
-          (t, s) -> shouldKeep(t),
-          hasAnnotationWithSimpleName("Bind"),
-          hasAnnotationWithSimpleName("Inject"));
+      anyOf(hasAnnotationWithSimpleName("Bind"), hasAnnotationWithSimpleName("Inject"));
+
+  private final WellKnownKeep wellKnownKeep;
+
+  @Inject
+  ImmutableMemberCollection(WellKnownKeep wellKnownKeep) {
+    this.wellKnownKeep = wellKnownKeep;
+  }
 
   @Override
   public Description matchClass(ClassTree classTree, VisitorState state) {
     ImmutableMap<Symbol, ReplaceableVar> replaceableVars =
         classTree.getMembers().stream()
             .filter(member -> PRIVATE_FINAL_VAR_MATCHER.matches(member, state))
+            .filter(member -> !wellKnownKeep.shouldKeep(member))
             .filter(member -> !EXCLUSIONS.matches(member, state))
             .filter(member -> !isSuppressed(member, state))
             .map(VariableTree.class::cast)
@@ -217,17 +221,9 @@ public final class ImmutableMemberCollection extends BugChecker implements Class
     }
   }
 
-  @AutoValue
-  abstract static class ReplaceableVar {
-    abstract Symbol symbol();
-
-    abstract ReplaceableType<?> type();
-
-    abstract Tree declaredType();
-
+  record ReplaceableVar(Symbol symbol, ReplaceableType<?> type, Tree declaredType) {
     static ReplaceableVar create(VariableTree variableTree, ReplaceableType<?> type) {
-      return new AutoValue_ImmutableMemberCollection_ReplaceableVar(
-          getSymbol(variableTree), type, variableTree.getType());
+      return new ReplaceableVar(getSymbol(variableTree), type, variableTree.getType());
     }
 
     private SuggestedFix getFix(ImmutableSet<Tree> initTrees, VisitorState state) {

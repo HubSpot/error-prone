@@ -62,14 +62,14 @@ public final class RedundantOverride extends BugChecker implements MethodTreeMat
     Types types = state.getTypes();
     Optional<MethodSymbol> maybeSuperMethod =
         streamSuperMethods(methodSymbol, types).filter(t -> !t.owner.isInterface()).findFirst();
-    if (!maybeSuperMethod.isPresent()) {
+    if (maybeSuperMethod.isEmpty()) {
       return NO_MATCH;
     }
     MethodSymbol superMethod = maybeSuperMethod.get();
     if (tree.getBody() == null || tree.getBody().getStatements().size() != 1) {
       return NO_MATCH;
     }
-    StatementTree statement = tree.getBody().getStatements().get(0);
+    StatementTree statement = tree.getBody().getStatements().getFirst();
     ExpressionTree expression = getSingleInvocation(statement);
     if (expression == null) {
       return NO_MATCH;

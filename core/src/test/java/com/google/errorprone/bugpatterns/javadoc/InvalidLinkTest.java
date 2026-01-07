@@ -227,4 +227,21 @@ interface Test {
         .setArgs("--release", "22")
         .doTest();
   }
+
+  // https://bugs.openjdk.org/browse/JDK-8371248
+  @Test
+  public void crash() {
+    assume().that(Runtime.version().feature()).isLessThan(26);
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            public class Test {
+              // BUG: Diagnostic contains:
+              /** {@link double.NAN} */
+              static void foo() {}
+            }
+            """)
+        .doTest();
+  }
 }

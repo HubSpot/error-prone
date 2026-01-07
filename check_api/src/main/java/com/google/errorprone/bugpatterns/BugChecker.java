@@ -36,7 +36,6 @@ import com.google.errorprone.fixes.Fix;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Suppressible;
 import com.google.errorprone.suppliers.Supplier;
-import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.AnnotatedTypeTree;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ArrayAccessTree;
@@ -53,7 +52,10 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.ConditionalExpressionTree;
+import com.sun.source.tree.ConstantCaseLabelTree;
 import com.sun.source.tree.ContinueTree;
+import com.sun.source.tree.DeconstructionPatternTree;
+import com.sun.source.tree.DefaultCaseLabelTree;
 import com.sun.source.tree.DoWhileLoopTree;
 import com.sun.source.tree.EmptyStatementTree;
 import com.sun.source.tree.EnhancedForLoopTree;
@@ -80,6 +82,7 @@ import com.sun.source.tree.OpensTree;
 import com.sun.source.tree.PackageTree;
 import com.sun.source.tree.ParameterizedTypeTree;
 import com.sun.source.tree.ParenthesizedTree;
+import com.sun.source.tree.PatternCaseLabelTree;
 import com.sun.source.tree.PrimitiveTypeTree;
 import com.sun.source.tree.ProvidesTree;
 import com.sun.source.tree.RequiresTree;
@@ -108,9 +111,7 @@ import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import com.sun.tools.javac.util.Name;
 import java.io.Serializable;
 import java.lang.annotation.Annotation;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiPredicate;
@@ -270,37 +271,6 @@ public abstract class BugChecker implements Suppressible, Serializable {
     return checkSuppression.test(annotations, s);
   }
 
-  @Override
-  public boolean inspectGeneratedCode() {
-    return info.inspectGeneratedCode();
-  }
-
-  /**
-   * @deprecated use {@link #isSuppressed(Tree, VisitorState)} instead
-   */
-  @Deprecated
-  public boolean isSuppressed(Tree tree) {
-    return isSuppressed(ASTHelpers.getAnnotation(tree, SuppressWarnings.class));
-  }
-
-  /**
-   * @deprecated use {@link #isSuppressed(Symbol, VisitorState)} instead
-   */
-  @Deprecated
-  public boolean isSuppressed(Symbol symbol) {
-    return isSuppressed(ASTHelpers.getAnnotation(symbol, SuppressWarnings.class));
-  }
-
-  private boolean isSuppressed(SuppressWarnings suppression) {
-    if (suppression == null || !supportsSuppressWarnings()) {
-      return false;
-    }
-
-    List<String> suppressions = Arrays.asList(suppression.value());
-    // TODO: generated Immutable sources contain @SuppressWarnings({"all"})
-    return /* suppressions.contains("all") || */ !Collections.disjoint(suppressions, allNames());
-  }
-
   /**
    * Returns true if the given tree is annotated with a {@code @SuppressWarnings} that disables this
    * bug checker.
@@ -429,8 +399,20 @@ public abstract class BugChecker implements Suppressible, Serializable {
     Description matchConditionalExpression(ConditionalExpressionTree tree, VisitorState state);
   }
 
+  public interface ConstantCaseLabelTreeMatcher extends Suppressible {
+    Description matchConstantCaseLabel(ConstantCaseLabelTree tree, VisitorState state);
+  }
+
   public interface ContinueTreeMatcher extends Suppressible {
     Description matchContinue(ContinueTree tree, VisitorState state);
+  }
+
+  public interface DeconstructionPatternTreeMatcher extends Suppressible {
+    Description matchDeconstructionPattern(DeconstructionPatternTree tree, VisitorState state);
+  }
+
+  public interface DefaultCaseLabelTreeMatcher extends Suppressible {
+    Description matchDefaultCaseLabel(DefaultCaseLabelTree tree, VisitorState state);
   }
 
   public interface DoWhileLoopTreeMatcher extends Suppressible {
@@ -540,6 +522,10 @@ public abstract class BugChecker implements Suppressible, Serializable {
 
   public interface ParenthesizedTreeMatcher extends Suppressible {
     Description matchParenthesized(ParenthesizedTree tree, VisitorState state);
+  }
+
+  public interface PatternCaseLabelTreeMatcher extends Suppressible {
+    Description matchPatternCaseLabel(PatternCaseLabelTree tree, VisitorState state);
   }
 
   public interface PrimitiveTypeTreeMatcher extends Suppressible {

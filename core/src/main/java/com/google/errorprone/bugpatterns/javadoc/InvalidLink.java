@@ -148,17 +148,25 @@ public final class InvalidLink extends BugChecker
       Element element = null;
       Log log = Log.instance(state.context);
       // Install a deferred diagnostic handler before calling DocTrees.getElement(DocTreePath)
-      // TODO(cushon): revert if https://bugs.openjdk.java.net/browse/JDK-8248117 is fixed
+
       Log.DeferredDiagnosticHandler deferredDiagnosticHandler = deferredDiagnosticHandler(log);
+      boolean crashed = false;
       try {
         element =
             JavacTrees.instance(state.context)
                 .getElement(new DocTreePath(getCurrentPath(), linkTree.getReference()));
       } catch (NullPointerException | AssertionError e) {
-        // TODO(b/176098078): remove once JDK 12 is the minimum supported version
-        // https://bugs.openjdk.java.net/browse/JDK-8200432
+        crashed = true;
       } finally {
         log.popDiagnosticHandler(deferredDiagnosticHandler);
+      }
+      if (crashed) {
+        // If the @link crashed javac, report a finding.
+        // TODO: cushon - remove if https://bugs.openjdk.org/browse/JDK-8371248 is fixed
+        state.reportMatch(
+            buildDescription(diagnosticPosition(getCurrentPath(), state))
+                .addFix(replace(linkTree, String.format("{@code %s}", reference), state))
+                .build());
       }
       // Don't warn about fully qualified types; they won't always be known at compile-time.
       if (element != null || reference.contains(".")) {

@@ -19,6 +19,7 @@ package com.google.errorprone;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
+import static com.google.errorprone.util.ASTHelpers.hasExplicitSource;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
@@ -554,10 +555,10 @@ public class VisitorState {
    *     unavailable (e.g. for generated or desugared AST nodes)
    */
   public @Nullable String getSourceForNode(Tree tree) {
-    int start = ((JCTree) tree).getStartPosition();
+    int start = getStartPosition(tree);
     int end = getEndPosition(tree);
     CharSequence source = getSourceCode();
-    if (end == -1) {
+    if (!hasExplicitSource(tree, this)) {
       return null;
     }
     checkArgument(start >= 0, "invalid start position (%s) for: %s", start, tree);

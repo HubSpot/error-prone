@@ -21,9 +21,15 @@ import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.common.collect.Streams.concat;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.fixes.SuggestedFix.mergeFixes;
+import static com.google.errorprone.matchers.ChildMultiMatcher.MatchType.AT_LEAST_ONE;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
+import static com.google.errorprone.matchers.JUnitMatchers.TEST_CASE;
+import static com.google.errorprone.matchers.JUnitMatchers.isJUnit4TestRunnerOfType;
+import static com.google.errorprone.matchers.Matchers.annotations;
+import static com.google.errorprone.matchers.Matchers.hasArgumentWithValue;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
+import static com.google.errorprone.util.ASTHelpers.isRecord;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
 
 import com.google.common.collect.ImmutableList;
@@ -34,6 +40,7 @@ import com.google.errorprone.bugpatterns.BugChecker.MethodTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.VariableTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
+import com.google.errorprone.matchers.MultiMatcher;
 import com.google.errorprone.suppliers.Supplier;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ClassTree;
@@ -64,6 +71,12 @@ public final class UnnecessaryQualifier extends BugChecker
     }
 
     var enclosingClass = state.findEnclosing(ClassTree.class);
+    if (getSymbol(enclosingClass).isInterface()) {
+      // This is a sad admission of failure, and also not foolproof. Dagger dependencies can be
+      // declared in interfaces with no annotations to let us tell, or components can have
+      // innocent-looking supertypes.
+      return NO_MATCH;
+    }
     if (CLASS_ANNOTATIONS_EXEMPTING_METHODS.stream()
         .anyMatch(anno -> hasAnnotation(enclosingClass, anno, state))) {
       return NO_MATCH;
@@ -80,8 +93,27 @@ public final class UnnecessaryQualifier extends BugChecker
     var symbol = getSymbol(tree);
     switch (symbol.getKind()) {
       case FIELD -> {
-        if (INJECTION_FIELDS.stream().anyMatch(ip -> hasAnnotation(tree, ip, state))) {
+        if (INJECTION_FIELDS.stream().anyMatch(ip -> hasAnnotation(tree, ip, state))
+            || tree.getModifiers().getAnnotations().stream()
+                .anyMatch(
+                    anno ->
+                        INJECTION_PREFIXES.stream()
+                            .anyMatch(
+                                p -> getSymbol(anno).getSimpleName().toString().startsWith(p)))) {
           return NO_MATCH;
+        }
+        if (isRecord(symbol)) {
+          var clazzTree = state.findEnclosing(ClassTree.class);
+          if (clazzTree.getMembers().stream()
+              .anyMatch(
+                  m -> {
+                    var sym = getSymbol(m);
+                    return sym.isConstructor()
+                        && isRecord(sym) // canonical record constructor
+                        && INJECTION_METHODS.stream().anyMatch(ip -> hasAnnotation(m, ip, state));
+                  })) {
+            return NO_MATCH;
+          }
         }
       }
       case PARAMETER -> {
@@ -110,6 +142,10 @@ public final class UnnecessaryQualifier extends BugChecker
           return NO_MATCH;
         }
         var enclosingClass = state.findEnclosing(ClassTree.class);
+        if (TEST_CASE.matches(method, state) && HAS_JUKITO_RUNNER.matches(enclosingClass, state)) {
+          return NO_MATCH;
+        }
+
         if (CLASS_ANNOTATIONS_EXEMPTING_METHODS.stream()
             .anyMatch(anno -> hasAnnotation(enclosingClass, anno, state))) {
           return NO_MATCH;
@@ -122,9 +158,16 @@ public final class UnnecessaryQualifier extends BugChecker
     return deleteAnnotations(annotations);
   }
 
+  private static final MultiMatcher<ClassTree, AnnotationTree> HAS_JUKITO_RUNNER =
+      annotations(
+          AT_LEAST_ONE,
+          hasArgumentWithValue(
+              "value", isJUnit4TestRunnerOfType(ImmutableSet.of("org.jukito.JukitoRunner"))));
+
   private Description deleteAnnotations(ImmutableList<AnnotationTree> annotations) {
     return describeMatch(
-        annotations.get(0), annotations.stream().map(SuggestedFix::delete).collect(mergeFixes()));
+        annotations.getFirst(),
+        annotations.stream().map(SuggestedFix::delete).collect(mergeFixes()));
   }
 
   private static ImmutableList<AnnotationTree> getQualifiers(
@@ -172,6 +215,7 @@ public final class UnnecessaryQualifier extends BugChecker
               Stream.of(
                   // keep-sorted start
                   "com.google.auto.factory.AutoFactory",
+                  "com.google.common.inject.components.OtherRequiredBindings",
                   "com.google.inject.Inject",
                   "dagger.assisted.AssistedInject",
                   "jakarta.inject.Inject",
@@ -185,17 +229,13 @@ public final class UnnecessaryQualifier extends BugChecker
   private static final ImmutableSet<String> INJECTION_FIELDS =
       ImmutableSet.of(
           // keep-sorted start
-          "com.google.inject.Inject",
-          "dagger.Binds",
-          "dagger.BindsInstance",
-          "dagger.hilt.android.testing.BindElementsIntoSet",
-          "dagger.hilt.android.testing.BindValue",
-          "dagger.hilt.android.testing.BindValueIntoMap",
-          "dagger.hilt.android.testing.BindValueIntoSet",
-          "jakarta.inject.Inject",
-          "javax.inject.Inject"
+          // FlagSpec is obviously not an injecty annotation, but it's commonly used with
+          // FlagBinder, at which point qualifiers on the field are relevant.
           // keep-sorted end
           );
+
+  /** Prefixes for annotations on variables which can have qualifiers. */
+  private static final ImmutableSet<String> INJECTION_PREFIXES = ImmutableSet.of("Bind", "Inject");
 
   private static final ImmutableSet<String> CLASS_ANNOTATIONS_EXEMPTING_METHODS =
       ImmutableSet.of(
@@ -206,7 +246,7 @@ public final class UnnecessaryQualifier extends BugChecker
           "dagger.Component.Factory",
           "dagger.Subcomponent",
           "dagger.Subcomponent.Builder",
-          "dagger.Subcomponent.Builder.Factory",
+          "dagger.Subcomponent.Factory",
           "dagger.hilt.EntryPoint",
           "dagger.producers.ProductionComponent",
           "dagger.producers.ProductionComponent.Builder",

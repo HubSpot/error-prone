@@ -31,7 +31,6 @@ import static com.sun.source.tree.Tree.Kind.RETURN;
 import static com.sun.source.tree.Tree.Kind.THROW;
 import static java.util.stream.Collectors.joining;
 
-import com.google.auto.value.AutoValue;
 import com.google.common.base.Joiner;
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
@@ -64,6 +63,7 @@ import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LabeledStatementTree;
 import com.sun.source.tree.MemberSelectTree;
+import com.sun.source.tree.PatternCaseLabelTree;
 import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.SwitchTree;
@@ -117,7 +117,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
    * immutable.
    */
   private static final AssignmentSwitchAnalysisResult DEFAULT_ASSIGNMENT_SWITCH_ANALYSIS_RESULT =
-      AssignmentSwitchAnalysisResult.of(
+      new AssignmentSwitchAnalysisResult(
           /* canConvertToAssignmentSwitch= */ false,
           /* precedingVariableDeclaration= */ Optional.empty(),
           /* assignmentTargetOptional= */ Optional.empty(),
@@ -126,13 +126,13 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
 
   /** Default (negative) result for overall analysis. Note that the value is immutable. */
   private static final AnalysisResult DEFAULT_ANALYSIS_RESULT =
-      AnalysisResult.of(
-          /* canConvertDirectlyToExpressionSwitch= */ false,
-          /* canConvertToReturnSwitch= */ false,
-          /* canRemoveDefault= */ false,
+      new AnalysisResult(
+          false,
+          false,
+          false,
           DEFAULT_ASSIGNMENT_SWITCH_ANALYSIS_RESULT,
-          /* groupedWithNextCase= */ ImmutableList.of(),
-          /* symbolsToHoist= */ ImmutableBiMap.of());
+          ImmutableList.of(),
+          ImmutableBiMap.of());
 
   private static final String EQUALS_STRING = "=";
   private static final Matcher<ExpressionTree> COMPILE_TIME_CONSTANT_MATCHER =
@@ -158,6 +158,20 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     NO_CASES_ASSESSED,
     ALL_CASES_QUALIFY,
     SOME_OR_ALL_CASES_DONT_QUALIFY
+  }
+
+  /**
+   * The kind of null/default cases included within a single CaseTree.
+   *
+   * <p>This enum is used to classify whether a CaseTree includes a null and/or default. Referencing
+   * JLS 21 §14.11.1, the `SwitchLabel:` production has specific rules applicable to null/default
+   * cases: `case null, [default]` and `default`. All other scenarios are lumped into KIND_NEITHER.
+   */
+  enum NullDefaultKind {
+    KIND_NULL_AND_DEFAULT,
+    KIND_DEFAULT,
+    KIND_NULL,
+    KIND_NEITHER
   }
 
   private final boolean enableDirectConversion;
@@ -274,31 +288,30 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     // Does each case consist solely of returning a (non-void) expression?
     CaseQualifications returnSwitchCaseQualifications = CaseQualifications.NO_CASES_ASSESSED;
     // Does each case consist solely of a throw or the same symbol assigned in the same way?
-    AssignmentSwitchAnalysisState assignmentSwitchAnalysisState =
-        AssignmentSwitchAnalysisState.of(
-            /* assignmentSwitchCaseQualifications= */ CaseQualifications.NO_CASES_ASSESSED,
-            /* assignmentTargetOptional= */ Optional.empty(),
-            /* assignmentKindOptional= */ Optional.empty(),
-            /* assignmentTreeOptional= */ Optional.empty());
+    Optional<ExpressionTree> assignmentTargetOptional = Optional.empty();
+    Optional<Tree.Kind> assignmentKindOptional = Optional.empty();
+    /* assignmentSwitchCaseQualifications= */
+    /* assignmentTargetOptional= */
+    /* assignmentKindOptional= */
+    /* assignmentTreeOptional= */ AssignmentSwitchAnalysisState assignmentSwitchAnalysisState =
+        new AssignmentSwitchAnalysisState(
+            CaseQualifications.NO_CASES_ASSESSED,
+            assignmentTargetOptional,
+            assignmentKindOptional,
+            Optional.empty());
 
     boolean hasDefaultCase = false;
     // One-pass scan through each case in switch
     for (int caseIndex = 0; caseIndex < cases.size(); caseIndex++) {
       CaseTree caseTree = cases.get(caseIndex);
-      boolean hasCasePattern =
-          caseTree.getLabels().stream()
-              .anyMatch(
-                  caseLabelTree -> caseLabelTree.getKind().name().equals("PATTERN_CASE_LABEL"));
-      if (hasCasePattern) {
-        // Case patterns are not currently supported by the checker.
-        return DEFAULT_ANALYSIS_RESULT;
-      }
-      boolean isDefaultCase = caseTree.getExpressions().isEmpty();
+      NullDefaultKind nullDefaultKind = analyzeCaseForNullAndDefault(caseTree);
+      boolean isDefaultCase =
+          nullDefaultKind.equals(NullDefaultKind.KIND_DEFAULT)
+              || nullDefaultKind.equals(NullDefaultKind.KIND_NULL_AND_DEFAULT);
       isNullCase.set(
           caseIndex,
-          !isDefaultCase
-              && caseTree.getExpressions().stream()
-                  .anyMatch(expressionTree -> expressionTree.getKind() == Kind.NULL_LITERAL));
+          nullDefaultKind.equals(NullDefaultKind.KIND_NULL)
+              || nullDefaultKind.equals(NullDefaultKind.KIND_NULL_AND_DEFAULT));
       hasDefaultCase |= isDefaultCase;
 
       // Null case can never be grouped with a preceding case
@@ -374,9 +387,26 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
 
       // Find any symbols referenced in this case that were defined in a previous case, and thus
       // should be hoisted out of the switch block
-      symbolsDefinedInPreviousCases.keySet().stream()
-          .filter(symbol -> hasReadsOrWritesOfVariableInTree(symbol, caseTree))
-          .forEach(symbol -> symbolsToHoist.put(symbol, symbolsDefinedInPreviousCases.get(symbol)));
+      ImmutableSet<VarSymbol> newSymbolsToHoist =
+          symbolsDefinedInPreviousCases.keySet().stream()
+              .filter(symbol -> hasReadsOrWritesOfVariableInTree(symbol, caseTree))
+              .collect(toImmutableSet());
+
+      // Ensure that hoisting does not conflict with other declared variables in switch scope
+      boolean hasNamingConflict =
+          newSymbolsToHoist.stream()
+              // In principle, this search could be terminated after checking up through `caseTree`
+              // (inclusive) because naming conflicts after that would have caused compile-time
+              // errors.  For simplicity, the search is not restricted.
+              .filter(symbol -> declaresAnotherVariableNamed(symbol, switchTree))
+              .findAny()
+              .isPresent();
+      if (hasNamingConflict) {
+        return DEFAULT_ANALYSIS_RESULT;
+      }
+
+      newSymbolsToHoist.forEach(
+          symbol -> symbolsToHoist.put(symbol, symbolsDefinedInPreviousCases.get(symbol)));
 
       // Analyze for return switch and assignment switch conversion
       returnSwitchCaseQualifications =
@@ -438,11 +468,11 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
                 target -> findCombinableVariableTree(target, precedingStatements, state))
             : Optional.empty();
 
-    return AnalysisResult.of(
+    return new AnalysisResult(
         canConvertDirectlyToExpressionSwitch,
         canConvertToReturnSwitch,
         canRemoveDefault,
-        AssignmentSwitchAnalysisResult.of(
+        new AssignmentSwitchAnalysisResult(
             canConvertToAssignmentSwitch,
             combinableVariableTree,
             assignmentSwitchAnalysisState.assignmentTargetOptional(),
@@ -548,6 +578,32 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
   }
 
   /**
+   * Determines whether the switch statement has a case that declares a local variable with the same
+   * name as the supplied {@code symbol}.
+   */
+  private static boolean declaresAnotherVariableNamed(VarSymbol symbol, SwitchTree switchTree) {
+    return new TreeScanner<Boolean, Void>() {
+      @Override
+      public Boolean visitVariable(VariableTree variableTree, Void unused) {
+        // If the variable is named the same as the symbol, but it's not the original declaration
+        // of the symbol, then there's a name conflict.
+        if (variableTree.getName().contentEquals(symbol.name.toString())) {
+          VarSymbol thisVarSymbol = ASTHelpers.getSymbol(variableTree);
+          if (!thisVarSymbol.equals(symbol)) {
+            return true;
+          }
+        }
+        return super.visitVariable(variableTree, null);
+      }
+
+      @Override
+      public Boolean reduce(@Nullable Boolean left, @Nullable Boolean right) {
+        return Objects.equals(left, true) || Objects.equals(right, true);
+      }
+    }.scan(switchTree, null);
+  }
+
+  /**
    * Renders the Java source code for a [compound] assignment operator. The parameter must be either
    * an {@code AssignmentTree} or a {@code CompoundAssignmentTree}.
    */
@@ -561,6 +617,21 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     JCAssignOp jcAssignOp = (JCAssignOp) tree;
     Pretty pretty = new Pretty(new StringWriter(), /* sourceOutput= */ true);
     return pretty.operatorName(jcAssignOp.getTag().noAssignOp()) + EQUALS_STRING;
+  }
+
+  /**
+   * Renders the Java source prefix needed for the supplied {@code nullDefaultKind}, incorporating
+   * whether the `default` case should be removed.
+   */
+  private static String renderNullDefaultKindPrefix(
+      NullDefaultKind nullDefaultKind, boolean removeDefault) {
+
+    return switch (nullDefaultKind) {
+      case KIND_NULL_AND_DEFAULT -> removeDefault ? "case null" : "case null, default";
+      case KIND_NULL -> "case null";
+      case KIND_DEFAULT -> removeDefault ? "" : "default";
+      case KIND_NEITHER -> "case ";
+    };
   }
 
   /**
@@ -632,7 +703,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     if (statements.isEmpty()) {
       return isLastCaseInSwitch
           // An empty last case cannot be an assignment
-          ? AssignmentSwitchAnalysisState.of(
+          ? new AssignmentSwitchAnalysisState(
               CaseQualifications.SOME_OR_ALL_CASES_DONT_QUALIFY,
               assignmentTargetOptional,
               assignmentExpressionKindOptional,
@@ -654,7 +725,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
                 && breakTree.getLabel() == null);
     if (!expressionOrExpressionBreak) {
       // Conversion of this block is not supported
-      return AssignmentSwitchAnalysisState.of(
+      return new AssignmentSwitchAnalysisState(
           CaseQualifications.SOME_OR_ALL_CASES_DONT_QUALIFY,
           assignmentTargetOptional,
           assignmentExpressionKindOptional,
@@ -705,17 +776,15 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     }
 
     // Save the assignment target/kind in the state, but never overwrite existing target/kind
-    return AssignmentSwitchAnalysisState.of(
+    return new AssignmentSwitchAnalysisState(
         caseQualifications,
-        /* assignmentTargetOptional= */ assignmentTargetOptional.isEmpty()
+        assignmentTargetOptional.isEmpty()
             ? caseAssignmentTargetOptional
             : assignmentTargetOptional,
-        /* assignmentKindOptional= */ assignmentExpressionKindOptional.isEmpty()
+        assignmentExpressionKindOptional.isEmpty()
             ? caseAssignmentKindOptional
             : assignmentExpressionKindOptional,
-        /* assignmentTreeOptional= */ assignmentTreeOptional.isEmpty()
-            ? caseAssignmentTreeOptional
-            : assignmentTreeOptional);
+        assignmentTreeOptional.isEmpty() ? caseAssignmentTreeOptional : assignmentTreeOptional);
   }
 
   /**
@@ -908,10 +977,10 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     boolean firstCaseInGroup = true;
     for (int caseIndex = 0; caseIndex < cases.size(); caseIndex++) {
       CaseTree caseTree = cases.get(caseIndex);
-      boolean isDefaultCase = isSwitchDefault(caseTree);
+      NullDefaultKind nullDefaultKind = analyzeCaseForNullAndDefault(caseTree);
 
-      if (removeDefault && isDefaultCase) {
-        // Skip default case
+      if (removeDefault && nullDefaultKind.equals(NullDefaultKind.KIND_DEFAULT)) {
+        // Skip removed default (and its code) entirely
         continue;
       }
 
@@ -928,14 +997,19 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
                     ? extractCommentsBeforeFirstCase(switchTree, allSwitchComments).orElse("")
                     : "");
 
-        replacementCodeBuilder.append("\n  ");
-        if (!isDefaultCase) {
-          replacementCodeBuilder.append("case ");
+        replacementCodeBuilder
+            .append("\n  ")
+            .append(renderNullDefaultKindPrefix(nullDefaultKind, removeDefault));
+      } else {
+        // Second or later case in our group
+        if (nullDefaultKind.equals(NullDefaultKind.KIND_DEFAULT)) {
+          replacementCodeBuilder.append("default");
         }
       }
-      replacementCodeBuilder.append(
-          isDefaultCase ? "default" : printCaseExpressions(caseTree, state));
 
+      if (nullDefaultKind.equals(NullDefaultKind.KIND_NEITHER)) {
+        replacementCodeBuilder.append(printCaseExpressionsOrPatternAndGuard(caseTree, state));
+      }
       Optional<String> commentsAfterCaseOptional =
           extractCommentsAfterCase(switchTree, allSwitchComments, state, caseIndex);
       if (analysisResult.groupedWithNextCase().get(caseIndex)) {
@@ -1052,9 +1126,9 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     boolean firstCaseInGroup = true;
     for (int caseIndex = 0; caseIndex < cases.size(); caseIndex++) {
       CaseTree caseTree = cases.get(caseIndex);
-      boolean isDefaultCase = isSwitchDefault(caseTree);
-      if (removeDefault && isDefaultCase) {
-        // Skip default case
+      NullDefaultKind nullDefaultKind = analyzeCaseForNullAndDefault(caseTree);
+      if (removeDefault && nullDefaultKind.equals(NullDefaultKind.KIND_DEFAULT)) {
+        // Skip removed default (and its code) entirely
         continue;
       }
 
@@ -1068,13 +1142,19 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
                     ? extractCommentsBeforeFirstCase(switchTree, allSwitchComments).orElse("")
                     : "");
 
-        replacementCodeBuilder.append("\n  ");
-        if (!isDefaultCase) {
-          replacementCodeBuilder.append("case ");
+        replacementCodeBuilder
+            .append("\n  ")
+            .append(renderNullDefaultKindPrefix(nullDefaultKind, removeDefault));
+      } else {
+        // Second or later case in our group
+        if (nullDefaultKind.equals(NullDefaultKind.KIND_DEFAULT)) {
+          replacementCodeBuilder.append("default");
         }
       }
-      replacementCodeBuilder.append(
-          isDefaultCase ? "default" : printCaseExpressions(caseTree, state));
+
+      if (nullDefaultKind.equals(NullDefaultKind.KIND_NEITHER)) {
+        replacementCodeBuilder.append(printCaseExpressionsOrPatternAndGuard(caseTree, state));
+      }
 
       Optional<String> commentsAfterCaseOptional =
           extractCommentsAfterCase(switchTree, allSwitchComments, state, caseIndex);
@@ -1280,9 +1360,10 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     boolean firstCaseInGroup = true;
     for (int caseIndex = 0; caseIndex < cases.size(); caseIndex++) {
       CaseTree caseTree = cases.get(caseIndex);
-      boolean isDefaultCase = isSwitchDefault(caseTree);
-      if (removeDefault && isDefaultCase) {
-        // Remove `default:` case (and its code, if any) from the SuggestedFix
+      NullDefaultKind nullDefaultKind = analyzeCaseForNullAndDefault(caseTree);
+
+      if (removeDefault && nullDefaultKind.equals(NullDefaultKind.KIND_DEFAULT)) {
+        // Skip removed default (and its code) entirely
         continue;
       }
       ImmutableList<StatementTree> filteredStatements = filterOutRedundantBreak(caseTree);
@@ -1297,13 +1378,19 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
                     ? extractCommentsBeforeFirstCase(switchTree, allSwitchComments).orElse("")
                     : "");
 
-        replacementCodeBuilder.append("\n  ");
-        if (!isDefaultCase) {
-          replacementCodeBuilder.append("case ");
+        replacementCodeBuilder
+            .append("\n  ")
+            .append(renderNullDefaultKindPrefix(nullDefaultKind, removeDefault));
+      } else {
+        // Second or later case in our group
+        if (nullDefaultKind.equals(NullDefaultKind.KIND_DEFAULT)) {
+          replacementCodeBuilder.append("default");
         }
       }
-      replacementCodeBuilder.append(
-          isDefaultCase ? "default" : printCaseExpressions(caseTree, state));
+
+      if (nullDefaultKind.equals(NullDefaultKind.KIND_NEITHER)) {
+        replacementCodeBuilder.append(printCaseExpressionsOrPatternAndGuard(caseTree, state));
+      }
 
       Optional<String> commentsAfterCaseOptional =
           extractCommentsAfterCase(switchTree, allSwitchComments, state, caseIndex);
@@ -1585,7 +1672,7 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     List<? extends StatementTree> blockStatements = blockTree.getStatements();
     return blockStatements.isEmpty()
         ? state.getEndPosition(caseTree)
-        : state.getEndPosition(blockStatements.get(blockStatements.size() - 1));
+        : state.getEndPosition(blockStatements.getLast());
   }
 
   /**
@@ -1629,9 +1716,29 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     }
   }
 
-  /** Prints source for all expressions in a given {@code case}, separated by commas. */
-  private static String printCaseExpressions(CaseTree caseTree, VisitorState state) {
-    return caseTree.getExpressions().stream().map(state::getSourceForNode).collect(joining(", "));
+  private static boolean hasCasePattern(CaseTree caseTree) {
+    return caseTree.getLabels().stream()
+        .anyMatch(caseLabelTree -> caseLabelTree instanceof PatternCaseLabelTree);
+  }
+
+  /**
+   * Prints source for all expressions in a given {@code case}, separated by commas, or the pattern
+   * and guard (if present).
+   */
+  private static String printCaseExpressionsOrPatternAndGuard(
+      CaseTree caseTree, VisitorState state) {
+    if (!hasCasePattern(caseTree)) {
+      return caseTree.getExpressions().stream().map(state::getSourceForNode).collect(joining(", "));
+    }
+    // Currently, `case`s can only have a single pattern, however the compiler's class structure
+    // does not reflect this restriction.
+    StringBuilder sb =
+        new StringBuilder(
+            caseTree.getLabels().stream().map(state::getSourceForNode).collect(joining(", ")));
+    if (caseTree.getGuard() != null) {
+      sb.append(" when ").append(state.getSourceForNode(caseTree.getGuard())).append(" ");
+    }
+    return sb.toString();
   }
 
   /**
@@ -1735,107 +1842,75 @@ public final class StatementSwitchToExpressionSwitch extends BugChecker
     return transformedBlockBuilder.toString();
   }
 
-  @AutoValue
-  abstract static class AnalysisResult {
-    /** Whether the statement switch can be directly converted to an expression switch */
-    abstract boolean canConvertDirectlyToExpressionSwitch();
+  /**
+   * Determines whether the supplied {@code caseTree} case contains `case null` and/or `default`.
+   */
+  private static NullDefaultKind analyzeCaseForNullAndDefault(CaseTree caseTree) {
+    boolean hasDefault = isSwitchDefault(caseTree);
+    boolean hasNull =
+        caseTree.getExpressions().stream()
+            .anyMatch(expression -> expression.getKind().equals(Tree.Kind.NULL_LITERAL));
 
-    /** Whether the statement switch can be converted to a return switch */
-    abstract boolean canConvertToReturnSwitch();
-
-    /**
-     * Whether the assignment switch is exhaustive even in the absence of the default case that
-     * exists in the original switch statement
-     */
-    abstract boolean canRemoveDefault();
-
-    /** Results of the analysis for conversion to an assignment switch */
-    abstract AssignmentSwitchAnalysisResult assignmentSwitchAnalysisResult();
-
-    /**
-     * List of whether each case tree can be grouped with its successor in transformed source code
-     */
-    abstract ImmutableList<Boolean> groupedWithNextCase();
-
-    /**
-     * Bidirectional map from symbols to hoist to the top of the switch statement to their
-     * declaration trees
-     */
-    abstract ImmutableBiMap<VarSymbol, VariableTree> symbolsToHoist();
-
-    static AnalysisResult of(
-        boolean canConvertDirectlyToExpressionSwitch,
-        boolean canConvertToReturnSwitch,
-        boolean canRemoveDefault,
-        AssignmentSwitchAnalysisResult assignmentSwitchAnalysisResult,
-        ImmutableList<Boolean> groupedWithNextCase,
-        ImmutableBiMap<VarSymbol, VariableTree> symbolsToHoist) {
-      return new AutoValue_StatementSwitchToExpressionSwitch_AnalysisResult(
-          canConvertDirectlyToExpressionSwitch,
-          canConvertToReturnSwitch,
-          canRemoveDefault,
-          assignmentSwitchAnalysisResult,
-          groupedWithNextCase,
-          symbolsToHoist);
+    if (hasNull && hasDefault) {
+      return NullDefaultKind.KIND_NULL_AND_DEFAULT;
+    } else if (hasNull) {
+      return NullDefaultKind.KIND_NULL;
+    } else if (hasDefault) {
+      return NullDefaultKind.KIND_DEFAULT;
     }
+
+    return NullDefaultKind.KIND_NEITHER;
   }
 
-  @AutoValue
-  abstract static class AssignmentSwitchAnalysisResult {
-    /** Whether the statement switch can be converted to an assignment switch */
-    abstract boolean canConvertToAssignmentSwitch();
+  /**
+   * @param canConvertDirectlyToExpressionSwitch Whether the statement switch can be directly
+   *     converted to an expression switch
+   * @param canConvertToReturnSwitch Whether the statement switch can be converted to a return
+   *     switch
+   * @param canRemoveDefault Whether the assignment switch is exhaustive even in the absence of the
+   *     default case that exists in the original switch statement
+   * @param assignmentSwitchAnalysisResult Results of the analysis for conversion to an assignment
+   *     switch
+   * @param groupedWithNextCase List of whether each case tree can be grouped with its successor in
+   *     transformed source code
+   * @param symbolsToHoist Bidirectional map from symbols to hoist to the top of the switch
+   *     statement to their declaration trees
+   */
+  record AnalysisResult(
+      boolean canConvertDirectlyToExpressionSwitch,
+      boolean canConvertToReturnSwitch,
+      boolean canRemoveDefault,
+      AssignmentSwitchAnalysisResult assignmentSwitchAnalysisResult,
+      ImmutableList<Boolean> groupedWithNextCase,
+      ImmutableBiMap<VarSymbol, VariableTree> symbolsToHoist) {}
 
-    /** The immediately preceding variable declaration if this switch can be combined with it. */
-    abstract Optional<VariableTree> precedingVariableDeclaration();
+  /**
+   * @param canConvertToAssignmentSwitch Whether the statement switch can be converted to an
+   *     assignment switch
+   * @param precedingVariableDeclaration The immediately preceding variable declaration if this
+   *     switch can be combined with it.
+   * @param assignmentTargetOptional Target of the assignment switch, if any
+   * @param assignmentKindOptional Kind of assignment made by the assignment switch, if any
+   * @param assignmentSourceCodeOptional Java source code of the assignment switch's operator, e.g.
+   *     "+="
+   */
+  record AssignmentSwitchAnalysisResult(
+      boolean canConvertToAssignmentSwitch,
+      Optional<VariableTree> precedingVariableDeclaration,
+      Optional<ExpressionTree> assignmentTargetOptional,
+      Optional<Tree.Kind> assignmentKindOptional,
+      Optional<String> assignmentSourceCodeOptional) {}
 
-    /** Target of the assignment switch, if any */
-    abstract Optional<ExpressionTree> assignmentTargetOptional();
-
-    /** Kind of assignment made by the assignment switch, if any */
-    abstract Optional<Tree.Kind> assignmentKindOptional();
-
-    /** Java source code of the assignment switch's operator, e.g. "+=" */
-    abstract Optional<String> assignmentSourceCodeOptional();
-
-    static AssignmentSwitchAnalysisResult of(
-        boolean canConvertToAssignmentSwitch,
-        Optional<VariableTree> precedingVariableDeclaration,
-        Optional<ExpressionTree> assignmentTargetOptional,
-        Optional<Tree.Kind> assignmentKindOptional,
-        Optional<String> assignmentSourceCodeOptional) {
-      return new AutoValue_StatementSwitchToExpressionSwitch_AssignmentSwitchAnalysisResult(
-          canConvertToAssignmentSwitch,
-          precedingVariableDeclaration,
-          assignmentTargetOptional,
-          assignmentKindOptional,
-          assignmentSourceCodeOptional);
-    }
-  }
-
-  @AutoValue
-  abstract static class AssignmentSwitchAnalysisState {
-    /** Overall qualification of the switch statement for conversion to an assignment switch */
-    abstract CaseQualifications assignmentSwitchCaseQualifications();
-
-    /** Target of the first assignment seen, if any */
-    abstract Optional<ExpressionTree> assignmentTargetOptional();
-
-    /** Kind of the first assignment seen, if any */
-    abstract Optional<Tree.Kind> assignmentExpressionKindOptional();
-
-    /** ExpressionTree of the first assignment seen, if any */
-    abstract Optional<ExpressionTree> assignmentTreeOptional();
-
-    static AssignmentSwitchAnalysisState of(
-        CaseQualifications assignmentSwitchCaseQualifications,
-        Optional<ExpressionTree> assignmentTargetOptional,
-        Optional<Tree.Kind> assignmentKindOptional,
-        Optional<ExpressionTree> assignmentTreeOptional) {
-      return new AutoValue_StatementSwitchToExpressionSwitch_AssignmentSwitchAnalysisState(
-          assignmentSwitchCaseQualifications,
-          assignmentTargetOptional,
-          assignmentKindOptional,
-          assignmentTreeOptional);
-    }
-  }
+  /**
+   * @param assignmentSwitchCaseQualifications Overall qualification of the switch statement for
+   *     conversion to an assignment switch
+   * @param assignmentTargetOptional Target of the first assignment seen, if any
+   * @param assignmentExpressionKindOptional Kind of the first assignment seen, if any
+   * @param assignmentTreeOptional ExpressionTree of the first assignment seen, if any
+   */
+  record AssignmentSwitchAnalysisState(
+      CaseQualifications assignmentSwitchCaseQualifications,
+      Optional<ExpressionTree> assignmentTargetOptional,
+      Optional<Tree.Kind> assignmentExpressionKindOptional,
+      Optional<ExpressionTree> assignmentTreeOptional) {}
 }

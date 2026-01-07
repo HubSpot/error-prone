@@ -319,7 +319,7 @@ public class BugCheckerRefactoringTestHelper {
     ImmutableMap<URI, ? extends CompilationUnitTree> byUri =
         stream(trees).collect(toImmutableMap(t -> t.getSourceFile().toUri(), t -> t));
     URI inputUri = input.toUri();
-    assertWithMessage(out + Joiner.on('\n').join(diagnosticsCollector.getDiagnostics()))
+    assertWithMessage("%s%s", out, Joiner.on('\n').join(diagnosticsCollector.getDiagnostics()))
         .that(byUri)
         .containsKey(inputUri);
     JCCompilationUnit tree = (JCCompilationUnit) byUri.get(inputUri);
@@ -415,7 +415,7 @@ public class BugCheckerRefactoringTestHelper {
 
     private final ScannerSupplier delegate;
 
-    public OverrideIgnoringScannerSupplier(ErrorProneScanner scanner) {
+    OverrideIgnoringScannerSupplier(ErrorProneScanner scanner) {
       delegate = ScannerSupplier.fromScanner(scanner);
     }
 

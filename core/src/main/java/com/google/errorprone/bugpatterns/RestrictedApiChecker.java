@@ -148,7 +148,7 @@ public class RestrictedApiChecker extends BugChecker
       return true;
     }
     List<? extends ExpressionTree> arguments = tree.getArguments();
-    return !arguments.isEmpty() && ((JCTree) arguments.get(0)).hasTag(JCTree.Tag.NULLCHK);
+    return !arguments.isEmpty() && ((JCTree) arguments.getFirst()).hasTag(JCTree.Tag.NULLCHK);
   }
 
   private static MethodSymbol superclassConstructorSymbol(NewClassTree tree, VisitorState state) {
@@ -263,7 +263,7 @@ public class RestrictedApiChecker extends BugChecker
     Optional<Attribute> allowlistAnnotations =
         MoreAnnotations.getValue(api, "allowlistAnnotations");
     // TODO(b/178905039): remove handling of legacy names
-    if (!allowlistAnnotations.isPresent()) {
+    if (allowlistAnnotations.isEmpty()) {
       allowlistAnnotations = MoreAnnotations.getValue(api, "whitelistAnnotations");
     }
     return Matchers.hasAnyAnnotation(
@@ -277,7 +277,7 @@ public class RestrictedApiChecker extends BugChecker
     Optional<Attribute> allowlistWithWarningAnnotations =
         MoreAnnotations.getValue(api, "allowlistWithWarningAnnotations");
     // TODO(b/178905039): remove handling of legacy names
-    if (!allowlistWithWarningAnnotations.isPresent()) {
+    if (allowlistWithWarningAnnotations.isEmpty()) {
       allowlistWithWarningAnnotations =
           MoreAnnotations.getValue(api, "whitelistWithWarningAnnotations");
     }

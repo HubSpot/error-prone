@@ -117,7 +117,7 @@ public class NullablePrimitiveArray extends BugChecker
           dims,
           typeNullnessAnnos.stream().map(state::getSourceForNode).collect(joining(" ", " ", " ")));
     }
-    return describeMatch(typeNullnessAnnos.get(0), fix.build());
+    return describeMatch(typeNullnessAnnos.getFirst(), fix.build());
   }
 
   private static boolean isTypeAnnotation(Attribute.Compound attribute) {
@@ -126,7 +126,7 @@ public class NullablePrimitiveArray extends BugChecker
     }
     Set<String> targets = new HashSet<>();
     Optional<Attribute> value = MoreAnnotations.getValue(attribute, "value");
-    if (!value.isPresent()) {
+    if (value.isEmpty()) {
       return false;
     }
     new SimpleAnnotationValueVisitor8<Void, Void>() {

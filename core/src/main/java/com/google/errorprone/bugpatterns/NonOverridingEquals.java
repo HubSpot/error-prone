@@ -145,8 +145,8 @@ public class NonOverridingEquals extends BugChecker implements MethodTreeMatcher
       }
 
       // Change method signature, substituting Object for parameter type.
-      JCTree parameterType = (JCTree) methodTree.getParameters().get(0).getType();
-      Name parameterName = ((JCVariableDecl) methodTree.getParameters().get(0)).getName();
+      JCTree parameterType = (JCTree) methodTree.getParameters().getFirst().getType();
+      Name parameterName = ((JCVariableDecl) methodTree.getParameters().getFirst()).getName();
       fix.replace(parameterType, "Object");
 
       // If there is a method body...
@@ -161,7 +161,7 @@ public class NonOverridingEquals extends BugChecker implements MethodTreeMatcher
                 + ")) {\n"
                 + "  return false;\n"
                 + "}\n";
-        fix.prefixWith(methodTree.getBody().getStatements().get(0), typeCheckStmt);
+        fix.prefixWith(methodTree.getBody().getStatements().getFirst(), typeCheckStmt);
 
         // Cast all uses of the parameter name using a recursive TreeScanner.
         new CastScanner()
@@ -179,7 +179,7 @@ public class NonOverridingEquals extends BugChecker implements MethodTreeMatcher
     final String castToType;
     final SuggestedFix.Builder fix;
 
-    public CastState(Name name, String castToType, SuggestedFix.Builder fix) {
+    CastState(Name name, String castToType, SuggestedFix.Builder fix) {
       this.name = name;
       this.castToType = castToType;
       this.fix = fix;

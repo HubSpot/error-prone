@@ -696,6 +696,43 @@ public class Test {
   }
 
   @Test
+  public void multiset_hasCount_match() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import static com.google.common.truth.Truth.assertThat;
+            import com.google.common.collect.Multiset;
+
+            public class Test {
+              public void f(Multiset<String> a, String b) {
+                assertThat(a).hasCount(b, 1);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void multiset_hasCount_mismatch() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import static com.google.common.truth.Truth.assertThat;
+            import com.google.common.collect.Multiset;
+
+            public class Test {
+              public void f(Multiset<String> a, Long b) {
+                // BUG: Diagnostic contains:
+                assertThat(a).hasCount(b, 1);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
   public void subjectExhaustiveness(
       @TestParameter(valuesProvider = SubjectMethods.class) Method method) {
     // TODO(ghm): isNotSameInstanceAs might be worth flagging, but the check can be even stricter.
@@ -803,6 +840,9 @@ public class Test {
                     && !m.getName().equals("equals")
                     && m.getParameterCount() > 0
                     && !m.getName().startsWith("ignoring")
+                    // Kotlin `internal` methods are `public` in the class file.
+                    // We can identify them by looking for a mangled name.
+                    && !m.getName().contains("$")
                     && (stream(m.getParameterTypes()).allMatch(p -> p.equals(Iterable.class))
                         || stream(m.getParameterTypes())
                             .allMatch(p -> p.equals(Object.class) || p.isArray())

@@ -86,7 +86,7 @@ class ParameterTrie {
     private final NavigableSet<Parameter> inputParameters;
     private final List<Parameter> outputParameters;
 
-    public ParameterTrieExtender(MethodTree methodTree) {
+    ParameterTrieExtender(MethodTree methodTree) {
       this.methodTree = methodTree;
 
       this.inputParameters = new TreeSet<>(comparingInt(Parameter::position));
@@ -99,7 +99,7 @@ class ParameterTrie {
      * <p>If any {@link ParameterOrderingViolation} is found during the extension procedure, it is
      * reported in the result.
      */
-    public Optional<ParameterOrderingViolation> execute(ParameterTrie trie) {
+    Optional<ParameterOrderingViolation> execute(ParameterTrie trie) {
       Preconditions.checkArgument(trie != null);
 
       initialize();
@@ -133,7 +133,7 @@ class ParameterTrie {
       Preconditions.checkArgument(trie != null);
 
       for (Parameter parameter : inputParameters) {
-        if (parameter.tree().isVarArgs() || !trie.children.containsKey(parameter.name())) {
+        if (parameter.tree().varArgs() || !trie.children.containsKey(parameter.name())) {
           continue;
         }
 
@@ -170,7 +170,7 @@ class ParameterTrie {
       outputParameters.add(parameter);
 
       ParameterTrie allocatedTrie = new ParameterTrie();
-      if (!parameter.tree().isVarArgs()) {
+      if (!parameter.tree().varArgs()) {
         trie.children.put(parameter.name(), allocatedTrie);
       }
       expand(allocatedTrie);
@@ -227,7 +227,7 @@ class ParameterTrie {
    */
   private record Parameter(ParameterTree tree, int position) {
     Name name() {
-      return tree().getName();
+      return this.tree().name();
     }
 
     static Parameter create(MethodTree methodTree, int position) {

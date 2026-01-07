@@ -52,7 +52,7 @@ import com.sun.tools.javac.code.Symbol.MethodSymbol;
 
 /** A {@link BugChecker}; see the associated {@link BugPattern} annotation for details. */
 @BugPattern(
-    summary = "This method always recurses, and will cause a StackOverflowError",
+    summary = "This method calls itself unconditionally; it will throw StackOverflowError",
     severity = ERROR)
 public class InfiniteRecursion extends BugChecker implements MethodTreeMatcher {
   @Override
@@ -216,9 +216,28 @@ public class InfiniteRecursion extends BugChecker implements MethodTreeMatcher {
          * we're analyzing. We already know that we're looking at the same MethodSymbol, so now we
          * just need to make sure that the call isn't a virtual call that may resolve to a different
          * implementation. Specifically, we can resolve the call as triggering infinite recursion in
-         * the case of any non-overridable method (including a static method) and of any call on
-         * this object.
+         * the case of:
+         *
+         * - any non-overridable method (including a static method)
+         * - any call on this object[*]
+         *
+         * [*] This is technically not provably infinite recursion: It seems to be a good heuristic
+         * in practice, but consider the following example:
          */
+        // sealed class Parent {
+        //   void go(boolean recur) {
+        //     go(false); // call to the "same method" on the same object but not infinite recursion
+        //   }
+        // }
+        //
+        // class Child extends Parent {
+        //   @Override
+        //   void go(boolean recur) {
+        //     if (recur) {
+        //       super.go(true);
+        //     }
+        //   }
+        // }
         if (!methodCanBeOverridden(declaredSymbol) || isCallOnThisObject(invocation)) {
           state.reportMatch(describeMatch(invocation));
         }

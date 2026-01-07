@@ -30,7 +30,6 @@ import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CaseTree;
-import com.sun.source.tree.CaseTree.CaseKind;
 import com.sun.source.tree.CatchTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompoundAssignmentTree;
@@ -241,7 +240,7 @@ abstract class PlaceholderUnificationVisitor
         public Boolean visitIdentifier(IdentifierTree node, Unifier unifier) {
           for (LocalVarBinding localBinding :
               Iterables.filter(unifier.getBindings().values(), LocalVarBinding.class)) {
-            if (localBinding.getSymbol().equals(ASTHelpers.getSymbol(node))) {
+            if (localBinding.symbol().equals(ASTHelpers.getSymbol(node))) {
               return true;
             }
           }
@@ -559,9 +558,7 @@ abstract class PlaceholderUnificationVisitor
         state,
         s -> unifyExpression(node.getExpression(), s),
         s -> unifyStatement(node.getStatement(), s),
-        (expr, stmt) ->
-            UEnhancedForLoop.makeForeachLoop(
-                maker(), (JCVariableDecl) node.getVariable(), expr, stmt));
+        (expr, stmt) -> maker().ForeachLoop((JCVariableDecl) node.getVariable(), expr, stmt));
   }
 
   @Override
@@ -677,43 +674,20 @@ abstract class PlaceholderUnificationVisitor
 
   @Override
   public Choice<State<JCCase>> visitCase(CaseTree node, State<?> state) {
-    if (Runtime.version().feature() >= 21) {
-      return chooseSubtrees(
-          state,
-          s -> unify(node.getLabels(), s),
-          s -> unifyExpression(node.getGuard(), s),
-          s -> unifyStatements(node.getStatements(), s),
-          s -> unify(node.getBody(), s),
-          (labels, guard, stmts, body) ->
-              maker()
-                  .Case(
-                      node.getCaseKind(),
-                      List.convert(JCCaseLabel.class, labels),
-                      guard,
-                      stmts,
-                      body));
-    } else {
-      return chooseSubtrees(
-          state,
-          s -> unify(node.getLabels(), s),
-          s -> unifyStatements(node.getStatements(), s),
-          s -> unify(node.getBody(), s),
-          (labels, stmts, body) -> {
-            try {
-              return (JCCase)
-                  TreeMaker.class
-                      .getMethod("Case", CaseKind.class, List.class, List.class, JCTree.class)
-                      .invoke(
-                          maker(),
-                          node.getCaseKind(),
-                          List.convert(JCCaseLabel.class, labels),
-                          stmts,
-                          body);
-            } catch (ReflectiveOperationException e) {
-              throw new LinkageError(e.getMessage(), e);
-            }
-          });
-    }
+    return chooseSubtrees(
+        state,
+        s -> unify(node.getLabels(), s),
+        s -> unifyExpression(node.getGuard(), s),
+        s -> unifyStatements(node.getStatements(), s),
+        s -> unify(node.getBody(), s),
+        (labels, guard, stmts, body) ->
+            maker()
+                .Case(
+                    node.getCaseKind(),
+                    List.convert(JCCaseLabel.class, labels),
+                    guard,
+                    stmts,
+                    body));
   }
 
   @Override

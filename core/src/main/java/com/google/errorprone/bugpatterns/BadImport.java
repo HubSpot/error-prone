@@ -87,16 +87,20 @@ public class BadImport extends BugChecker implements ImportTreeMatcher {
 
   private static final ImmutableSet<String> BAD_STATIC_IDENTIFIERS =
       ImmutableSet.of(
+          // keep-sorted start
+          "INSTANCE",
           "builder",
-          "create",
           "copyOf",
+          "create",
           "from",
           "getDefaultInstance",
-          "INSTANCE",
           "newBuilder",
           "newInstance",
           "of",
-          "valueOf");
+          "valueOf",
+          "values"
+          // keep-sorted end
+          );
 
   private static final MultiMatcher<Tree, AnnotationTree> HAS_TYPE_USE_ANNOTATION =
       annotations(AT_LEAST_ONE, (t, state) -> isTypeAnnotation(t));
@@ -203,11 +207,11 @@ public class BadImport extends BugChecker implements ImportTreeMatcher {
     if (compilationUnit.getTypeDecls().isEmpty()) {
       return state;
     }
-    Tree tree = compilationUnit.getTypeDecls().get(0);
+    Tree tree = compilationUnit.getTypeDecls().getFirst();
     if (!(tree instanceof ClassTree classTree) || classTree.getMembers().isEmpty()) {
       return state;
     }
-    return state.withPath(TreePath.getPath(compilationUnit, classTree.getMembers().get(0)));
+    return state.withPath(TreePath.getPath(compilationUnit, classTree.getMembers().getFirst()));
   }
 
   private boolean isAcceptableImport(Symbol symbol, Set<String> badNames) {
