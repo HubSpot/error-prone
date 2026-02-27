@@ -133,7 +133,7 @@ public class TimeUnitMismatchTest {
                 // BUG: Diagnostic contains: expected milliseconds but was nanoseconds
                 long millis = maybeNanos.get();
               }
-            }\
+            }
             """)
         .doTest();
   }
@@ -219,7 +219,7 @@ public class TimeUnitMismatchTest {
                 Optional<Long> maybeNanos = Optional.of(0L);
                 long nanos = maybeNanos.get();
               }
-            }\
+            }
             """)
         .doTest();
   }
@@ -344,6 +344,28 @@ public class TimeUnitMismatchTest {
                 // BUG: Diagnostic contains: MILLISECONDS.toNanos(getStartMillis()) + getEndNanos()
                 var b5 = getStartMillis() * 1000 + getEndNanos();
                 var b6 = getStartMillis() * 1_000_000 + getEndNanos();
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void addingMillisAndMicros() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.protobuf.Timestamp;
+            import java.util.Date;
+
+            class Test {
+              record Container(Timestamp timestamp) {}
+
+              Date test(Container c) {
+                // BUG: Diagnostic contains: This operation seems to mix up time units: MILLISECONDS and
+                // MICROSECONDS.
+                return new Date(c.timestamp().getSeconds() * 1000 + c.timestamp().getNanos() / 1000);
               }
             }
             """)
