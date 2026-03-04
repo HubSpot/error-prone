@@ -101,7 +101,10 @@ public class ErrorProneJavacPluginTest {
                 fileManager,
                 diagnosticCollector,
                 ImmutableList.of(
-                    "-Xplugin:ErrorProne", "-XDcompilePolicy=byfile", "--should-stop=ifError=FLOW"),
+                    "-Xplugin:ErrorProne",
+                    "-XDcompilePolicy=byfile",
+                    "--should-stop=ifError=FLOW",
+                    "-XDaddTypeAnnotationsToSymbol=true"),
                 ImmutableList.of(),
                 fileManager.getJavaFileObjects(source));
     assertThat(task.call()).isFalse();
@@ -146,7 +149,8 @@ public class ErrorProneJavacPluginTest {
                     "-Xplugin:ErrorProne"
                         + " -XepPatchChecks:MissingOverride -XepPatchLocation:IN_PLACE",
                     "-XDcompilePolicy=byfile",
-                    "--should-stop=ifError=FLOW"),
+                    "--should-stop=ifError=FLOW",
+                    "-XDaddTypeAnnotationsToSymbol=true"),
                 ImmutableList.of(),
                 fileManager.getJavaFileObjects(fileA, fileB));
     assertWithMessage(Joiner.on('\n').join(diagnosticCollector.getDiagnostics()))
@@ -207,7 +211,8 @@ public class ErrorProneJavacPluginTest {
                         + " -XepPatchChecks:MissingOverride -XepPatchLocation:"
                         + patchDir,
                     "-XDcompilePolicy=byfile",
-                    "--should-stop=ifError=FLOW"),
+                    "--should-stop=ifError=FLOW",
+                    "-XDaddTypeAnnotationsToSymbol=true"),
                 ImmutableList.of(),
                 fileManager.getJavaFileObjects(fileA, fileB));
     assertWithMessage(Joiner.on('\n').join(diagnosticCollector.getDiagnostics()))
@@ -259,7 +264,10 @@ public class ErrorProneJavacPluginTest {
                 fileManager,
                 diagnosticCollector,
                 ImmutableList.of(
-                    "-XDcompilePolicy=bytodo", "--should-stop=ifError=FLOW", "-Xplugin:ErrorProne"),
+                    "-XDcompilePolicy=bytodo",
+                    "--should-stop=ifError=FLOW",
+                    "-XDaddTypeAnnotationsToSymbol=true",
+                    "-Xplugin:ErrorProne"),
                 ImmutableList.of(),
                 fileManager.getJavaFileObjects(source));
     RuntimeException expected = assertThrows(RuntimeException.class, () -> task.call());
@@ -309,7 +317,8 @@ public class ErrorProneJavacPluginTest {
                 ImmutableList.of(
                     "-Xplugin:ErrorProne",
                     "-XDcompilePolicy=byfile",
-                    "--should-stop=ifError=LOWER"),
+                    "--should-stop=ifError=LOWER",
+                    "-XDaddTypeAnnotationsToSymbol=true"),
                 ImmutableList.of(),
                 fileManager.getJavaFileObjects(one, two));
     assertThat(task.call()).isFalse();
@@ -381,7 +390,8 @@ public class ErrorProneJavacPluginTest {
                 ImmutableList.of(
                     "-Xplugin:ErrorProne -XepDisableAllChecks -Xep:TestCompilesWithFix:ERROR",
                     "-XDcompilePolicy=byfile",
-                    "--should-stop=ifError=FLOW"),
+                    "--should-stop=ifError=FLOW",
+                    "-XDaddTypeAnnotationsToSymbol=true"),
                 ImmutableList.of(),
                 fileManager.getJavaFileObjects(source));
     assertThat(task.call()).isFalse();

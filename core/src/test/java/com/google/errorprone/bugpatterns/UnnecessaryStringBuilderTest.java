@@ -201,4 +201,28 @@ public class UnnecessaryStringBuilderTest {
             """)
         .doTest();
   }
+
+  @Test
+  public void needsEnclosingParens() {
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            abstract class Test {
+              void f(String hello) {
+                new StringBuilder().append(hello).append(1).toString().getBytes();
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            abstract class Test {
+              void f(String hello) {
+                (hello + 1).getBytes();
+              }
+            }
+            """)
+        .doTest();
+  }
 }

@@ -32,10 +32,12 @@ import com.google.errorprone.ErrorProneOptions;
 import com.google.errorprone.SuppressionInfo;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.annotations.CheckReturnValue;
+import com.google.errorprone.fixes.ErrorPronePosition;
 import com.google.errorprone.fixes.Fix;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Suppressible;
 import com.google.errorprone.suppliers.Supplier;
+
 import com.sun.source.tree.AnnotatedTypeTree;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ArrayAccessTree;
@@ -109,6 +111,7 @@ import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import com.sun.tools.javac.util.Name;
+
 import java.io.Serializable;
 import java.lang.annotation.Annotation;
 import java.util.Collections;
@@ -157,40 +160,65 @@ public abstract class BugChecker implements Suppressible, Serializable {
     };
   }
 
+  /**
+   * Helper to create a Description for the common case where there is a fix.
+   */
+  @CheckReturnValue
+  public Description describeMatch(ErrorPronePosition position, Fix fix) {
+    return buildDescription(position).addFix(fix).build();
+  }
+
   /** Helper to create a Description for the common case where there is a fix. */
   @CheckReturnValue
   public Description describeMatch(Tree node, Fix fix) {
-    return buildDescription(node).addFix(fix).build();
+    return describeMatch(ErrorPronePosition.from(node), fix);
   }
 
   /** Helper to create a Description for the common case where there is a fix. */
   @CheckReturnValue
   public Description describeMatch(JCTree node, Fix fix) {
-    return describeMatch((Tree) node, fix);
+    return describeMatch(ErrorPronePosition.from(node), fix);
   }
 
   /** Helper to create a Description for the common case where there is a fix. */
   @CheckReturnValue
   public Description describeMatch(DiagnosticPosition position, Fix fix) {
-    return buildDescription(position).addFix(fix).build();
+    return describeMatch(ErrorPronePosition.from(position), fix);
+  }
+
+  /**
+   * Helper to create a Description for the common case where there is no fix.
+   */
+  @CheckReturnValue
+  public Description describeMatch(ErrorPronePosition position) {
+    return buildDescription(position).build();
   }
 
   /** Helper to create a Description for the common case where there is no fix. */
   @CheckReturnValue
   public Description describeMatch(Tree node) {
-    return buildDescription(node).build();
+    return describeMatch(ErrorPronePosition.from(node));
   }
 
   /** Helper to create a Description for the common case where there is no fix. */
   @CheckReturnValue
   public Description describeMatch(JCTree node) {
-    return buildDescription(node).build();
+    return describeMatch(ErrorPronePosition.from(node));
   }
 
   /** Helper to create a Description for the common case where there is no fix. */
   @CheckReturnValue
   public Description describeMatch(DiagnosticPosition position) {
-    return buildDescription(position).build();
+    return describeMatch(ErrorPronePosition.from(position));
+  }
+
+  /**
+   * Returns a Description builder, which allows you to customize the diagnostic with a custom
+   * message or multiple fixes.
+   */
+  @CheckReturnValue
+  public Description.Builder buildDescription(ErrorPronePosition position) {
+    return Description.builder(position, canonicalName(), linkUrl(), message());
   }
 
   /**
@@ -199,7 +227,7 @@ public abstract class BugChecker implements Suppressible, Serializable {
    */
   @CheckReturnValue
   public Description.Builder buildDescription(Tree node) {
-    return Description.builder(node, canonicalName(), linkUrl(), message());
+    return buildDescription(ErrorPronePosition.from(node));
   }
 
   /**
@@ -208,7 +236,7 @@ public abstract class BugChecker implements Suppressible, Serializable {
    */
   @CheckReturnValue
   public Description.Builder buildDescription(DiagnosticPosition position) {
-    return Description.builder(position, canonicalName(), linkUrl(), message());
+    return buildDescription(ErrorPronePosition.from(position));
   }
 
   /**
@@ -218,13 +246,14 @@ public abstract class BugChecker implements Suppressible, Serializable {
   // This overload exists purely to disambiguate for JCTree.
   @CheckReturnValue
   public Description.Builder buildDescription(JCTree tree) {
-    return Description.builder(tree, canonicalName(), linkUrl(), message());
+    return buildDescription(ErrorPronePosition.from(tree));
   }
 
   @Deprecated
   public static Description.Builder buildDescriptionFromChecker(Tree node, BugChecker checker) {
     return Description.builder(
-        Preconditions.checkNotNull(node),
+        ErrorPronePosition.from(
+            Preconditions.checkNotNull(node)),
         checker.canonicalName(),
         checker.linkUrl(),
         checker.message());

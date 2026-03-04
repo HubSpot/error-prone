@@ -27,19 +27,18 @@ import com.google.errorprone.BugPattern;
 import com.google.errorprone.BugPattern.SeverityLevel;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.CheckReturnValue;
-import com.google.errorprone.annotations.Immutable;
 import com.google.errorprone.annotations.RestrictedApi;
+import com.google.errorprone.fixes.ErrorPronePosition;
 import com.google.errorprone.fixes.Fix;
 import com.google.errorprone.fixes.SuggestedFix;
-import com.sun.source.tree.Tree;
-import com.sun.tools.javac.tree.JCTree;
+
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
-import java.util.Collections;
-import java.util.HashMap;
+
+import org.jspecify.annotations.Nullable;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import org.jspecify.annotations.Nullable;
 
 /**
  * Simple data object containing the information captured about an AST match. Can be printed in a
@@ -60,7 +59,7 @@ public class Description {
           ImmutableMap.of());
 
   /** The position of the match. */
-  public final DiagnosticPosition position;
+  public final ErrorPronePosition position;
 
   /** The name of the check that produced the match. */
   public final String checkName;
@@ -123,7 +122,7 @@ public class Description {
   }
 
   private Description(
-      DiagnosticPosition position,
+      ErrorPronePosition position,
       String checkName,
       String rawMessage,
       @Nullable String linkUrl,
@@ -154,7 +153,7 @@ public class Description {
   @CheckReturnValue
   public Description withPosition(DiagnosticPosition position) {
     return new Description(
-      position,
+        ErrorPronePosition.from(position),
       checkName,
       rawMessage,
       linkUrl,
@@ -177,36 +176,17 @@ public class Description {
       explanation = "Use describeMatch or buildDescription on BugChecker instead.",
       link = "",
       allowedOnPath =
-          ".*/third_party/java_src/error_prone/project/check_api/src/main/java/com/google/errorprone/bugpatterns/BugChecker.java")
-  public static Builder builder(Tree node, String name, @Nullable String link, String message) {
-    return new Builder((DiagnosticPosition) node, name, link, message);
-  }
-
-  /** Returns a new builder for {@link Description}s. */
-  @RestrictedApi(
-      explanation = "Use describeMatch or buildDescription on BugChecker instead.",
-      link = "",
-      allowedOnPath =
-          ".*/third_party/java_src/error_prone/project/check_api/src/main/java/com/google/errorprone/bugpatterns/BugChecker.java")
-  public static Builder builder(
-      DiagnosticPosition position, String name, @Nullable String link, String message) {
-    return new Builder(position, name, link, message);
-  }
-
-  /** Returns a new builder for {@link Description}s. */
-  @RestrictedApi(
-      explanation = "Use describeMatch or buildDescription on BugChecker instead.",
-      link = "",
-      allowedOnPath =
           ".*/third_party/java_src/error_prone/project/check_api/src/main/java/com/google/errorprone/bugpatterns/BugChecker.java"
               + "|.*/third_party/java_src/error_prone/project/core/src/main/java/com/google/errorprone/refaster/RefasterScanner.java")
-  public static Builder builder(JCTree tree, String name, @Nullable String link, String message) {
-    return new Builder(tree, name, link, message);
+  public static Builder builder(
+      ErrorPronePosition position, String name, @Nullable String link, String message) {
+    return new Builder(position, name, link, message);
   }
 
   /** Builder for {@code Description}s. */
   public static class Builder {
-    private final DiagnosticPosition position;
+
+    private final ErrorPronePosition position;
     private final String name;
     private String linkUrl;
     private Optional<SeverityLevel> severity = Optional.empty();
@@ -215,7 +195,7 @@ public class Description {
     private final ImmutableMap.Builder<String, Object> metadata;
 
     private Builder(
-        DiagnosticPosition position, String name, @Nullable String linkUrl, String rawMessage) {
+        ErrorPronePosition position, String name, @Nullable String linkUrl, String rawMessage) {
       this.position = Preconditions.checkNotNull(position);
       this.name = Preconditions.checkNotNull(name);
       this.linkUrl = linkUrl;
