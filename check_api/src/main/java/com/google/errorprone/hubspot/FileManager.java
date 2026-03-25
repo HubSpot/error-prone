@@ -34,11 +34,19 @@ class FileManager {
   private static final String OVERWATCH_DIR_ENV_VAR = "MAVEN_PROJECTBASEDIR";
   private static final String BLAZAR_DIR_ENV_VAR = "VIEWABLE_BUILD_ARTIFACTS_DIR";
 
+  private final Optional<String> vbaDirectory;
+  private final Optional<String> buildDirectory;
+
+
   public static synchronized FileManager instance(Context context) {
     FileManager instance = context.get(FileManager.class);
 
     if (instance == null) {
-      instance = new FileManager(HubSpotUtils.getPhase(context));
+      instance = new FileManager(
+          HubSpotUtils.getPhase(context),
+          HubSpotUtils.getVbaDirectory(context),
+          HubSpotUtils.getBuildDirectory(context)
+      );
       context.put(FileManager.class, instance);
     }
 
@@ -47,8 +55,12 @@ class FileManager {
 
   private final String phase;
 
-  FileManager(String phase) {
+  FileManager(String phase, Optional<String> vbaDirectory, Optional<String> buildDirectory) {
     this.phase = phase;
+    this.vbaDirectory = vbaDirectory
+        .or(() -> Optional.ofNullable(System.getenv(BLAZAR_DIR_ENV_VAR)));
+    this.buildDirectory = buildDirectory
+        .or(() -> Optional.ofNullable(System.getenv(OVERWATCH_DIR_ENV_VAR)));;
   }
 
   public String getPhase() {
@@ -56,22 +68,22 @@ class FileManager {
   }
 
   Optional<Path> getErrorOutputPath() {
-    return getDataDir(BLAZAR_DIR_ENV_VAR, "error-prone")
+    return getVbaPath("error-prone")
         .map(o -> o.resolve("error-prone-exceptions.json"));
   }
 
   Optional<Path> getTimingsOutputPath() {
-    return getDataDir(BLAZAR_DIR_ENV_VAR, "error-prone")
+    return getVbaPath("error-prone")
         .map(o -> o.resolve("error-prone-timings.json"));
   }
 
   Optional<Path> getLifeCycleCanaryPath(String id) {
-    return getDataDir(OVERWATCH_DIR_ENV_VAR, "target/overwatch-metadata")
+    return getMavenBuildPath( "target/overwatch-metadata")
         .map(o -> o.resolve(String.format("lifecycle-canary-%s.json", id)));
   }
 
   Optional<Path> getUncaughtExceptionPath() {
-    return getDataDir(BLAZAR_DIR_ENV_VAR, "error-prone")
+    return getVbaPath("error-prone")
         .map(o -> o.resolve("error-prone-exception.log"));
   }
 
@@ -85,8 +97,15 @@ class FileManager {
     }
   }
 
-  private Optional<Path> getDataDir(String envVar, String pathToAppend) {
-    String dir = System.getenv(envVar);
+  private Optional<Path> getMavenBuildPath(String pathToAppend) {
+    return getDataDir(buildDirectory.orElse(""), pathToAppend);
+  }
+
+  private Optional<Path> getVbaPath(String pathToAppend) {
+    return getDataDir(vbaDirectory.orElse(""), pathToAppend);
+  }
+
+  private Optional<Path> getDataDir(String dir, String pathToAppend) {
     if (Strings.isNullOrEmpty(dir)) {
       return Optional.empty();
     }

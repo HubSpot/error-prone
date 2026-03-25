@@ -16,9 +16,11 @@
 
 package com.google.errorprone.hubspot;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
+import java.util.Base64;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
@@ -156,6 +158,26 @@ public class HubSpotUtils {
     } else {
       return epOptions.isTestOnlyTarget() ? "test-compile" : "compile";
     }
+  }
+
+  public static Optional<String> getVbaDirectory(Context context) {
+    return Optional
+        .ofNullable(context.get(ErrorProneFlags.class))
+        .flatMap(flags -> flags.get("hubspot:vba-directory"))
+        .map(encoded -> new String(
+            Base64.getUrlDecoder().decode(encoded),
+            StandardCharsets.UTF_8
+        ));
+  }
+
+  public static Optional<String> getBuildDirectory(Context context) {
+    return Optional
+        .ofNullable(context.get(ErrorProneFlags.class))
+        .flatMap(flags -> flags.get("hubspot:build-directory"))
+        .map(encoded -> new String(
+            Base64.getUrlDecoder().decode(encoded),
+            StandardCharsets.UTF_8
+        ));
   }
 
   private HubSpotUtils() {
