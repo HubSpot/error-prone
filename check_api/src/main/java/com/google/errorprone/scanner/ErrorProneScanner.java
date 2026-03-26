@@ -25,6 +25,7 @@ import com.google.errorprone.ErrorProneError;
 import com.google.errorprone.ErrorProneOptions;
 import com.google.errorprone.hubspot.HubSpotMetrics;
 import com.google.errorprone.hubspot.HubSpotUtils;
+import com.google.errorprone.SourcePositionException;
 import com.google.errorprone.SuppressionInfo.SuppressedState;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker;
@@ -173,6 +174,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import javax.tools.JavaFileObject;
 
 /**
  * Scans the parsed AST, looking for violations of any of the enabled checks.
@@ -1146,11 +1148,12 @@ public class ErrorProneScanner extends Scanner {
       throw completionFailure;
     }
     TreePath path = getCurrentPath();
+    JavaFileObject sourceFile = path.getCompilationUnit().getSourceFile();
+    if (t instanceof SourcePositionException sourcePositionException) {
+      throw sourcePositionException.toErrorProneError(s.canonicalName(), sourceFile);
+    }
     throw new ErrorProneError(
-        s.canonicalName(),
-        t,
-        (DiagnosticPosition) path.getLeaf(),
-        path.getCompilationUnit().getSourceFile());
+        s.canonicalName(), t, (DiagnosticPosition) path.getLeaf(), sourceFile);
   }
 
   @Override

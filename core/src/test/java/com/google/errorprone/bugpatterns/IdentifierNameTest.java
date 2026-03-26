@@ -778,4 +778,38 @@ public class IdentifierNameTest {
             """)
         .doTest();
   }
+
+  @Test
+  public void receiverParameter() {
+    helper
+        .addSourceLines(
+            "Super.java",
+            """
+            class Super {
+              void test(int x) {}
+            }
+            """)
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test extends Super {
+              @Override
+              void test(Test this, int x) {}
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void dollarSign() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              private static final String JSON_KEY_$SCHEMA = "$schema";
+            }
+            """)
+        .doTest();
+  }
 }

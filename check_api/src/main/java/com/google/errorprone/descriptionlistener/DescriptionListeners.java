@@ -1,16 +1,18 @@
 package com.google.errorprone.descriptionlistener;
 
+import com.google.common.base.Suppliers;
+import com.google.errorprone.DescriptionListener;
+import com.google.errorprone.fixes.ErrorProneEndPosTable;
+import com.google.errorprone.hubspot.HubSpotMetrics;
+import com.google.errorprone.hubspot.HubSpotUtils;
+import com.google.errorprone.matchers.Description;
+
+import com.sun.tools.javac.util.Context;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ServiceLoader;
 import java.util.function.Supplier;
-
-import com.google.common.base.Suppliers;
-import com.google.errorprone.DescriptionListener;
-import com.google.errorprone.hubspot.HubSpotMetrics;
-import com.google.errorprone.hubspot.HubSpotUtils;
-import com.google.errorprone.matchers.Description;
-import com.sun.tools.javac.util.Context;
 
 public class DescriptionListeners {
   private static final Supplier<CustomDescriptionListenerFactory> CUSTOM_DESCRIPTION_LISTENER_FACTORY_SUPPLIER = Suppliers.memoize(DescriptionListeners::getCustomFactory);
@@ -28,7 +30,8 @@ public class DescriptionListeners {
   private static DescriptionListener.Factory getFactory(Context context, boolean useErrors) {
     return (log, compilation) ->
         CUSTOM_DESCRIPTION_LISTENER_FACTORY_SUPPLIER.get().createFactory(
-            DescriptionListenerResources.create(log, compilation, context, useErrors)
+            DescriptionListenerResources.create(log, ErrorProneEndPosTable.create(compilation),
+                compilation, context, useErrors)
         );
   }
 

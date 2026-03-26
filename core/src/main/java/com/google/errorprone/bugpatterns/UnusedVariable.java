@@ -61,9 +61,11 @@ import com.google.errorprone.bugpatterns.BugChecker.CompilationUnitTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.fixes.SuggestedFixes;
 import com.google.errorprone.matchers.Description;
+import com.google.errorprone.matchers.InjectMatchers;
 import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.suppliers.Suppliers;
 import com.google.errorprone.util.ASTHelpers;
+import com.google.errorprone.util.SourceVersion;
 import com.sun.source.tree.ArrayAccessTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BindingPatternTree;
@@ -131,19 +133,17 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
 
   // TODO(ghm): Find a sensible place to dedupe this with UnnecessarilyVisible.
   private static final ImmutableSet<String> ANNOTATIONS_INDICATING_PARAMETERS_SHOULD_BE_CHECKED =
-      ImmutableSet.of(
-          "com.google.errorprone.refaster.annotation.AfterTemplate",
-          "com.google.errorprone.refaster.annotation.BeforeTemplate",
-          "com.google.inject.Inject",
-          "com.google.inject.Provides",
-          "com.google.inject.multibindings.ProvidesIntoMap",
-          "com.google.inject.multibindings.ProvidesIntoSet",
-          "dagger.Provides",
-          "jakarta.inject.Inject",
-          "javax.inject.Inject",
-          // Parameters on test methods imply the test is parameterised, and those parameters should
-          // be used or removed.
-          "org.junit.Test");
+      ImmutableSet.<String>builder()
+          .addAll(InjectMatchers.INJECT_ANNOTATIONS)
+          .addAll(InjectMatchers.PROVIDES_ANNOTATIONS)
+          .addAll(InjectMatchers.MULTIBINDINGS_ANNOTATIONS)
+          .add(
+              "com.google.errorprone.refaster.annotation.AfterTemplate",
+              "com.google.errorprone.refaster.annotation.BeforeTemplate",
+              // Parameters on test methods imply the test is parameterised, and those parameters
+              // should be used or removed.
+              "org.junit.Test")
+          .build();
 
   private final ImmutableSet<String> methodAnnotationsExemptingParameters;
 
@@ -255,29 +255,40 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
       }
       Tree unused = specs.iterator().next().assignmentPath().getLeaf();
       VarSymbol symbol = (VarSymbol) unusedSymbol;
-      ImmutableList<SuggestedFix> fixes;
+      ImmutableList.Builder<SuggestedFix> fixes = ImmutableList.builder();
       if (symbol.getKind() == ElementKind.PARAMETER
           && !onlyCheckForReassignments.contains(unusedSymbol)
           && !isEverUsed.contains(unusedSymbol)) {
-        fixes = buildUnusedParameterFixes(symbol, allUsageSites, state);
+        fixes.addAll(buildUnusedParameterFixes(symbol, allUsageSites, state));
       } else {
-        fixes = buildUnusedVarFixes(symbol, allUsageSites, state);
+        fixes.addAll(buildUnusedVarFixes(symbol, allUsageSites, state));
+      }
+      if (suggestUnderscore(state, isEverUsed, unusedSymbol, specs, allUsageSites)) {
+        fixes.add(SuggestedFixes.renameVariable((VariableTree) unused, "_", state));
+      }
+      String message;
+      if (!isEverUsed.contains(symbol)) {
+        message =
+            String.format("The %s '%s' is never read.", describeVariable(symbol), symbol.name);
+      } else if (unused instanceof VariableTree && symbol.getKind() == ElementKind.PARAMETER) {
+        message = String.format("The parameter '%s' is reassigned before being read.", symbol.name);
+      } else {
+        message =
+            String.format(
+                "This assignment to the %s '%s' is never read.",
+                describeVariable(symbol), symbol.name);
       }
 
-      if (!shouldReport(symbol, state, fixes)) {
+      ImmutableList<SuggestedFix> suggestedFixes = fixes.build();
+      if (!shouldReport(symbol, state, suggestedFixes)) {
         continue;
       }
 
       state.reportMatch(
           buildDescription(unused)
-              .setMessage(
-                  String.format(
-                      "%s %s '%s' is never read.",
-                      isEverUsed.contains(symbol) ? "This assignment to the" : "The",
-                      describeVariable(symbol),
-                      symbol.name))
+              .setMessage(message)
               .addAllFixes(
-                  fixes.stream()
+                  suggestedFixes.stream()
                       .map(f -> SuggestedFix.merge(makeFirstAssignmentDeclaration, f))
                       .collect(toImmutableList()))
               .build());
@@ -287,6 +298,41 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
 
   protected boolean shouldReport(VarSymbol symbol, VisitorState state, List<SuggestedFix> fixes) {
     return true;
+  }
+
+  private static boolean suggestUnderscore(
+      VisitorState state,
+      Set<Symbol> isEverUsed,
+      Symbol symbol,
+      Collection<UnusedSpec> specs,
+      ImmutableList<TreePath> allUsageSites) {
+    TreePath unusedPath = specs.iterator().next().assignmentPath();
+    Tree unused = unusedPath.getLeaf();
+    if (!(unused instanceof VariableTree variableTree)) {
+      return false;
+    }
+    if (isEverUsed.contains(symbol) || specs.size() != 1 || allUsageSites.size() > 1) {
+      return false;
+    }
+    if (!SourceVersion.supportsUnnamedVariablesAndPatterns(state.context)) {
+      return false;
+    }
+    if (!allowsUnderscore((VarSymbol) symbol, unusedPath)) {
+      return false;
+    }
+    if (symbol.getKind().equals(ElementKind.LOCAL_VARIABLE)
+        && variableTree.getInitializer() == null) {
+      return false;
+    }
+    return true;
+  }
+
+  private static boolean allowsUnderscore(VarSymbol symbol, TreePath path) {
+    return switch (symbol.getKind()) {
+      case LOCAL_VARIABLE -> true;
+      case PARAMETER -> path.getParentPath().getLeaf() instanceof LambdaExpressionTree;
+      default -> false;
+    };
   }
 
   private static SuggestedFix makeAssignmentDeclaration(
