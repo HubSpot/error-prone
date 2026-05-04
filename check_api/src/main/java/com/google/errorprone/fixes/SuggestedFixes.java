@@ -37,6 +37,7 @@ import static com.sun.tools.javac.util.Position.NOPOS;
 import static java.lang.Math.max;
 import static java.util.Arrays.stream;
 import static java.util.stream.Collectors.joining;
+import static java.util.stream.Collectors.toCollection;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
@@ -124,6 +125,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
@@ -144,6 +146,7 @@ import javax.lang.model.element.Name;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.SimpleTypeVisitor8;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
@@ -421,6 +424,17 @@ public final class SuggestedFixes {
           }
 
           @Override
+          public String visitWildcard(WildcardType t, SuggestedFix.Builder builder) {
+            if (t.getExtendsBound() != null) {
+              return "? extends " + t.getExtendsBound().accept(this, builder);
+            }
+            if (t.getSuperBound() != null) {
+              return "? super " + t.getSuperBound().accept(this, builder);
+            }
+            return t.toString();
+          }
+
+          @Override
           public String visitDeclared(DeclaredType t, SuggestedFix.Builder builder) {
             String baseType = qualifyType(state, builder, ((Type) t).tsym);
             if (t.getTypeArguments().isEmpty()) {
@@ -431,7 +445,7 @@ public final class SuggestedFixes {
             boolean started = false;
             for (TypeMirror arg : t.getTypeArguments()) {
               if (started) {
-                b.append(',');
+                b.append(", ");
               }
               b.append(arg.accept(this, builder));
               started = true;
@@ -729,10 +743,12 @@ public final class SuggestedFixes {
   public static SuggestedFix renameVariable(
       VariableTree tree, String replacement, VisitorState state) {
     String name = tree.getName().toString();
-    int typeEndPos = state.getEndPosition(tree.getType());
-    // handle implicit lambda parameter types
-    int searchOffset = typeEndPos == -1 ? 0 : (typeEndPos - getStartPosition(tree));
-    int pos = getStartPosition(tree) + state.getSourceForNode(tree).indexOf(name, searchOffset);
+    int startPos = getStartPosition(tree);
+    // For implicit lambda parameter types  getType() returns null after JDK 27 (JDK-8268850)
+    // and a tree without an end position for earlier versions.
+    int typeEndPos = tree.getType() != null ? state.getEndPosition(tree.getType()) : -1;
+    int searchOffset = typeEndPos == -1 ? 0 : (typeEndPos - startPos);
+    int pos = startPos + state.getSourceForNode(tree).indexOf(name, searchOffset);
     return SuggestedFix.builder()
         .replace(pos, pos + name.length(), replacement)
         .merge(renameVariableUsages(tree, replacement, state))
@@ -1788,9 +1804,7 @@ public final class SuggestedFixes {
             ? getStartPosition(tree.getInitializer())
             : state.getEndPosition(tree);
     ImmutableList<ErrorProneToken> tokens =
-        ErrorProneTokens.getTokens(
-                state.getSourceCode().subSequence(pos, end).toString(), state.context)
-            .stream()
+        ErrorProneTokens.getTokens(state.getSourceCode(pos, end).toString(), state.context).stream()
             .filter(
                 token ->
                     token.kind().equals(TokenKind.IDENTIFIER) && token.name().contentEquals("var"))
@@ -1801,6 +1815,55 @@ public final class SuggestedFixes {
     ErrorProneToken token = getOnlyElement(tokens);
     return Optional.of(
         SuggestedFix.replace(pos + token.pos(), pos + token.endPos(), replacementType));
+  }
+
+  /** Visibility modifiers. */
+  public enum Visibility {
+    PUBLIC(Optional.of(Modifier.PUBLIC)),
+    PRIVATE(Optional.of(Modifier.PRIVATE)),
+    PROTECTED(Optional.of(Modifier.PROTECTED)),
+    PACKAGE(Optional.empty());
+
+    private final Optional<Modifier> modifier;
+
+    Visibility(Optional<Modifier> modifier) {
+      this.modifier = modifier;
+    }
+
+    public SuggestedFix refactor(Tree tree, VisitorState state) {
+      SuggestedFix.Builder fix = SuggestedFix.builder();
+      modifier.flatMap(mod -> SuggestedFixes.addModifiers(tree, state, mod)).ifPresent(fix::merge);
+      Set<Modifier> toRemove =
+          EnumSet.allOf(Visibility.class).stream()
+              .filter(v -> v != this)
+              .flatMap(v -> v.modifier.stream())
+              .collect(toCollection(() -> EnumSet.noneOf(Modifier.class)));
+      SuggestedFixes.removeModifiers(getModifiers(tree), state, toRemove).ifPresent(fix::merge);
+      return fix.build();
+    }
+
+    private static Optional<Visibility> from(Modifier modifier) {
+      return switch (modifier) {
+        case PUBLIC -> Optional.of(PUBLIC);
+        case PROTECTED -> Optional.of(PROTECTED);
+        case PRIVATE -> Optional.of(PRIVATE);
+        default -> Optional.empty();
+      };
+    }
+
+    public static Visibility from(Tree tree) {
+      ImmutableList<Visibility> visibilities =
+          getSymbol(tree).getModifiers().stream()
+              .flatMap(modifier -> from(modifier).stream())
+              .collect(toImmutableList());
+      if (visibilities.isEmpty()) {
+        return PACKAGE;
+      }
+      if (visibilities.size() > 1) {
+        throw new IllegalArgumentException("Conflicting visibility modifiers: " + visibilities);
+      }
+      return getOnlyElement(visibilities);
+    }
   }
 
   private SuggestedFixes() {}

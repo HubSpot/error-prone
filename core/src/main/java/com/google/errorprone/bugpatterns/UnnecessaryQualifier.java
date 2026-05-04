@@ -29,8 +29,10 @@ import static com.google.errorprone.matchers.Matchers.annotations;
 import static com.google.errorprone.matchers.Matchers.hasArgumentWithValue;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
+import static com.google.errorprone.util.ASTHelpers.hasExplicitSource;
 import static com.google.errorprone.util.ASTHelpers.isRecord;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
+import static java.util.stream.Collectors.joining;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -82,7 +84,7 @@ public final class UnnecessaryQualifier extends BugChecker
         .anyMatch(anno -> hasAnnotation(enclosingClass, anno, state))) {
       return NO_MATCH;
     }
-    return deleteAnnotations(annotations);
+    return deleteAnnotations(annotations, state);
   }
 
   @Override
@@ -120,7 +122,7 @@ public final class UnnecessaryQualifier extends BugChecker
       case PARAMETER -> {
         if (state.getPath().getParentPath().getLeaf() instanceof LambdaExpressionTree) {
           // Annotations on lambda parameters are never meaningful.
-          return deleteAnnotations(annotations);
+          return deleteAnnotations(annotations, state);
         }
         var method = state.findEnclosing(MethodTree.class);
         if (method == null) {
@@ -156,7 +158,7 @@ public final class UnnecessaryQualifier extends BugChecker
         // fall out
       }
     }
-    return deleteAnnotations(annotations);
+    return deleteAnnotations(annotations, state);
   }
 
   private static final MultiMatcher<ClassTree, AnnotationTree> HAS_JUKITO_RUNNER =
@@ -165,10 +167,28 @@ public final class UnnecessaryQualifier extends BugChecker
           hasArgumentWithValue(
               "value", isJUnit4TestRunnerOfType(ImmutableSet.of("org.jukito.JukitoRunner"))));
 
-  private Description deleteAnnotations(ImmutableList<AnnotationTree> annotations) {
-    return describeMatch(
-        annotations.getFirst(),
-        annotations.stream().map(SuggestedFix::delete).collect(mergeFixes()));
+  private Description deleteAnnotations(
+      ImmutableList<AnnotationTree> annotations, VisitorState state) {
+    // annotations propagated to synthetic record constructors don't have source positions
+    ImmutableList<AnnotationTree> explicitAnnotations =
+        annotations.stream()
+            .filter(annotation -> hasExplicitSource(annotation, state))
+            .collect(toImmutableList());
+    if (explicitAnnotations.isEmpty()) {
+      return NO_MATCH;
+    }
+    boolean plural = explicitAnnotations.size() > 1;
+    return buildDescription(explicitAnnotations.getFirst())
+        .addFix(explicitAnnotations.stream().map(SuggestedFix::delete).collect(mergeFixes()))
+        .setMessage(
+            String.format(
+                "Qualifier annotation%s %s %s no effect here",
+                plural ? "s" : "",
+                explicitAnnotations.stream()
+                    .map(anno -> getSymbol(anno).getQualifiedName().toString())
+                    .collect(joining(", ", "@", "")),
+                plural ? "have" : "has"))
+        .build();
   }
 
   private static ImmutableList<AnnotationTree> getQualifiers(

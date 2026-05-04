@@ -46,13 +46,17 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSetMultimap;
 import com.google.errorprone.BugPattern;
+import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.BugChecker.AssignmentTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.BinaryTreeMatcher;
+import com.google.errorprone.bugpatterns.BugChecker.ConditionalExpressionTreeMatcher;
+import com.google.errorprone.bugpatterns.BugChecker.MemberReferenceTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.NewClassTreeMatcher;
+import com.google.errorprone.bugpatterns.BugChecker.ReturnTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.VariableTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
@@ -61,11 +65,16 @@ import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
+import com.sun.source.tree.ConditionalExpressionTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.LambdaExpressionTree;
+import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
+import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
+import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.Tree.Kind;
 import com.sun.source.tree.TypeCastTree;
@@ -78,6 +87,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import javax.inject.Inject;
 import org.jspecify.annotations.Nullable;
 
 /** Checker that detects likely time-unit mismatches by looking at identifier names. */
@@ -89,9 +99,19 @@ import org.jspecify.annotations.Nullable;
 public final class TimeUnitMismatch extends BugChecker
     implements AssignmentTreeMatcher,
         BinaryTreeMatcher,
+        ConditionalExpressionTreeMatcher,
+        MemberReferenceTreeMatcher,
         MethodInvocationTreeMatcher,
         NewClassTreeMatcher,
+        ReturnTreeMatcher,
         VariableTreeMatcher {
+
+  private final boolean checkReturnValues;
+
+  @Inject
+  TimeUnitMismatch(ErrorProneFlags flags) {
+    this.checkReturnValues = flags.getBoolean("TimeUnitMismatch:CheckReturnValues").orElse(true);
+  }
 
   @Override
   public Description matchAssignment(AssignmentTree tree, VisitorState state) {
@@ -180,6 +200,54 @@ public final class TimeUnitMismatch extends BugChecker
   }
 
   @Override
+  public Description matchConditionalExpression(
+      ConditionalExpressionTree tree, VisitorState state) {
+    if (!checkReturnValues) {
+      return Description.NO_MATCH;
+    }
+    if (!NUMERIC_TIME_TYPE.matches(tree.getTrueExpression(), state)
+        || !NUMERIC_TIME_TYPE.matches(tree.getFalseExpression(), state)) {
+      return Description.NO_MATCH;
+    }
+
+    TreeAndTimeUnit lhs = unitSuggestedByTree(tree.getTrueExpression());
+    TreeAndTimeUnit rhs = unitSuggestedByTree(tree.getFalseExpression());
+
+    if (lhs == null || rhs == null) {
+      return Description.NO_MATCH;
+    }
+    if (lhs.outermostUnit().equals(rhs.outermostUnit())) {
+      return Description.NO_MATCH;
+    }
+
+    return buildDescription(tree)
+        .setMessage(
+            String.format(
+                "The branches of this ternary expression have different time units: %s and %s.",
+                lhs.outermostUnit(), rhs.outermostUnit()))
+        .build();
+  }
+
+  @Override
+  public Description matchReturn(ReturnTree tree, VisitorState state) {
+    if (!checkReturnValues || tree.getExpression() == null) {
+      return Description.NO_MATCH;
+    }
+    for (var parent : state.getPath()) {
+      if (parent instanceof LambdaExpressionTree lambdaTree) {
+        var implementedMethod = state.getTypes().findDescriptorSymbol(getType(lambdaTree).tsym);
+        check(implementedMethod.getSimpleName().toString(), tree.getExpression(), state);
+        return ANY_MATCHES_WERE_ALREADY_REPORTED;
+      }
+      if (parent instanceof MethodTree methodTree) {
+        check(methodTree.getName().toString(), tree.getExpression(), state);
+        return ANY_MATCHES_WERE_ALREADY_REPORTED;
+      }
+    }
+    return ANY_MATCHES_WERE_ALREADY_REPORTED;
+  }
+
+  @Override
   public Description matchVariable(VariableTree tree, VisitorState state) {
     if (tree.getInitializer() != null) {
       check(tree.getName().toString(), tree.getInitializer(), state);
@@ -194,12 +262,6 @@ public final class TimeUnitMismatch extends BugChecker
    * compile against .class files that were compiled without parameter names?) e.g.,
    * SystemClock.elapsedRealtime is millis. And how about Stopwatch.elapsed(TimeUnit) and perhaps
    * similar methods?
-   */
-
-  /*
-   * TODO(cpovirk): Check `return` statements against the type suggested by the method name (or from
-   * the hardcoded list, since mismatches there seem more likely -- e.g., Ticker.read() that returns
-   * elapsedRealtime()).
    */
 
   /*
@@ -225,6 +287,19 @@ public final class TimeUnitMismatch extends BugChecker
     if (!setterMethodReported) {
       checkAll(symbol.getParameters(), tree.getArguments(), state);
     }
+    return ANY_MATCHES_WERE_ALREADY_REPORTED;
+  }
+
+  @Override
+  public Description matchMemberReference(MemberReferenceTree tree, VisitorState state) {
+    if (!checkReturnValues) {
+      return Description.NO_MATCH;
+    }
+    Symbol descriptorSymbol = state.getTypes().findDescriptorSymbol(getType(tree).tsym);
+    if (descriptorSymbol == null) {
+      return Description.NO_MATCH;
+    }
+    check(descriptorSymbol.getSimpleName().toString(), tree, state);
     return ANY_MATCHES_WERE_ALREADY_REPORTED;
   }
 
@@ -316,7 +391,13 @@ public final class TimeUnitMismatch extends BugChecker
      * TODO(cpovirk): But consider looking at List<Integer> and even String, for which I've seen
      * possible mistakes.
      */
-    if (!NUMERIC_TIME_TYPE.matches(actualTree, state)) {
+    if (actualTree instanceof MemberReferenceTree memberRef) {
+      MethodSymbol descriptorSymbol =
+          (MethodSymbol) state.getTypes().findDescriptorSymbol(getType(memberRef).tsym);
+      if (!descriptorSymbol.getReturnType().isNumeric()) {
+        return false;
+      }
+    } else if (!NUMERIC_TIME_TYPE.matches(actualTree, state)) {
       return false;
     }
 
@@ -415,6 +496,9 @@ public final class TimeUnitMismatch extends BugChecker
     switch (expr) {
       case TypeCastTree typeCast -> {
         return extractArgumentName(typeCast.getExpression());
+      }
+      case MemberReferenceTree memberRef -> {
+        return memberRef.getName().toString();
       }
       case MemberSelectTree memberSelect -> {
         // If we have a field or method access, we use the name of the field/method. (We ignore

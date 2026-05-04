@@ -17,11 +17,11 @@
 package com.google.errorprone;
 
 import static com.google.common.truth.Truth.assertThat;
+import static com.google.common.truth.TruthJUnit.assume;
 import static com.google.errorprone.BugPattern.SeverityLevel.SUGGESTION;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.fail;
 
-import com.google.errorprone.BugCheckerRefactoringTestHelper.TestMode;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.BugChecker.AnnotationTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.CompilationUnitTreeMatcher;
@@ -132,7 +132,7 @@ public class BugCheckerRefactoringTestHelperTest {
               }
             }
             """)
-        .doTest(TestMode.TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -158,7 +158,7 @@ public class BugCheckerRefactoringTestHelperTest {
               }
             }
             """)
-        .doTest(TestMode.TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -187,7 +187,7 @@ public class BugCheckerRefactoringTestHelperTest {
                       }
                     }
                     """)
-                .doTest(TestMode.TEXT_MATCH));
+                .doTest());
   }
 
   @Test
@@ -229,7 +229,7 @@ public class BugCheckerRefactoringTestHelperTest {
 
             public class Bar {}
             """)
-        .doTest(TestMode.TEXT_MATCH);
+        .doTest();
   }
 
   /** Mock {@link BugChecker} for testing only. */
@@ -289,13 +289,13 @@ public class BugCheckerRefactoringTestHelperTest {
         .addOutputLines(
             "out/pkg/A.java",
             """
-            import java.util.ArrayList;
-
             import static java.lang.Math.min;
+
+            import java.util.ArrayList;
 
             class A {}
             """)
-        .doTest(TestMode.TEXT_MATCH);
+        .doTest();
   }
 
   /** Mock {@link BugChecker} for testing only. */
@@ -326,9 +326,6 @@ public class BugCheckerRefactoringTestHelperTest {
     @Override
     public Description matchVariable(VariableTree tree, VisitorState state) {
       Tree type = tree.getType();
-      if (ASTHelpers.hasExplicitSource(type, state)) {
-        return Description.NO_MATCH;
-      }
       return describeMatch(type, SuggestedFix.replace(type, "Object"));
     }
   }
@@ -336,6 +333,9 @@ public class BugCheckerRefactoringTestHelperTest {
   @SuppressWarnings("MissingTestCall") // used in a method reference in assertThrows
   @Test
   public void replaceVarTypes() {
+    // after JDK-8358604 in JDK 27, var types have source positions
+    // after JDK-8359383 in JDK 26, var type start and end positions are the same
+    assume().that(Runtime.version().feature()).isLessThan(26);
     BugCheckerRefactoringTestHelper helper =
         BugCheckerRefactoringTestHelper.newInstance(ReplaceVarTypes.class, getClass())
             .addInputLines(
@@ -358,5 +358,81 @@ public class BugCheckerRefactoringTestHelperTest {
                 var x = 1 + 2;
             """);
     assertThat(e).hasMessageThat().contains("BugPattern: ReplaceVarTypes");
+  }
+
+  @Test
+  public void varTypeSourcePositions() {
+    // after JDK-8358604 in JDK 27, var types have source positions
+    assume().that(Runtime.version().feature()).isAtLeast(27);
+    BugCheckerRefactoringTestHelper.newInstance(ReplaceVarTypes.class, getClass())
+        .addInputLines(
+            "Test.java",
+            """
+            public class Test {
+              public void foo() {
+                var x = 1 + 2;
+                System.out.println(x);
+              }
+            }
+            """)
+        .addOutputLines(
+            "out/Test.java",
+            """
+            public class Test {
+              public void foo() {
+                Object x = 1 + 2;
+                System.out.println(x);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void reorderImports() {
+    helper
+        .addInputLines(
+            "in/Test.java",
+            """
+            import static java.lang.Math.min;
+
+            import java.util.List;
+
+            public class Test {
+              public Integer foo(List<Integer> xs) {
+                Integer i = null;
+                for (int x : xs) {
+                  if (i == null) {
+                    i = x;
+                  } else {
+                    i = min(i, x);
+                  }
+                }
+                return i;
+              }
+            }
+            """)
+        .addOutputLines(
+            "out/Test.java",
+            """
+            import static java.lang.Math.min;
+
+            import java.util.List;
+
+            public class Test {
+              public Integer foo(List<Integer> xs) {
+                Integer i = null;
+                for (int x : xs) {
+                  if (i == null) {
+                    i = x;
+                  } else {
+                    i = min(i, x);
+                  }
+                }
+                return null;
+              }
+            }
+            """)
+        .doTest();
   }
 }

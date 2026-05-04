@@ -16,8 +16,6 @@
 
 package com.google.errorprone.bugpatterns;
 
-import static com.google.errorprone.BugCheckerRefactoringTestHelper.TestMode.TEXT_MATCH;
-
 import com.google.errorprone.BugCheckerRefactoringTestHelper;
 import com.google.errorprone.CompilationTestHelper;
 import java.util.Enumeration;
@@ -167,7 +165,7 @@ public class JdkObsoleteTest {
                   };
             }
             """)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -312,7 +310,7 @@ public class JdkObsoleteTest {
               }
             }
             """)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -393,8 +391,8 @@ public class JdkObsoleteTest {
             "Test.java",
             """
             import java.util.Map;
-            import java.util.Set;
             import java.util.NavigableMap;
+            import java.util.Set;
 
             class Test {
               void f(NavigableMap<String, Integer> m) {

@@ -17,7 +17,6 @@
 package com.google.errorprone.bugpatterns;
 
 import static com.google.common.truth.Truth.assertThat;
-import static com.google.errorprone.BugCheckerRefactoringTestHelper.TestMode.TEXT_MATCH;
 
 import com.google.errorprone.BugCheckerRefactoringTestHelper;
 import com.google.errorprone.BugCheckerRefactoringTestHelper.FixChoosers;
@@ -58,9 +57,9 @@ public final class RefactorSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.util.function.Supplier;
             import java.util.HashSet;
             import java.util.Set;
+            import java.util.function.Supplier;
 
             class Test {
               public String foo(Suit s) {
@@ -130,9 +129,9 @@ public final class RefactorSwitchTest {
         .addOutputLines(
             "Test.java",
             """
-            import java.util.function.Supplier;
             import java.util.HashSet;
             import java.util.Set;
+            import java.util.function.Supplier;
 
             class Test {
               public String foo(Suit s) {
@@ -197,7 +196,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -492,7 +491,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(FixChoosers.FIRST)
-        .doTest(TEXT_MATCH);
+        .doTest();
 
     refactoringHelper2
         .addInputLines(
@@ -533,7 +532,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertSecondAndLastFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -584,7 +583,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -640,7 +639,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -686,7 +685,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(FixChoosers.FIRST)
-        .doTest(TEXT_MATCH);
+        .doTest();
 
     refactoringHelper2
         .addInputLines(
@@ -728,7 +727,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertSecondAndLastFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -774,7 +773,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(FixChoosers.FIRST)
-        .doTest(TEXT_MATCH);
+        .doTest();
 
     refactoringHelper2
         .addInputLines(
@@ -816,7 +815,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertSecondAndLastFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -865,7 +864,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(FixChoosers.FIRST)
-        .doTest(TEXT_MATCH);
+        .doTest();
 
     refactoringHelper2
         .addInputLines(
@@ -911,7 +910,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertSecondAndLastFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -1390,7 +1389,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -1524,7 +1523,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   /***********************************************************************************************
@@ -1644,7 +1643,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -1746,7 +1745,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -1804,7 +1803,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -1862,7 +1861,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -1907,7 +1906,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -1952,7 +1951,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -2014,7 +2013,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -2456,7 +2455,53 @@ public final class RefactorSwitchTest {
         // There should be no second fix that attempts to remove the default case because there is
         // no default case.
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
+  }
+
+  @Test
+  public void switchByEnumAssignment_preservesComments_error() {
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                int x = 0;
+                switch (suit) {
+                  case HEART, DIAMOND -> {
+                    x = /* This comment should be preserved */ x + 1;
+                  }
+                  case SPADE -> throw new RuntimeException();
+                  case CLUB -> throw new NullPointerException();
+                }
+                return x;
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit suit) {
+                int x = 0;
+                x =
+                    switch (suit) {
+                      case HEART, DIAMOND ->
+                          /* This comment should be preserved */
+                          x + 1;
+                      case SPADE -> throw new RuntimeException();
+                      case CLUB -> throw new NullPointerException();
+                    };
+                return x;
+              }
+            }
+            """)
+        .setArgs(
+            "-XepOpt:RefactorSwitch:EnableAssignmentSwitch",
+            "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
+            "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
+        .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
+        .doTest();
   }
 
   @Test
@@ -2503,7 +2548,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch",
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
-        .doTest(TEXT_MATCH);
+        .doTest();
 
     refactoringHelper2
         .addInputLines(
@@ -2546,7 +2591,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertSecondAndLastFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -2592,7 +2637,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch",
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
-        .doTest(TEXT_MATCH);
+        .doTest();
 
     refactoringHelper2
         .addInputLines(
@@ -2634,7 +2679,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertSecondAndLastFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -2728,7 +2773,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=false")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -2988,7 +3033,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=true")
         .setFixChooser(FixChoosers.FIRST)
-        .doTest(TEXT_MATCH);
+        .doTest();
 
     refactoringHelper2
         .addInputLines(
@@ -3067,7 +3112,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableAssignmentSwitch=false")
         .setFixChooser(RefactorSwitchTest::assertSecondAndLastFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -3140,7 +3185,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=true")
         .setFixChooser(FixChoosers.FIRST)
-        .doTest(TEXT_MATCH);
+        .doTest();
 
     refactoringHelper2
         .addInputLines(
@@ -3207,7 +3252,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=true")
         .setFixChooser(RefactorSwitchTest::assertSecondAndLastFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -3258,7 +3303,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=true")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -3315,7 +3360,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=true")
         .setFixChooser(FixChoosers.FIRST)
-        .doTest(TEXT_MATCH);
+        .doTest();
 
     refactoringHelper2
         .addInputLines(
@@ -3369,7 +3414,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=true")
         .setFixChooser(RefactorSwitchTest::assertSecondAndLastFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -3436,7 +3481,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=true")
         .setFixChooser(FixChoosers.FIRST)
-        .doTest(TEXT_MATCH);
+        .doTest();
 
     refactoringHelper2
         .addInputLines(
@@ -3498,7 +3543,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=true")
         .setFixChooser(RefactorSwitchTest::assertSecondAndLastFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -3549,7 +3594,7 @@ public final class RefactorSwitchTest {
             "-XepOpt:RefactorSwitch:EnableReturnSwitch=false",
             "-XepOpt:RefactorSwitch:EnableSimplifySwitch=true")
         .setFixChooser(RefactorSwitchTest::assertOneFixAndChoose)
-        .doTest(TEXT_MATCH);
+        .doTest();
   }
 
   @Test
