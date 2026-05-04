@@ -1267,26 +1267,25 @@ public class ASTHelpers {
    * <p>Prefer this to {@link Symbol#packge}, which throws a {@link NullPointerException} for
    * symbols that are not contained by a package: https://bugs.openjdk.java.net/browse/JDK-8231911
    */
-  public static @Nullable PackageSymbol enclosingPackage(Symbol sym) {
+  public static Optional<PackageSymbol> enclosingPackage(Symbol sym) {
     Symbol curr = sym;
     while (curr != null) {
       if (curr.getKind().equals(ElementKind.PACKAGE)) {
-        return (PackageSymbol) curr;
+        return Optional.of((PackageSymbol) curr);
       }
       curr = curr.owner;
     }
-    return null;
+    return Optional.empty();
   }
 
   /** Return true if the given symbol is defined in the current package. */
   public static boolean inSamePackage(Symbol targetSymbol, VisitorState state) {
     JCCompilationUnit compilationUnit = (JCCompilationUnit) state.getPath().getCompilationUnit();
     PackageSymbol usePackage = compilationUnit.packge;
-    PackageSymbol targetPackage = enclosingPackage(targetSymbol);
-
-    return targetPackage != null
-        && usePackage != null
-        && targetPackage.getQualifiedName().equals(usePackage.getQualifiedName());
+    if (usePackage == null) {
+      return false;
+    }
+    return enclosingPackage(targetSymbol).map(p -> p.equals(usePackage)).orElse(false);
   }
 
   /**
@@ -2107,8 +2106,13 @@ public class ASTHelpers {
     if (varDecl.declaredUsingVar()) {
       return true;
     }
+    Tree type = tree.getType();
+    // after JDK-8268850, implicit lambda parameter types are null
+    if (type == null) {
+      return true;
+    }
     // after JDK-8358604, inferred variable types have source positions
-    if (!hasExplicitSource(tree.getType(), state)) {
+    if (!hasExplicitSource(type, state)) {
       return true;
     }
     return false;

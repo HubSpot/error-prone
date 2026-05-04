@@ -47,6 +47,7 @@ public final class PatternMatchingInstanceofTest {
             class Test {
               void test(Object o) {
                 if (o instanceof Test test) {
+
                   test(test);
                 }
               }
@@ -106,6 +107,7 @@ public final class PatternMatchingInstanceofTest {
             class Test {
               void test(Object o) {
                 if (o instanceof Test test) {
+
                   test(test);
                 }
               }
@@ -137,6 +139,7 @@ public final class PatternMatchingInstanceofTest {
               void test(Object o) {
                 if (!(o instanceof Test test)) {
                 } else {
+
                   test(test);
                 }
               }
@@ -175,6 +178,7 @@ public final class PatternMatchingInstanceofTest {
                 } else {
                   return;
                 }
+
                 test(test);
               }
             }
@@ -206,6 +210,7 @@ public final class PatternMatchingInstanceofTest {
                 if (!(o instanceof Test test) || o.hashCode() == 0) {
                   return;
                 }
+
                 test(test);
               }
             }
@@ -237,6 +242,7 @@ public final class PatternMatchingInstanceofTest {
                 if (!(o instanceof Test test)) {
                   return;
                 }
+
                 test(test);
               }
             }
@@ -304,6 +310,7 @@ public final class PatternMatchingInstanceofTest {
             class Test {
               void test(Object o) {
                 if (o instanceof Test test && o.hashCode() != 1) {
+
                   test(test);
                 }
               }
@@ -574,6 +581,7 @@ public final class PatternMatchingInstanceofTest {
               void test(Object o) {
                 if (o instanceof Test test) {
                   test(test);
+
                   test(test);
                 }
               }
@@ -666,6 +674,7 @@ public final class PatternMatchingInstanceofTest {
                 if (!(o instanceof Test other) || other.x != this.x) {
                   return false;
                 }
+
                 return other.y == this.y;
               }
             }
@@ -775,7 +784,7 @@ public final class PatternMatchingInstanceofTest {
             }
             """)
         .expectUnchanged()
-        .doTest(BugCheckerRefactoringTestHelper.TestMode.TEXT_MATCH);
+        .doTest();
   }
 
   @Test
@@ -926,7 +935,7 @@ public final class PatternMatchingInstanceofTest {
               }
             }
             """)
-        .doTest(BugCheckerRefactoringTestHelper.TestMode.TEXT_MATCH);
+        .doTest();
   }
 
   // https://github.com/google/error-prone/issues/4921
@@ -997,7 +1006,7 @@ public final class PatternMatchingInstanceofTest {
               void rawTypeNecessary(ArrayList<Integer> l) {}
             }
             """)
-        .doTest(BugCheckerRefactoringTestHelper.TestMode.TEXT_MATCH);
+        .doTest();
   }
 
   @Test

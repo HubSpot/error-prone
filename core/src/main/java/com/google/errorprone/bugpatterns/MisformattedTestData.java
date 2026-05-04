@@ -36,6 +36,8 @@ import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.googlejavaformat.java.Formatter;
 import com.google.googlejavaformat.java.FormatterException;
+import com.google.googlejavaformat.java.ImportOrderer;
+import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MethodInvocationTree;
@@ -71,7 +73,7 @@ public final class MisformattedTestData extends BugChecker implements MethodInvo
     Formatter formatter = new Formatter();
     String formattedSource;
     try {
-      formattedSource = formatter.formatSource(string);
+      formattedSource = ImportOrderer.reorderImports(formatter.formatSource(string), Style.GOOGLE);
     } catch (FormatterException exception) {
       return NO_MATCH;
     }
@@ -84,17 +86,14 @@ public final class MisformattedTestData extends BugChecker implements MethodInvo
     int startPos = state.getEndPosition(tree.getArguments().get(0));
     int endPos = getStartPosition(tree.getArguments().get(1));
     var tokens =
-        getTokens(
-            state.getSourceCode().subSequence(startPos, endPos).toString(),
-            startPos,
-            state.context);
+        getTokens(state.getSourceCode(startPos, endPos).toString(), startPos, state.context);
     var afterCommaPos =
         tokens.reverse().stream()
             .filter(t -> t.kind().equals(TokenKind.COMMA))
             .findFirst()
             .orElseThrow()
             .endPos();
-    var betweenArguments = state.getSourceCode().subSequence(afterCommaPos, endPos).toString();
+    var betweenArguments = state.getSourceCode(afterCommaPos, endPos).toString();
     var spaces =
         betweenArguments.contains("\n")
             ? betweenArguments.substring(betweenArguments.indexOf('\n') + 1)
