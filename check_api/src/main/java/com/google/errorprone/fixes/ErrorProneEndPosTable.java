@@ -16,6 +16,8 @@
 
 package com.google.errorprone.fixes;
 
+import static java.util.Objects.requireNonNull;
+
 import com.google.common.base.Throwables;
 import com.google.errorprone.SourcePositionException;
 
@@ -117,6 +119,7 @@ public interface ErrorProneEndPosTable {
     MethodHandle getEndPosition =
         MethodHandles.insertArguments(GET_END_POS_WITH_UNIT_HANDLE, 1, unit);
     return pos -> {
+      requireNonNull(pos);
       try {
         return (int) getEndPosition.invokeExact(pos);
       } catch (Throwable e) {

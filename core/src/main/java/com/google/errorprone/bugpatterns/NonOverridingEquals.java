@@ -63,8 +63,13 @@ public class NonOverridingEquals extends BugChecker implements MethodTreeMatcher
   private static final String MESSAGE_BASE = "equals method doesn't override Object.equals";
 
   /**
-   * Matches any method definition that: 1) is named `equals` 2) takes a single argument of a type
-   * other than Object 3) returns a boolean or Boolean
+   * Matches any method definition that:
+   *
+   * <ol>
+   *   <li>is named {@code equals};
+   *   <li>takes a single argument of a type other than {@code Object};
+   *   <li>returns a {@code boolean} or {@code Boolean}.
+   * </ol>
    */
   private static final Matcher<MethodTree> MATCHER =
       allOf(
@@ -88,9 +93,9 @@ public class NonOverridingEquals extends BugChecker implements MethodTreeMatcher
    * doesn't work:
    *
    * <ul>
-   *   <li>the method is static
-   *   <li>the method is not public
-   *   <li>the method returns a boxed Boolean
+   *   <li>the method is static;
+   *   <li>the method is not public;
+   *   <li>the method returns a boxed Boolean.
    * </ul>
    */
   private static final Matcher<MethodTree> noFixMatcher =
@@ -175,17 +180,7 @@ public class NonOverridingEquals extends BugChecker implements MethodTreeMatcher
     }
   }
 
-  private static class CastState {
-    final Name name;
-    final String castToType;
-    final SuggestedFix.Builder fix;
-
-    CastState(Name name, String castToType, SuggestedFix.Builder fix) {
-      this.name = name;
-      this.castToType = castToType;
-      this.fix = fix;
-    }
-  }
+  private record CastState(Name name, String castToType, SuggestedFix.Builder fix) {}
 
   /** A Scanner used to replace all references to a variable with a casted version. */
   private static class CastScanner extends TreeScanner<Void, CastState> {

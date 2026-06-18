@@ -45,6 +45,7 @@ import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
 import com.google.common.base.Verify;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
@@ -111,14 +112,13 @@ import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.JCDiagnostic;
 import com.sun.tools.javac.util.Options;
 import com.sun.tools.javac.util.Position;
-
-import org.jspecify.annotations.Nullable;
-
+import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.annotation.Target;
 import java.net.JarURLConnection;
 import java.net.URI;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -126,6 +126,8 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
@@ -150,10 +152,15 @@ import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.SimpleTypeVisitor8;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
+import javax.tools.FileObject;
+import javax.tools.ForwardingJavaFileManager;
 import javax.tools.JavaFileManager;
+import javax.tools.JavaFileManager.Location;
 import javax.tools.JavaFileObject;
 import javax.tools.JavaFileObject.Kind;
 import javax.tools.SimpleJavaFileObject;
+import javax.tools.StandardJavaFileManager;
+import org.jspecify.annotations.Nullable;
 
 /** Factories for constructing {@link Fix}es. */
 public final class SuggestedFixes {
@@ -513,6 +520,30 @@ public final class SuggestedFixes {
       String qualifiedName, SuggestedFix.Builder fix, VisitorState state) {
     String name = qualifiedName.substring(qualifiedName.lastIndexOf(".") + 1);
     AtomicBoolean foundConflict = new AtomicBoolean(false);
+    AtomicBoolean alreadyInScope = new AtomicBoolean(false);
+    var identifierName = state.getName(name);
+    stream(state.getPath())
+        .filter(ClassTree.class::isInstance)
+        .map(ClassTree.class::cast)
+        .map(ASTHelpers::getSymbol)
+        .filter(s -> s != null)
+        .flatMap(
+            enclosingClass ->
+                stream(
+                    state
+                        .getTypes()
+                        .membersClosure(enclosingClass.type, /* skipInterface= */ false)
+                        .getSymbolsByName(identifierName)))
+        .forEach(
+            sym -> {
+              var identifierQualifiedName =
+                  sym.owner.getQualifiedName() + "." + sym.getSimpleName();
+              if (qualifiedName.equals(identifierQualifiedName)) {
+                alreadyInScope.set(true);
+              } else {
+                foundConflict.set(true);
+              }
+            });
     new TreeScanner<Void, Void>() {
       @Override
       public Void visitMethod(MethodTree method, Void unused) {
@@ -545,7 +576,9 @@ public final class SuggestedFixes {
       String className = qualifiedName.substring(0, qualifiedName.lastIndexOf("."));
       return qualifyType(state, fix, className) + "." + name;
     }
-    fix.addStaticImport(qualifiedName);
+    if (!alreadyInScope.get()) {
+      fix.addStaticImport(qualifiedName);
+    }
     return name;
   }
 
@@ -748,11 +781,20 @@ public final class SuggestedFixes {
     // and a tree without an end position for earlier versions.
     int typeEndPos = tree.getType() != null ? state.getEndPosition(tree.getType()) : -1;
     int searchOffset = typeEndPos == -1 ? 0 : (typeEndPos - startPos);
-    int pos = startPos + state.getSourceForNode(tree).indexOf(name, searchOffset);
-    return SuggestedFix.builder()
-        .replace(pos, pos + name.length(), replacement)
-        .merge(renameVariableUsages(tree, replacement, state))
-        .build();
+    SuggestedFix.Builder fix = SuggestedFix.builder();
+    state.getOffsetTokens(startPos + searchOffset, state.getEndPosition(tree)).stream()
+        .filter(
+            token ->
+                switch (token.kind()) {
+                  // VariableTree#getName is empty for unnamed _ variables
+                  case UNDERSCORE -> name.isEmpty();
+                  case IDENTIFIER -> token.name().contentEquals(name);
+                  default -> false;
+                })
+        .findFirst()
+        .ifPresent(token -> fix.replace(token.pos(), token.endPos(), replacement));
+    fix.merge(renameVariableUsages(tree, replacement, state));
+    return fix.build();
   }
 
   /**
@@ -798,14 +840,16 @@ public final class SuggestedFixes {
     Tree methodSelect = tree.getMethodSelect();
     Name identifier;
     int startPos;
-    if (methodSelect instanceof MemberSelectTree memberSelectTree) {
-      identifier = memberSelectTree.getIdentifier();
-      startPos = state.getEndPosition(memberSelectTree.getExpression());
-    } else if (methodSelect instanceof IdentifierTree identifierTree) {
-      identifier = identifierTree.getName();
-      startPos = getStartPosition(tree);
-    } else {
-      throw malformedMethodInvocationTree(tree);
+    switch (methodSelect) {
+      case MemberSelectTree memberSelectTree -> {
+        identifier = memberSelectTree.getIdentifier();
+        startPos = state.getEndPosition(memberSelectTree.getExpression());
+      }
+      case IdentifierTree identifierTree -> {
+        identifier = identifierTree.getName();
+        startPos = getStartPosition(tree);
+      }
+      default -> throw malformedMethodInvocationTree(tree);
     }
     int endPos =
         tree.getArguments().isEmpty()
@@ -1369,7 +1413,7 @@ public final class SuggestedFixes {
 
     // If we reached the maximum number of diagnostics of a given kind without finding one in the
     // modified compilation unit, we won't find any more diagnostics, but we can't be sure that
-    // there isn't an diagnostic, as the diagnostic may simply be the (max+1)-th diagnostic, and
+    // there isn't a diagnostic, as the diagnostic may simply be the (max+1)-th diagnostic, and
     // thus was dropped.
     int countErrors = 0;
     int countWarnings = 0;
@@ -1414,23 +1458,46 @@ public final class SuggestedFixes {
     private final List<JavaFileObject> fileObjects;
     private final VisitorState state;
     private final BasicJavacTask javacTask;
+    private final ImmutableMap<URI, JavaFileObject> speculativeFiles;
 
     private FixCompiler(
-        List<JavaFileObject> fileObjects, VisitorState state, BasicJavacTask javacTask) {
+        List<JavaFileObject> fileObjects,
+        VisitorState state,
+        BasicJavacTask javacTask,
+        Map<URI, JavaFileObject> speculativeFiles) {
       this.fileObjects = fileObjects;
       this.state = state;
       this.javacTask = javacTask;
+      this.speculativeFiles = ImmutableMap.copyOf(speculativeFiles);
     }
 
     public Result compile(ImmutableList<String> extraOptions) {
       DiagnosticCollector<JavaFileObject> diagnosticListener = new DiagnosticCollector<>();
       Context context = createContext();
       Arguments arguments = Arguments.instance(javacTask.getContext());
+      JavaFileManager originalFileManager = state.context.get(JavaFileManager.class);
+      JavaFileManager fileManager = originalFileManager;
+      if (originalFileManager instanceof StandardJavaFileManager standardFileManager) {
+        fileManager =
+            new StandardForwardingFileManager(standardFileManager) {
+              @Override
+              public boolean contains(Location location, FileObject fo) throws IOException {
+                JavaFileObject underlying = speculativeFiles.get(fo.toUri());
+                return super.contains(location, underlying != null ? underlying : fo);
+              }
+
+              @Override
+              public Path asPath(FileObject fo) {
+                JavaFileObject underlying = speculativeFiles.get(fo.toUri());
+                return super.asPath(underlying != null ? underlying : fo);
+              }
+            };
+      }
       JavacTask newTask =
           JavacTool.create()
               .getTask(
                   CharStreams.nullWriter(),
-                  state.context.get(JavaFileManager.class),
+                  fileManager,
                   diagnosticListener,
                   extraOptions,
                   arguments.getClassNames(),
@@ -1478,11 +1545,16 @@ public final class SuggestedFixes {
       }
       Arguments arguments = Arguments.instance(javacTask.getContext());
       ArrayList<JavaFileObject> fileObjects = new ArrayList<>(arguments.getFileObjects());
-      applyFix(fix, state, fileObjects);
-      return new FixCompiler(fileObjects, state, javacTask);
+      Map<URI, JavaFileObject> speculativeFiles = new HashMap<>();
+      applyFix(fix, state, fileObjects, speculativeFiles);
+      return new FixCompiler(fileObjects, state, javacTask, speculativeFiles);
     }
 
-    private static void applyFix(Fix fix, VisitorState state, ArrayList<JavaFileObject> fileObjects)
+    private static void applyFix(
+        Fix fix,
+        VisitorState state,
+        ArrayList<JavaFileObject> fileObjects,
+        Map<URI, JavaFileObject> speculativeFiles)
         throws IOException {
 
       JCCompilationUnit compilationUnit = (JCCompilationUnit) state.getPath().getCompilationUnit();
@@ -1502,14 +1574,16 @@ public final class SuggestedFixes {
                 diff.handleFix(fix);
                 SourceFile fixSource = new SourceFile(modifiedFile.getName(), modifiedFileContent);
                 diff.applyDifferences(fixSource);
-                fileObjects.set(
-                    i,
+                JavaFileObject originalFile = fileObjects.get(i);
+                SimpleJavaFileObject speculativeFile =
                     new SimpleJavaFileObject(sourceURI(modifiedFile.toUri()), Kind.SOURCE) {
                       @Override
                       public CharSequence getCharContent(boolean ignoreEncodingErrors) {
                         return fixSource.getAsSequence();
                       }
-                    });
+                    };
+                fileObjects.set(i, speculativeFile);
+                speculativeFiles.put(speculativeFile.toUri(), originalFile);
               });
     }
 
@@ -1863,6 +1937,117 @@ public final class SuggestedFixes {
         throw new IllegalArgumentException("Conflicting visibility modifiers: " + visibilities);
       }
       return getOnlyElement(visibilities);
+    }
+  }
+
+  public static VariableNamer variableNamer(VisitorState state) {
+    return new VariableNamer(state);
+  }
+
+  /** Helper class for avoiding variable name shadowing. */
+  public static class VariableNamer {
+    private final Set<String> idents;
+
+    private VariableNamer(VisitorState state) {
+      this.idents =
+          FindIdentifiers.findAllIdents(state).stream()
+              .map(s -> s.getSimpleName().toString())
+              .collect(toCollection(HashSet::new));
+    }
+
+    public String avoidShadowing(String name) {
+      for (int i = 1; ; i++) {
+        String n = i == 1 ? name : (name + i);
+        if (idents.add(n)) {
+          return n;
+        }
+      }
+    }
+  }
+
+  private static class StandardForwardingFileManager
+      extends ForwardingJavaFileManager<StandardJavaFileManager>
+      implements StandardJavaFileManager {
+    StandardForwardingFileManager(StandardJavaFileManager delegate) {
+      super(delegate);
+    }
+
+    @Override
+    public Iterable<? extends JavaFileObject> getJavaFileObjectsFromFiles(
+        Iterable<? extends File> files) {
+      return fileManager.getJavaFileObjectsFromFiles(files);
+    }
+
+    @Override
+    public Iterable<? extends JavaFileObject> getJavaFileObjectsFromPaths(
+        Collection<? extends Path> paths) {
+      return fileManager.getJavaFileObjectsFromPaths(paths);
+    }
+
+    // Implementing StandardJavaFileManager
+    @SuppressWarnings({"deprecation", "IterablePathParameter"})
+    @Override
+    public Iterable<? extends JavaFileObject> getJavaFileObjectsFromPaths(
+        Iterable<? extends Path> paths) {
+      return fileManager.getJavaFileObjectsFromPaths(paths);
+    }
+
+    @Override
+    public Iterable<? extends JavaFileObject> getJavaFileObjects(File... files) {
+      return fileManager.getJavaFileObjects(files);
+    }
+
+    @Override
+    public Iterable<? extends JavaFileObject> getJavaFileObjects(Path... paths) {
+      return fileManager.getJavaFileObjects(paths);
+    }
+
+    @Override
+    public Iterable<? extends JavaFileObject> getJavaFileObjects(String... names) {
+      return fileManager.getJavaFileObjects(names);
+    }
+
+    @Override
+    public Iterable<? extends JavaFileObject> getJavaFileObjectsFromStrings(
+        Iterable<String> names) {
+      return fileManager.getJavaFileObjectsFromStrings(names);
+    }
+
+    @Override
+    public void setLocation(Location location, Iterable<? extends File> files) throws IOException {
+      fileManager.setLocation(location, files);
+    }
+
+    @Override
+    public void setLocationFromPaths(Location location, Collection<? extends Path> paths)
+        throws IOException {
+      fileManager.setLocationFromPaths(location, paths);
+    }
+
+    @Override
+    public void setLocationForModule(
+        Location location, String moduleName, Collection<? extends Path> paths) throws IOException {
+      fileManager.setLocationForModule(location, moduleName, paths);
+    }
+
+    @Override
+    public Iterable<? extends File> getLocation(Location location) {
+      return fileManager.getLocation(location);
+    }
+
+    @Override
+    public Iterable<? extends Path> getLocationAsPaths(Location location) {
+      return fileManager.getLocationAsPaths(location);
+    }
+
+    @Override
+    public Path asPath(FileObject file) {
+      return fileManager.asPath(file);
+    }
+
+    @Override
+    public void setPathFactory(PathFactory f) {
+      fileManager.setPathFactory(f);
     }
   }
 

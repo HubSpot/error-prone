@@ -45,12 +45,12 @@ public class TryFailRefactoringTest {
 
             class ExceptionTest {
               @Test
-              public void f(String message) throws Exception {
+              public void f(String msg) throws Exception {
                 Path p = Paths.get("NOSUCH");
                 try {
                   Files.readAllBytes(p);
                   Files.readAllBytes(p);
-                  fail(message);
+                  fail(msg);
                 } catch (IOException e) {
                   assertThat(e).hasMessageThat().contains("NOSUCH");
                 }
@@ -81,23 +81,17 @@ public class TryFailRefactoringTest {
 
             class ExceptionTest {
               @Test
-              public void f(String message) throws Exception {
+              public void f(String msg) throws Exception {
                 Path p = Paths.get("NOSUCH");
-                IOException e =
-                    assertThrows(
-                        message,
-                        IOException.class,
-                        () -> {
-                          Files.readAllBytes(p);
-                          Files.readAllBytes(p);
-                        });
+                Files.readAllBytes(p);
+                var e = assertThrows(IOException.class, () -> Files.readAllBytes(p));
                 assertThat(e).hasMessageThat().contains("NOSUCH");
               }
 
               @Test
               public void g() throws Exception {
                 Path p = Paths.get("NOSUCH");
-                IOException e = assertThrows(IOException.class, () -> Files.readAllBytes(p));
+                var e = assertThrows(IOException.class, () -> Files.readAllBytes(p));
                 assertThat(e).hasMessageThat().contains("NOSUCH");
               }
             }
@@ -169,11 +163,11 @@ public class TryFailRefactoringTest {
 
             class ExceptionTest {
               @Test
-              public void f(String message, CharSource cs) throws IOException {
+              public void f(String msg, CharSource cs) throws IOException {
                 try (BufferedReader buf = cs.openBufferedStream();
                     PushbackReader pbr = new PushbackReader(buf)) {
                   pbr.read();
-                  fail(message);
+                  fail(msg);
                 } catch (IOException e) {
                   assertThat(e).hasMessageThat().contains("NOSUCH");
                 }
@@ -195,10 +189,10 @@ public class TryFailRefactoringTest {
 
             class ExceptionTest {
               @Test
-              public void f(String message, CharSource cs) throws IOException {
+              public void f(String msg, CharSource cs) throws IOException {
                 try (BufferedReader buf = cs.openBufferedStream();
                     PushbackReader pbr = new PushbackReader(buf)) {
-                  IOException e = assertThrows(message, IOException.class, () -> pbr.read());
+                  var e = assertThrows(IOException.class, () -> pbr.read());
                   assertThat(e).hasMessageThat().contains("NOSUCH");
                 }
               }
@@ -285,6 +279,322 @@ public class TryFailRefactoringTest {
                   int a;
                 } catch (Exception e) {
                 }
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void twoTryFailBlocksSameScope() {
+    testHelper
+        .addInputLines(
+            "in/ExceptionTest.java",
+            """
+            import static com.google.common.truth.Truth.assertThat;
+            import static org.junit.Assert.fail;
+
+            import java.io.IOException;
+            import java.nio.file.Files;
+            import java.nio.file.Path;
+            import java.nio.file.Paths;
+            import org.junit.Test;
+
+            class ExceptionTest {
+              @Test
+              public void test() throws Exception {
+                Path p = Paths.get("NOSUCH");
+                try {
+                  Files.readAllBytes(p);
+                  fail("expected exception not thrown");
+                } catch (IOException e) {
+                  assertThat(e).hasMessageThat().contains("NOSUCH");
+                }
+                try {
+                  Files.readAllBytes(p);
+                  fail("expected exception not thrown");
+                } catch (IOException e) {
+                  assertThat(e).hasMessageThat().contains("NOSUCH");
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "out/ExceptionTest.java",
+            """
+            import static com.google.common.truth.Truth.assertThat;
+            import static org.junit.Assert.assertThrows;
+            import static org.junit.Assert.fail;
+
+            import java.io.IOException;
+            import java.nio.file.Files;
+            import java.nio.file.Path;
+            import java.nio.file.Paths;
+            import org.junit.Test;
+
+            class ExceptionTest {
+              @Test
+              public void test() throws Exception {
+                Path p = Paths.get("NOSUCH");
+                var e = assertThrows(IOException.class, () -> Files.readAllBytes(p));
+                assertThat(e).hasMessageThat().contains("NOSUCH");
+                var e2 = assertThrows(IOException.class, () -> Files.readAllBytes(p));
+                assertThat(e2).hasMessageThat().contains("NOSUCH");
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void commentsArePreserved() {
+    testHelper
+        .addInputLines(
+            "in/ExceptionTest.java",
+            """
+            import static com.google.common.truth.Truth.assertThat;
+            import static org.junit.Assert.fail;
+
+            import java.io.IOException;
+            import java.nio.file.*;
+            import org.junit.Test;
+
+            class ExceptionTest {
+              @Test
+              public void test() throws Exception {
+                Path p = Paths.get("NOSUCH");
+                // This is a comment inside test method, before the try block
+                try {
+                  // This is a comment inside try block, before the statement
+                  Files.readAllBytes(p);
+                  // This is a comment inside try block, after the statement
+                  fail();
+                  // This is a comment inside try block, after the fail statement
+                } catch (IOException e) {
+                  // This is a comment inside catch block
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "out/ExceptionTest.java",
+            """
+            import static com.google.common.truth.Truth.assertThat;
+            import static org.junit.Assert.assertThrows;
+            import static org.junit.Assert.fail;
+
+            import java.io.IOException;
+            import java.nio.file.*;
+            import org.junit.Test;
+
+            class ExceptionTest {
+              @Test
+              public void test() throws Exception {
+                Path p = Paths.get("NOSUCH");
+                // This is a comment inside test method, before the try block
+                // This is a comment inside try block, before the statement
+                // This is a comment inside try block, after the statement
+                // This is a comment inside try block, after the fail statement
+                // This is a comment inside catch block
+                assertThrows(IOException.class, () -> Files.readAllBytes(p));
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void variableDeclaration() {
+    testHelper
+        .addInputLines(
+            "in/ExceptionTest.java",
+            """
+            import static org.junit.Assert.fail;
+
+            import org.junit.Test;
+
+            class ExceptionTest {
+              int getAge() {
+                return 42;
+              }
+
+              @Test
+              void f() {
+                try {
+                  int age = getAge();
+                  fail();
+                } catch (IllegalArgumentException e) {
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "out/ExceptionTest.java",
+            """
+            import static org.junit.Assert.assertThrows;
+            import static org.junit.Assert.fail;
+
+            import org.junit.Test;
+
+            class ExceptionTest {
+              int getAge() {
+                return 42;
+              }
+
+              @Test
+              void f() {
+                assertThrows(IllegalArgumentException.class, () -> getAge());
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void variableDeclarationWithAssignmentUsedOnce() {
+    testHelper
+        .addInputLines(
+            "in/ExceptionTest.java",
+            """
+            import static org.junit.Assert.fail;
+
+            import org.junit.Test;
+
+            class ExceptionTest {
+              int getAge() {
+                return 42;
+              }
+
+              @Test
+              void f() {
+                int age;
+                try {
+                  age = getAge();
+                  fail();
+                } catch (IllegalArgumentException e) {
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "out/ExceptionTest.java",
+            """
+            import static org.junit.Assert.assertThrows;
+            import static org.junit.Assert.fail;
+
+            import org.junit.Test;
+
+            class ExceptionTest {
+              int getAge() {
+                return 42;
+              }
+
+              @Test
+              void f() {
+                int age;
+                assertThrows(IllegalArgumentException.class, () -> getAge());
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void variableDeclarationWithAssignmentUsedTwice() {
+    testHelper
+        .addInputLines(
+            "in/ExceptionTest.java",
+            """
+            import static org.junit.Assert.fail;
+
+            import org.junit.Test;
+
+            class ExceptionTest {
+              int getAge() {
+                return 42;
+              }
+
+              @Test
+              void f() {
+                int age;
+                try {
+                  age = getAge();
+                  fail();
+                } catch (IllegalArgumentException e) {
+                }
+                try {
+                  age = getAge();
+                  fail();
+                } catch (IllegalArgumentException e) {
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "out/ExceptionTest.java",
+            """
+            import static org.junit.Assert.assertThrows;
+            import static org.junit.Assert.fail;
+
+            import org.junit.Test;
+
+            class ExceptionTest {
+              int getAge() {
+                return 42;
+              }
+
+              @Test
+              void f() {
+                int age;
+                assertThrows(IllegalArgumentException.class, () -> getAge());
+                assertThrows(IllegalArgumentException.class, () -> getAge());
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void failureMessageIncludesReturnValue() {
+    testHelper
+        .addInputLines(
+            "in/ExceptionTest.java",
+            """
+            import static org.junit.Assert.fail;
+
+            import org.junit.Test;
+
+            class ExceptionTest {
+              int getAge() {
+                return 42;
+              }
+
+              @Test
+              void f() {
+                try {
+                  int age = getAge();
+                  fail("Expected getAge() to throw but it returned: " + age);
+                } catch (IllegalArgumentException e) {
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "out/ExceptionTest.java",
+            """
+            import static org.junit.Assert.assertThrows;
+            import static org.junit.Assert.fail;
+
+            import org.junit.Test;
+
+            class ExceptionTest {
+              int getAge() {
+                return 42;
+              }
+
+              @Test
+              void f() {
+                assertThrows(IllegalArgumentException.class, () -> getAge());
               }
             }
             """)
