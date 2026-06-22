@@ -31,7 +31,6 @@ import static com.google.errorprone.util.ASTHelpers.getThrownExceptions;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.isCheckedExceptionType;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
-import static java.util.stream.Collectors.toCollection;
 
 import com.google.common.base.CaseFormat;
 import com.google.common.collect.ImmutableList;
@@ -47,7 +46,6 @@ import com.google.errorprone.fixes.SuggestedFixes;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.predicates.TypePredicates;
-import com.google.errorprone.util.FindIdentifiers;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
@@ -67,20 +65,18 @@ import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Types;
-import java.util.HashSet;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.inject.Inject;
 import javax.lang.model.element.ElementKind;
+import org.jspecify.annotations.Nullable;
 
 /** A {@link BugChecker}; see the associated {@link BugPattern} annotation for details. */
 @BugPattern(summary = "Minimize the amount of logic in assertThrows", severity = WARNING)
 public class AssertThrowsMinimizer extends BugChecker implements MethodTreeMatcher {
 
   private static final Matcher<ExpressionTree> MATCHER =
-      staticMethod().onClass("org.junit.Assert").named("assertThrows");
+      anyOf(staticMethod().onClass("org.junit.Assert").named("assertThrows"));
 
   private final ConstantExpressions constantExpressions;
   private final boolean useVarType;
@@ -124,11 +120,10 @@ public class AssertThrowsMinimizer extends BugChecker implements MethodTreeMatch
     if (!(tree.getArguments().getLast() instanceof LambdaExpressionTree lambdaExpressionTree)) {
       return Optional.empty();
     }
-    Type firstArgumentType = getType(tree.getArguments().get(0));
-    if (firstArgumentType.getTypeArguments().isEmpty()) {
+    Type exceptionType = getExceptionType(tree, state);
+    if (exceptionType == null) {
       return Optional.empty();
     }
-    Type exceptionType = firstArgumentType.getTypeArguments().get(0);
     MethodInvocationTree runnable;
     switch (lambdaExpressionTree.getBody()) {
       case BlockTree blockTree -> {
@@ -197,8 +192,9 @@ public class AssertThrowsMinimizer extends BugChecker implements MethodTreeMatch
     }
 
     // update the tree path so VariableName considers the method parameters
-    VariableNamer variableNamer =
-        new VariableNamer(state.withPath(new TreePath(state.getPath(), toFix.getFirst().runnable)));
+    SuggestedFixes.VariableNamer variableNamer =
+        SuggestedFixes.variableNamer(
+            state.withPath(new TreePath(state.getPath(), toFix.getFirst().runnable)));
     for (AssertThrows current : toFix) {
       StringBuilder hoistedVariables = new StringBuilder();
       for (Hoist hoist : current.toHoist) {
@@ -284,7 +280,7 @@ public class AssertThrowsMinimizer extends BugChecker implements MethodTreeMatch
       // constant fields and string concatenation.
       return false;
     }
-    if (isCheckedException(exceptionType, state) && !throwsSubtypeOf(tree, exceptionType, state)) {
+    if (isCheckedExceptionType(exceptionType, state) && !maybeThrows(tree, exceptionType, state)) {
       return false;
     }
     boolean needsHoisting =
@@ -331,18 +327,22 @@ public class AssertThrowsMinimizer extends BugChecker implements MethodTreeMatch
     return !tree.getClassBody().getMembers().stream().allMatch(m -> m instanceof MethodTree);
   }
 
-  private static boolean throwsSubtypeOf(
-      ExpressionTree tree, Type exceptionType, VisitorState state) {
-    Types types = state.getTypes();
-    return types.isSubtype(state.getSymtab().runtimeExceptionType, exceptionType)
-        || getThrownExceptions(tree, state).stream()
-            .anyMatch(t -> isCheckedException(t, state) && types.isSubtype(t, exceptionType));
+  private static @Nullable Type getExceptionType(MethodInvocationTree tree, VisitorState state) {
+    Type firstArgumentType = getType(tree.getArguments().get(0));
+    if (firstArgumentType.getTypeArguments().isEmpty()) {
+      return null;
+    }
+    return firstArgumentType.getTypeArguments().get(0);
   }
 
-  private static boolean isCheckedException(Type exception, VisitorState state) {
+  private static boolean maybeThrows(ExpressionTree tree, Type exceptionType, VisitorState state) {
     Types types = state.getTypes();
-    return !types.isSubtype(exception, state.getSymtab().runtimeExceptionType)
-        && !types.isSubtype(exception, state.getSymtab().errorType);
+    if (types.isSubtype(state.getSymtab().runtimeExceptionType, exceptionType)) {
+      // The exception is Exception or Throwable, assume anything could throw it
+      return true;
+    }
+    return getThrownExceptions(tree, state).stream()
+        .anyMatch(t -> types.isAssignable(exceptionType, t));
   }
 
   private static final Matcher<ExpressionTree> KNOWN_SAFE =
@@ -367,25 +367,4 @@ public class AssertThrowsMinimizer extends BugChecker implements MethodTreeMatch
               .forClass(
                   TypePredicates.isDescendantOf(
                       "com.google.android.gms.tagmanager.internal.type.AbstractType")));
-
-  private static class VariableNamer {
-    private final Set<String> idents;
-
-    VariableNamer(VisitorState state) {
-      this.idents =
-          FindIdentifiers.findAllIdents(state).stream()
-              .map(s -> s.getSimpleName().toString())
-              .collect(toCollection(HashSet::new));
-    }
-
-    // Stolen from PatternMatchingInstanceof
-    // TODO: cushon - add to SuggestedFixes?
-    private String avoidShadowing(String name) {
-      return IntStream.iterate(1, i -> i + 1)
-          .mapToObj(i -> i == 1 ? name : (name + i))
-          .filter(n -> idents.add(n))
-          .findFirst()
-          .get();
-    }
-  }
 }

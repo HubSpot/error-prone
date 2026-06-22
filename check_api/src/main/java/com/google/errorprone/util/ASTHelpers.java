@@ -29,7 +29,6 @@ import static com.google.errorprone.matchers.Matchers.isSubtypeOf;
 import static com.sun.tools.javac.code.Scope.LookupKind.NON_RECURSIVE;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toCollection;
-import static javax.lang.model.element.ElementKind.CONSTRUCTOR;
 
 import com.google.common.base.CharMatcher;
 import com.google.common.collect.AbstractIterator;
@@ -818,7 +817,7 @@ public class ASTHelpers {
   public static MethodSymbol canonicalConstructor(ClassSymbol record, VisitorState state) {
     var fieldTypes =
         record.getRecordComponents().stream().map(rc -> rc.type).collect(toImmutableList());
-    return stream(record.members().getSymbols(s -> s.getKind() == CONSTRUCTOR))
+    return stream(record.members().getSymbols(s -> s.isConstructor()))
         .map(c -> (MethodSymbol) c)
         .filter(
             c ->
@@ -1009,30 +1008,34 @@ public class ASTHelpers {
    * annotation inheritance (see JLS 9.6.4.3).
    */
   public static boolean hasDirectAnnotationWithSimpleName(Symbol sym, String simpleName) {
-    if (sym instanceof MethodSymbol methodSymbol) {
-      return hasDirectAnnotationWithSimpleName(methodSymbol, simpleName);
-    }
-    if (sym instanceof VarSymbol varSymbol) {
-      return hasDirectAnnotationWithSimpleName(varSymbol, simpleName);
-    }
-    return hasDirectAnnotation(
-        sym.getAnnotationMirrors().stream(),
-        element -> element.getSimpleName().contentEquals(simpleName));
+    return switch (sym) {
+      case MethodSymbol methodSymbol -> hasDirectAnnotationWithSimpleName(methodSymbol, simpleName);
+      case VarSymbol varSymbol -> hasDirectAnnotationWithSimpleName(varSymbol, simpleName);
+      case null -> false;
+      default -> hasDirectAnnotationWithSimpleName(sym.getAnnotationMirrors().stream(), simpleName);
+    };
   }
 
   public static boolean hasDirectAnnotationWithSimpleName(MethodSymbol sym, String simpleName) {
-    return hasDirectAnnotation(
+    return hasDirectAnnotationWithSimpleName(
         Streams.concat(
             sym.getAnnotationMirrors().stream(),
             sym.getReturnType().getAnnotationMirrors().stream()),
-        element -> element.getSimpleName().contentEquals(simpleName));
+        simpleName);
   }
 
   public static boolean hasDirectAnnotationWithSimpleName(VarSymbol sym, String simpleName) {
-    return hasDirectAnnotation(
+    return hasDirectAnnotationWithSimpleName(
         Streams.concat(
             sym.getAnnotationMirrors().stream(), sym.asType().getAnnotationMirrors().stream()),
-        element -> element.getSimpleName().contentEquals(simpleName));
+        simpleName);
+  }
+
+  private static boolean hasDirectAnnotationWithSimpleName(
+      Stream<? extends AnnotationMirror> annotations, String simpleName) {
+    return annotations.anyMatch(
+        annotation ->
+            annotation.getAnnotationType().asElement().getSimpleName().contentEquals(simpleName));
   }
 
   /**

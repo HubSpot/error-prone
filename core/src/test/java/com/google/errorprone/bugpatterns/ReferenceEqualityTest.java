@@ -54,7 +54,7 @@ public class ReferenceEqualityTest {
   }
 
   @Test
-  public void negative_const() {
+  public void positive_const() {
     compilationHelper
         .addSourceLines(
             "Foo.java",
@@ -70,10 +70,12 @@ public class ReferenceEqualityTest {
               public static final Foo CONST = new Foo();
 
               boolean f(Foo a) {
+                // BUG: Diagnostic contains:
                 return a == CONST;
               }
 
               boolean f(Object o, Foo a) {
+                // BUG: Diagnostic contains:
                 return o == a;
               }
             }
@@ -82,7 +84,7 @@ public class ReferenceEqualityTest {
   }
 
   @Test
-  public void negative_extends_equalsObject() {
+  public void extends_equalsObject() {
     compilationHelper
         .addSourceLines(
             "Sup.java",
@@ -100,6 +102,7 @@ public class ReferenceEqualityTest {
 
             class Test extends Sup {
               boolean f(Object a, Test b) {
+                // BUG: Diagnostic contains: a.equals(b)
                 return a == b;
               }
             }
@@ -158,7 +161,7 @@ public class ReferenceEqualityTest {
   }
 
   @Test
-  public void negative_noEquals() {
+  public void positive_noEquals() {
     compilationHelper
         .addSourceLines(
             "Test.java",
@@ -167,6 +170,7 @@ public class ReferenceEqualityTest {
 
             class Test {
               boolean f(Test a, Test b) {
+                // BUG: Diagnostic contains: a.equals(b)
                 return a == b;
               }
             }
@@ -363,6 +367,7 @@ public class ReferenceEqualityTest {
 
             class Test implements Sup {
               boolean f(Object a, Test b) {
+                // BUG: Diagnostic contains: a.equals(b)
                 return a == b;
               }
             }
@@ -434,13 +439,17 @@ public class ReferenceEqualityTest {
     compilationHelper
         .addSourceLines(
             "Test.java",
-            "import " + MayImplementEquals.class.getCanonicalName() + ";",
-            "abstract class Test {",
-            "  abstract MayImplementEquals getter();",
-            "  boolean f(MayImplementEquals b) {",
-            "    return getter() == b;",
-            "  }",
-            "}")
+            """
+            import %s;
+            abstract class Test {
+              abstract MayImplementEquals getter();
+              boolean f(MayImplementEquals b) {
+                // BUG: Diagnostic contains: getter().equals(b)
+                return getter() == b;
+              }
+            }
+            """
+                .formatted(MayImplementEquals.class.getCanonicalName()))
         .withClasspath(MayImplementEquals.class, ReferenceEqualityTest.class)
         .doTest();
   }
@@ -463,6 +472,7 @@ public class ReferenceEqualityTest {
               }
 
               boolean g(X x1, X x2) {
+                // BUG: Diagnostic contains:
                 return x1 == x2;
               }
             }
@@ -604,6 +614,271 @@ public class ReferenceEqualityTest {
             }
             """)
         .expectNoDiagnostics()
+        .doTest();
+  }
+
+  @Test
+  public void arrayComparison() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              boolean f(int[] a, int[] b) {
+                // BUG: Diagnostic contains: ReferenceEquality
+                return a == b;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void finalClassWithoutEquals() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            final class Test {
+              boolean f(Test a, Test b) {
+                return a == b;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void finalClassWithEquals() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            final class Test {
+              public boolean equals(Object o) {
+                return true;
+              }
+
+              boolean f(Test a, Test b) {
+                // BUG: Diagnostic contains: a.equals(b)
+                return a == b;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void sealedClassWithoutEquals() {
+    compilationHelper
+        .addSourceLines(
+            "Sealed.java",
+            """
+            sealed interface Sealed permits Final1, Final2 {}
+            """)
+        .addSourceLines(
+            "Final1.java",
+            """
+            final class Final1 implements Sealed {}
+            """)
+        .addSourceLines(
+            "Final2.java",
+            """
+            final class Final2 implements Sealed {}
+            """)
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              boolean f(Sealed a, Sealed b) {
+                return a == b;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void sealedClassWithEquals() {
+    compilationHelper
+        .addSourceLines(
+            "Sealed.java",
+            """
+            sealed interface Sealed permits Final1, Final2 {}
+            """)
+        .addSourceLines(
+            "Final1.java",
+            """
+            final class Final1 implements Sealed {
+              public boolean equals(Object o) {
+                return true;
+              }
+            }
+            """)
+        .addSourceLines(
+            "Final2.java",
+            """
+            final class Final2 implements Sealed {}
+            """)
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              boolean f(Sealed a, Sealed b) {
+                // BUG: Diagnostic contains: a.equals(b)
+                return a == b;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void sealedClassWithNonSealedSubclass() {
+    compilationHelper
+        .addSourceLines(
+            "Sealed.java",
+            """
+            sealed interface Sealed permits NonSealedSub {}
+            """)
+        .addSourceLines(
+            "NonSealedSub.java",
+            """
+            non-sealed class NonSealedSub implements Sealed {}
+            """)
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              boolean f(Sealed a, Sealed b) {
+                // BUG: Diagnostic contains: a.equals(b)
+                return a == b;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void sealedClassWithEnumSubclass() {
+    compilationHelper
+        .addSourceLines(
+            "Sealed.java",
+            """
+            sealed interface Sealed permits MyEnum {}
+            """)
+        .addSourceLines(
+            "MyEnum.java",
+            """
+            enum MyEnum implements Sealed {
+              INSTANCE;
+            }
+            """)
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              boolean f(Sealed a, Sealed b) {
+                return a == b;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void typeVariableBoundedByClass() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test<T extends Class<?>> {
+              boolean f(T a, T b) {
+                return a == b;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void typeVariableBoundedByFinalClassWithoutEquals() {
+    compilationHelper
+        .addSourceLines(
+            "Final.java",
+            """
+            final class Final {}
+            """)
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test<T extends Final> {
+              boolean f(T a, T b) {
+                return a == b;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void typeVariableBoundedByFinalClassWithEquals() {
+    compilationHelper
+        .addSourceLines(
+            "Final.java",
+            """
+            final class Final {
+              public boolean equals(Object o) {
+                return true;
+              }
+            }
+            """)
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test<T extends Final> {
+              boolean f(T a, T b) {
+                // BUG: Diagnostic contains: a.equals(b)
+                return a == b;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void typeVariableBoundedByNonFinalClass() {
+    compilationHelper
+        .addSourceLines(
+            "NonFinal.java",
+            """
+            class NonFinal {}
+            """)
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test<T extends NonFinal> {
+              boolean f(T a, T b) {
+                // BUG: Diagnostic contains: a.equals(b)
+                return a == b;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void typeVariableWithTransitiveBound() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test<T extends Class<?>, U extends T> {
+              boolean f(U a, U b) {
+                return a == b;
+              }
+            }
+            """)
         .doTest();
   }
 
