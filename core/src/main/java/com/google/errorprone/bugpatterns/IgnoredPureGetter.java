@@ -17,12 +17,16 @@
 package com.google.errorprone.bugpatterns;
 
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
-import static com.google.errorprone.suppliers.Suppliers.typeFromString;
+import static com.google.errorprone.matchers.ProtobufMatchers.MESSAGE_LITE;
+import static com.google.errorprone.matchers.ProtobufMatchers.MUTABLE_MESSAGE_LITE;
 import static com.google.errorprone.util.ASTHelpers.getReceiver;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.isSameType;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
+import static com.google.errorprone.util.AnnotationNames.AUTO_BUILDER_ANNOTATION;
+import static com.google.errorprone.util.AnnotationNames.AUTO_VALUE_ANNOTATION;
+import static com.google.errorprone.util.AnnotationNames.AUTO_VALUE_BUILDER_ANNOTATION;
 import static javax.lang.model.element.Modifier.ABSTRACT;
 
 import com.google.common.collect.ImmutableMap;
@@ -32,14 +36,12 @@ import com.google.errorprone.bugpatterns.threadsafety.ConstantExpressions;
 import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
-import com.google.errorprone.suppliers.Supplier;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.Tree;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
-import com.sun.tools.javac.code.Type;
 import java.util.Optional;
 import javax.inject.Inject;
 
@@ -51,12 +53,6 @@ import javax.inject.Inject;
             + " is no point in calling them if the return value is ignored. While there are no"
             + " side effects from the getter, the receiver may have side effects.")
 public final class IgnoredPureGetter extends AbstractReturnValueIgnored {
-
-  private static final Supplier<Type> MESSAGE_LITE =
-      typeFromString("com.google.protobuf.MessageLite");
-
-  private static final Supplier<Type> MUTABLE_MESSAGE_LITE =
-      typeFromString("com.google.protobuf.MutableMessageLite");
 
   @Inject
   IgnoredPureGetter(ConstantExpressions constantExpressions) {
@@ -110,26 +106,26 @@ public final class IgnoredPureGetter extends AbstractReturnValueIgnored {
 
     if (symbol.getModifiers().contains(ABSTRACT) && symbol.getParameters().isEmpty()) {
       // The return value of any abstract method on an @AutoValue needs to be used.
-      if (hasAnnotation(owner, "com.google.auto.value.AutoValue", state)) {
+      if (hasAnnotation(owner, AUTO_VALUE_ANNOTATION, state)) {
         return Optional.of(PureGetterKind.AUTO_VALUE);
       }
       // The return value of any abstract method on an @AutoBuilder (which doesn't return the
       // Builder itself) needs to be used.
-      if (hasAnnotation(owner, "com.google.auto.value.AutoBuilder", state)
+      if (hasAnnotation(owner, AUTO_BUILDER_ANNOTATION, state)
           && !isSameType(symbol.getReturnType(), owner.type, state)) {
         return Optional.of(PureGetterKind.AUTO_BUILDER);
       }
       // The return value of any abstract method on an @AutoValue.Builder (which doesn't return the
       // Builder itself) needs to be used.
-      if (hasAnnotation(owner, "com.google.auto.value.AutoValue.Builder", state)
+      if (hasAnnotation(owner, AUTO_VALUE_BUILDER_ANNOTATION, state)
           && !isSameType(symbol.getReturnType(), owner.type, state)) {
         return Optional.of(PureGetterKind.AUTO_VALUE_BUILDER);
       }
     }
 
     try {
-      if (isSubtype(owner.type, MESSAGE_LITE.get(state), state)
-          && !isSubtype(owner.type, MUTABLE_MESSAGE_LITE.get(state), state)) {
+      if (isSubtype(owner.type, MESSAGE_LITE, state)
+          && !isSubtype(owner.type, MUTABLE_MESSAGE_LITE, state)) {
         return Optional.of(PureGetterKind.PROTO);
       }
     } catch (Symbol.CompletionFailure ignore) {

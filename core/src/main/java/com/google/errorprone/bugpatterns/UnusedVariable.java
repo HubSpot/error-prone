@@ -24,8 +24,12 @@ import static com.google.common.collect.Iterables.getLast;
 import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Matchers.SERIALIZATION_METHODS;
+import static com.google.errorprone.matchers.Matchers.anyOf;
+import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
+import static com.google.errorprone.matchers.method.MethodMatchers.staticMethod;
 import static com.google.errorprone.suppliers.Suppliers.typeFromString;
 import static com.google.errorprone.util.ASTHelpers.canBeRemoved;
+import static com.google.errorprone.util.ASTHelpers.constValue;
 import static com.google.errorprone.util.ASTHelpers.findSuperMethods;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
@@ -35,6 +39,9 @@ import static com.google.errorprone.util.ASTHelpers.hasExplicitSource;
 import static com.google.errorprone.util.ASTHelpers.isAbstract;
 import static com.google.errorprone.util.ASTHelpers.isStatic;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
+import static com.google.errorprone.util.AnnotationNames.AFTER_TEMPLATE_ANNOTATION;
+import static com.google.errorprone.util.AnnotationNames.BEFORE_TEMPLATE_ANNOTATION;
+import static com.google.errorprone.util.AnnotationNames.CAN_IGNORE_RETURN_VALUE_ANNOTATION;
 import static com.google.errorprone.util.SideEffectAnalysis.hasSideEffect;
 import static com.sun.source.tree.Tree.Kind.POSTFIX_DECREMENT;
 import static com.sun.source.tree.Tree.Kind.POSTFIX_INCREMENT;
@@ -63,6 +70,7 @@ import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.fixes.SuggestedFixes;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.InjectMatchers;
+import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.suppliers.Suppliers;
 import com.google.errorprone.util.ASTHelpers;
@@ -139,8 +147,8 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
           .addAll(InjectMatchers.PROVIDES_ANNOTATIONS)
           .addAll(InjectMatchers.MULTIBINDINGS_ANNOTATIONS)
           .add(
-              "com.google.errorprone.refaster.annotation.AfterTemplate",
-              "com.google.errorprone.refaster.annotation.BeforeTemplate",
+              AFTER_TEMPLATE_ANNOTATION,
+              BEFORE_TEMPLATE_ANNOTATION,
               // Parameters on test methods imply the test is parameterised, and those parameters
               // should be used or removed.
               "org.junit.Test")
@@ -223,7 +231,8 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
     // appropriate fixes for them.
     ListMultimap<Symbol, TreePath> usageSites = variableFinder.usageSites;
 
-    FilterUsedVariables filterUsedVariables = new FilterUsedVariables(unusedElements, usageSites);
+    FilterUsedVariables filterUsedVariables =
+        new FilterUsedVariables(unusedElements, usageSites, state);
     filterUsedVariables.scan(state.getPath(), null);
 
     // Keeps track of whether a symbol was _ever_ used (between reassignments).
@@ -574,7 +583,7 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
   private static boolean isCallToCanIgnoreReturnValueMethod(
       ExpressionTree tree, VisitorState state) {
     return getSymbol(tree) instanceof MethodSymbol method
-        && hasAnnotation(method, "com.google.errorprone.annotations.CanIgnoreReturnValue", state);
+        && hasAnnotation(method, CAN_IGNORE_RETURN_VALUE_ANNOTATION, state);
   }
 
   private static ImmutableList<SuggestedFix> buildUnusedParameterFixes(
@@ -660,7 +669,7 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
         || exemptNames.contains(nameString);
   }
 
-  private class VariableFinder extends TreePathScanner<Void, Void> {
+  private final class VariableFinder extends TreePathScanner<Void, Void> {
     private final Map<Symbol, TreePath> unusedElements = new HashMap<>();
 
     private final Set<Symbol> onlyCheckForReassignments = new HashSet<>();
@@ -721,10 +730,16 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
           }
         }
         case LOCAL_VARIABLE -> {
+          if (isInsideRefasterTemplate(getCurrentPath())) {
+            return;
+          }
           unusedElements.put(symbol, getCurrentPath());
           usageSites.put(symbol, getCurrentPath());
         }
         case BINDING_VARIABLE -> {
+          if (isInsideRefasterTemplate(getCurrentPath())) {
+            return;
+          }
           if (parent instanceof BindingPatternTree
               && getCurrentPath().getParentPath().getParentPath().getLeaf()
                   instanceof InstanceOfTree) {
@@ -751,6 +766,18 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
         }
         default -> {}
       }
+    }
+
+    private boolean isInsideRefasterTemplate(TreePath path) {
+      for (Tree node : path) {
+        if (node instanceof MethodTree methodTree) {
+          if (hasAnnotation(methodTree, BEFORE_TEMPLATE_ANNOTATION, state)
+              || hasAnnotation(methodTree, AFTER_TEMPLATE_ANNOTATION, state)) {
+            return true;
+          }
+        }
+      }
+      return false;
     }
 
     private boolean exemptedFieldBySuperType(Type type, VisitorState state) {
@@ -876,11 +903,39 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
 
     private final ImmutableMap<Symbol, TreePath> declarationSites;
 
+    private final VisitorState state;
+
+    /**
+     * Methods which look up a field by name (via a class literal and a string constant) and return
+     * a handle through which it is subsequently read and written. A field whose only accesses go
+     * through such a handle has no direct references in source, but is nonetheless used.
+     */
+    private static final Matcher<ExpressionTree> REFLECTIVE_FIELD_LOOKUP =
+        anyOf(
+            instanceMethod()
+                .onDescendantOf("java.lang.invoke.MethodHandles.Lookup")
+                .namedAnyOf(
+                    "findVarHandle",
+                    "findStaticVarHandle",
+                    "findGetter",
+                    "findSetter",
+                    "findStaticGetter",
+                    "findStaticSetter"),
+            staticMethod()
+                .onClassAny(
+                    "java.util.concurrent.atomic.AtomicIntegerFieldUpdater",
+                    "java.util.concurrent.atomic.AtomicLongFieldUpdater",
+                    "java.util.concurrent.atomic.AtomicReferenceFieldUpdater")
+                .named("newUpdater"));
+
     private FilterUsedVariables(
-        Map<Symbol, TreePath> unusedElements, ListMultimap<Symbol, TreePath> usageSites) {
+        Map<Symbol, TreePath> unusedElements,
+        ListMultimap<Symbol, TreePath> usageSites,
+        VisitorState state) {
       this.unusedElements = unusedElements;
       this.usageSites = usageSites;
       this.declarationSites = ImmutableMap.copyOf(unusedElements);
+      this.state = state;
     }
 
     private boolean isInExpressionStatementTree() {
@@ -1113,7 +1168,43 @@ public class UnusedVariable extends BugChecker implements CompilationUnitTreeMat
       inMethodCall++;
       super.visitMethodInvocation(tree, null);
       inMethodCall--;
+      if (REFLECTIVE_FIELD_LOOKUP.matches(tree, state)) {
+        markReflectivelyLookedUpFieldAsUsed(tree);
+      }
       return null;
+    }
+
+    /**
+     * Given an invocation like {@code lookup.findVarHandle(Foo.class, "bar", int.class)} or {@code
+     * AtomicIntegerFieldUpdater.newUpdater(Foo.class, "bar")}, finds the field {@code Foo.bar} and
+     * treats it as used, since all subsequent reads and writes happen through the returned handle.
+     */
+    private void markReflectivelyLookedUpFieldAsUsed(MethodInvocationTree tree) {
+      List<? extends ExpressionTree> arguments = tree.getArguments();
+      if (arguments.isEmpty()
+          || !(arguments.get(0) instanceof MemberSelectTree memberSelect)
+          || !memberSelect.getIdentifier().contentEquals("class")
+          || !(getSymbol(memberSelect.getExpression()) instanceof ClassSymbol owner)) {
+        return;
+      }
+      String fieldName = null;
+      for (ExpressionTree argument : arguments.subList(1, arguments.size())) {
+        fieldName = constValue(argument, String.class);
+        if (fieldName != null) {
+          break;
+        }
+      }
+      if (fieldName == null) {
+        return;
+      }
+      String finalFieldName = fieldName;
+      unusedElements
+          .keySet()
+          .removeIf(
+              symbol ->
+                  symbol.getKind() == ElementKind.FIELD
+                      && symbol.owner.equals(owner)
+                      && symbol.getSimpleName().contentEquals(finalFieldName));
     }
   }
 

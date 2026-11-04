@@ -53,7 +53,6 @@ import java.util.Optional;
             + " try-with-resources",
     severity = WARNING)
 public class StreamResourceLeak extends AbstractMustBeClosedChecker implements MethodTreeMatcher {
-
   public static final Matcher<ExpressionTree> MATCHER =
       MethodMatchers.staticMethod()
           .onClass("java.nio.file.Files")

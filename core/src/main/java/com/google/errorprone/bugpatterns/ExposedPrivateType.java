@@ -96,9 +96,6 @@ public final class ExposedPrivateType extends BugChecker
       return NO_MATCH;
     }
     VarSymbol sym = getSymbol(tree);
-    if (sym == null) {
-      return NO_MATCH;
-    }
     if (sym.getKind() != ElementKind.FIELD) {
       return NO_MATCH;
     }
@@ -192,7 +189,8 @@ public final class ExposedPrivateType extends BugChecker
     if (ASTHelpers.streamSuperMethods(methodSymbol, state.getTypes()).findAny().isPresent()) {
       return false;
     }
-    if (JUnitMatchers.TEST_CASE.matches(methodTree, state)) {
+    if (JUnitMatchers.TEST_CASE.matches(methodTree, state)
+        || JUnitMatchers.JUNIT5_TEST_OR_LIFECYCLE_METHOD.matches(methodTree, state)) {
       return false;
     }
     return true;

@@ -35,8 +35,6 @@ public class JdkObsoleteTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.nio.file.Path;
-
             class Test {
               {
                 // BUG: Diagnostic contains:
@@ -59,6 +57,166 @@ public class JdkObsoleteTest {
 
   @Test
   public void stringBuffer_appendReplacement() {
+    BugCheckerRefactoringTestHelper.newInstance(JdkObsolete.class, getClass())
+        .addInputLines(
+            "in/Test.java",
+            """
+            import java.util.regex.Matcher;
+
+            class Test {
+              void f(Matcher m) {
+                StringBuffer sb = new StringBuffer();
+                m.appendReplacement(sb, null);
+              }
+            }
+            """)
+        .addOutputLines(
+            "out/Test.java",
+            """
+            import java.util.regex.Matcher;
+
+            class Test {
+              void f(Matcher m) {
+                StringBuilder sb = new StringBuilder();
+                m.appendReplacement(sb, null);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void stringBuffer_appendTail() {
+    BugCheckerRefactoringTestHelper.newInstance(JdkObsolete.class, getClass())
+        .addInputLines(
+            "in/Test.java",
+            """
+            import java.util.regex.Matcher;
+
+            class Test {
+              String f(Matcher m) {
+                StringBuffer sb = new StringBuffer();
+                m.appendTail(sb);
+                return m.appendTail(sb).toString();
+              }
+
+              StringBuffer escapes(Matcher m) {
+                StringBuffer sb = new StringBuffer();
+                return m.appendTail(sb);
+              }
+            }
+            """)
+        .addOutputLines(
+            "out/Test.java",
+            """
+            import java.util.regex.Matcher;
+
+            class Test {
+              String f(Matcher m) {
+                StringBuilder sb = new StringBuilder();
+                m.appendTail(sb);
+                return m.appendTail(sb).toString();
+              }
+
+              StringBuffer escapes(Matcher m) {
+                StringBuffer sb = new StringBuffer();
+                return m.appendTail(sb);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void stringBuffer_appendReplacementAndTail_otherMatchers() {
+    BugCheckerRefactoringTestHelper.newInstance(JdkObsolete.class, getClass())
+        .addInputLines(
+            "in/com/google/re2j/Matcher.java",
+            """
+            package com.google.re2j;
+
+            public final class Matcher {
+              public Matcher appendReplacement(StringBuffer sb, String replacement) {
+                return this;
+              }
+
+              public Matcher appendReplacement(StringBuilder sb, String replacement) {
+                return this;
+              }
+
+              public StringBuffer appendTail(StringBuffer sb) {
+                return sb;
+              }
+
+              public StringBuilder appendTail(StringBuilder sb) {
+                return sb;
+              }
+            }
+            """)
+        .expectUnchanged()
+        .addInputLines(
+            "in/org/safere/Matcher.java",
+            """
+            package org.safere;
+
+            public final class Matcher {
+              public Matcher appendReplacement(StringBuffer sb, String replacement) {
+                return this;
+              }
+
+              public Matcher appendReplacement(StringBuilder sb, String replacement) {
+                return this;
+              }
+
+              public StringBuffer appendTail(StringBuffer sb) {
+                return sb;
+              }
+
+              public StringBuilder appendTail(StringBuilder sb) {
+                return sb;
+              }
+            }
+            """)
+        .expectUnchanged()
+        .addInputLines(
+            "in/Test.java",
+            """
+            class Test {
+              String re2j(com.google.re2j.Matcher m) {
+                StringBuffer sb = new StringBuffer();
+                m.appendReplacement(sb, "x");
+                return m.appendTail(sb).toString();
+              }
+
+              String safere(org.safere.Matcher m) {
+                StringBuffer sb = new StringBuffer();
+                m.appendReplacement(sb, "x");
+                return m.appendTail(sb).toString();
+              }
+            }
+            """)
+        .addOutputLines(
+            "out/Test.java",
+            """
+            class Test {
+              String re2j(com.google.re2j.Matcher m) {
+                StringBuilder sb = new StringBuilder();
+                m.appendReplacement(sb, "x");
+                return m.appendTail(sb).toString();
+              }
+
+              String safere(org.safere.Matcher m) {
+                StringBuilder sb = new StringBuilder();
+                m.appendReplacement(sb, "x");
+                return m.appendTail(sb).toString();
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void stringBuffer_appendReplacement_androidMinSdk33() {
     testHelper
         .addSourceLines(
             "Test.java",
@@ -72,11 +230,12 @@ public class JdkObsoleteTest {
               }
             }
             """)
+        .setArgs("-XepOpt:JdkObsolete:AndroidMinSdkVersion=33")
         .doTest();
   }
 
   @Test
-  public void stringBuffer_appendTail() {
+  public void stringBuffer_appendTail_androidMinSdk33() {
     testHelper
         .addSourceLines(
             "Test.java",
@@ -90,6 +249,7 @@ public class JdkObsoleteTest {
               }
             }
             """)
+        .setArgs("-XepOpt:JdkObsolete:AndroidMinSdkVersion=33")
         .doTest();
   }
 
@@ -99,8 +259,6 @@ public class JdkObsoleteTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.nio.file.Path;
-
             class Test {
               // BUG: Diagnostic contains:
               abstract class A implements java.util.Enumeration<Object> {}
@@ -390,9 +548,7 @@ public class JdkObsoleteTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.util.Map;
             import java.util.NavigableMap;
-            import java.util.Set;
 
             class Test {
               void f(NavigableMap<String, Integer> m) {
@@ -546,7 +702,6 @@ public class JdkObsoleteTest {
             import java.io.*;
             import java.net.*;
             import java.nio.channels.*;
-            import java.nio.file.Path;
             import java.util.*;
 
             class Test {
@@ -598,7 +753,6 @@ public class JdkObsoleteTest {
             "Test.java",
             """
             import java.util.regex.Matcher;
-            import java.util.regex.Pattern;
 
             class Test {
               void test(Matcher m) {
@@ -619,7 +773,6 @@ public class JdkObsoleteTest {
             "Test.java",
             """
             import java.util.regex.Matcher;
-            import java.util.regex.Pattern;
 
             class Test {
               void test(Matcher m) {

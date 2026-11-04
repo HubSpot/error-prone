@@ -23,6 +23,9 @@ import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.fixes.SuggestedFix.mergeFixes;
 import static com.google.errorprone.matchers.ChildMultiMatcher.MatchType.AT_LEAST_ONE;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
+import static com.google.errorprone.matchers.InjectMatchers.ASSISTED_INJECT_ANNOTATION;
+import static com.google.errorprone.matchers.InjectMatchers.DAGGER_PRODUCES_ANNOTATION;
+import static com.google.errorprone.matchers.InjectMatchers.DAGGER_PROVIDES_ANNOTATION;
 import static com.google.errorprone.matchers.JUnitMatchers.TEST_CASE;
 import static com.google.errorprone.matchers.JUnitMatchers.isJUnit4TestRunnerOfType;
 import static com.google.errorprone.matchers.Matchers.annotations;
@@ -30,13 +33,16 @@ import static com.google.errorprone.matchers.Matchers.hasArgumentWithValue;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.hasExplicitSource;
+import static com.google.errorprone.util.ASTHelpers.isCanonicalRecordConstructor;
 import static com.google.errorprone.util.ASTHelpers.isRecord;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
+import static com.google.errorprone.util.AnnotationNames.AUTO_FACTORY_ANNOTATION;
 import static java.util.stream.Collectors.joining;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
+import com.google.errorprone.ClassName;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.MethodTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.VariableTreeMatcher;
@@ -44,14 +50,12 @@ import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.InjectMatchers;
 import com.google.errorprone.matchers.MultiMatcher;
-import com.google.errorprone.suppliers.Supplier;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ModifiersTree;
 import com.sun.source.tree.VariableTree;
-import com.sun.tools.javac.code.Type;
 import java.util.stream.Stream;
 
 /** A BugPattern; see the summary. */
@@ -106,17 +110,7 @@ public final class UnnecessaryQualifier extends BugChecker
           return NO_MATCH;
         }
         if (isRecord(symbol)) {
-          var clazzTree = state.findEnclosing(ClassTree.class);
-          if (clazzTree.getMembers().stream()
-              .anyMatch(
-                  m -> {
-                    var sym = getSymbol(m);
-                    return sym.isConstructor()
-                        && isRecord(sym) // canonical record constructor
-                        && INJECTION_METHODS.stream().anyMatch(ip -> hasAnnotation(m, ip, state));
-                  })) {
-            return NO_MATCH;
-          }
+          return NO_MATCH;
         }
       }
       case PARAMETER -> {
@@ -140,7 +134,7 @@ public final class UnnecessaryQualifier extends BugChecker
                 anno -> getSymbol(anno).getSimpleName().toString().startsWith(PROVIDES_PREFIX))) {
           return NO_MATCH;
         }
-        if (SUPERTYPES_DENOTING_INJECTION_POINTS.get(state).stream()
+        if (SUPERTYPES_DENOTING_INJECTION_POINTS.stream()
             .anyMatch(st -> isSubtype(methodSymbol.owner.type, st, state))) {
           return NO_MATCH;
         }
@@ -149,6 +143,9 @@ public final class UnnecessaryQualifier extends BugChecker
           return NO_MATCH;
         }
 
+        if (isCanonicalRecordConstructor(methodSymbol, state)) {
+          return NO_MATCH;
+        }
         if (CLASS_ANNOTATIONS_EXEMPTING_METHODS.stream()
             .anyMatch(anno -> hasAnnotation(enclosingClass, anno, state))) {
           return NO_MATCH;
@@ -204,12 +201,8 @@ public final class UnnecessaryQualifier extends BugChecker
   private static final ImmutableSet<String> QUALIFIERS =
       ImmutableSet.of("com.google.inject.BindingAnnotation", "javax.inject.Qualifier");
 
-  private static final Supplier<ImmutableSet<Type>> SUPERTYPES_DENOTING_INJECTION_POINTS =
-      VisitorState.memoize(
-          s ->
-              Stream.of(s.getTypeFromString("com.google.apps.framework.producers.GraphWrapper"))
-                  .filter(x -> x != null)
-                  .collect(toImmutableSet()));
+  private static final ImmutableSet<ClassName> SUPERTYPES_DENOTING_INJECTION_POINTS =
+      ImmutableSet.of(ClassName.of("com.google.apps.framework.producers.GraphWrapper"));
 
   /**
    * Method annotations denoting that the method provides bindings, so qualifiers on the return type
@@ -222,9 +215,9 @@ public final class UnnecessaryQualifier extends BugChecker
           "dagger.Binds",
           "dagger.BindsInstance",
           "dagger.BindsOptionalOf",
-          "dagger.Provides",
           "dagger.multibindings.Multibinds",
-          "dagger.producers.Produces"
+          DAGGER_PRODUCES_ANNOTATION,
+          DAGGER_PROVIDES_ANNOTATION
           // keep-sorted end
           );
 
@@ -236,9 +229,10 @@ public final class UnnecessaryQualifier extends BugChecker
               InjectMatchers.INJECT_ANNOTATIONS.stream(),
               Stream.of(
                   // keep-sorted start
-                  "com.google.auto.factory.AutoFactory",
                   "com.google.common.inject.components.OtherRequiredBindings",
-                  "dagger.assisted.AssistedInject"
+                  "dagger.assisted.AssistedInject",
+                  ASSISTED_INJECT_ANNOTATION,
+                  AUTO_FACTORY_ANNOTATION
                   // keep-sorted end
                   ),
               PROVIDER_METHODS.stream())
@@ -259,7 +253,6 @@ public final class UnnecessaryQualifier extends BugChecker
   private static final ImmutableSet<String> CLASS_ANNOTATIONS_EXEMPTING_METHODS =
       ImmutableSet.of(
           // keep-sorted start
-          "com.google.auto.factory.AutoFactory",
           "dagger.Component",
           "dagger.Component.Builder",
           "dagger.Component.Factory",
@@ -272,7 +265,8 @@ public final class UnnecessaryQualifier extends BugChecker
           "dagger.producers.ProductionComponent.Factory",
           "dagger.producers.ProductionSubcomponent",
           "dagger.producers.ProductionSubcomponent.Builder",
-          "dagger.producers.ProductionSubcomponent.Factory"
+          "dagger.producers.ProductionSubcomponent.Factory",
+          AUTO_FACTORY_ANNOTATION
           // keep-sorted end
           );
 

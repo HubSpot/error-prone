@@ -5160,6 +5160,96 @@ public final class StatementSwitchToExpressionSwitchTest {
         .doTest();
   }
 
+  @Test
+  public void switchWithReturnsSomeCases_b524970803() {
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public String foo(String[] strings) {
+                switch (strings.length) {
+                  case 0:
+                    return "0";
+                  case 1:
+                    return "1";
+                  default: // fall through
+                }
+                return "potato";
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public String foo(String[] strings) {
+                switch (strings.length) {
+                  case 0 -> {
+                    return "0";
+                  }
+                  case 1 -> {
+                    return "1";
+                  }
+                  default -> {}
+                }
+                return "potato";
+              }
+            }
+            """)
+        .setArgs("-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion")
+        .setFixChooser(StatementSwitchToExpressionSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void directConversion_hoistingConflictsWithVariableAfterSwitch_error() {
+    // The declaration of `y` within the switch can conflict with the declaration of `y` after the
+    // switch if it is merely hoisted before the switch.  The checker must therefore wrap the output
+    // in braces to narrow the lexical scope of the hoisted `y`.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(int val) {
+                switch (val) {
+                  case 1:
+                    int y = 10;
+                    break;
+                  case 2:
+                    y = 20;
+                    break;
+                  default:
+                    break;
+                }
+                int y = 30;
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(int val) {
+                {
+                  int y;
+                  switch (val) {
+                    case 1 -> {
+                      y = 10;
+                    }
+                    case 2 -> y = 20;
+                    default -> {}
+                  }
+                }
+                int y = 30;
+              }
+            }
+            """)
+        .setArgs("-XepOpt:StatementSwitchToExpressionSwitch:EnableDirectConversion")
+        .doTest();
+  }
+
   /**
    * Asserts that there is exactly one suggested fix and returns it.
    *

@@ -27,6 +27,8 @@ import com.google.errorprone.BugPattern;
 import com.google.errorprone.BugPattern.SeverityLevel;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.CheckReturnValue;
+import com.google.errorprone.annotations.FormatMethod;
+import com.google.errorprone.annotations.FormatString;
 import com.google.errorprone.annotations.RestrictedApi;
 import com.google.errorprone.fixes.ErrorPronePosition;
 import com.google.errorprone.fixes.Fix;
@@ -46,7 +48,7 @@ import java.util.Optional;
  *
  * @author alexeagle@google.com (Alex Eagle)
  */
-public class Description {
+public final class Description {
   /** Describes the sentinel value of the case where the match failed. */
   public static final Description NO_MATCH =
       new Description(
@@ -175,17 +177,17 @@ public class Description {
   @RestrictedApi(
       explanation = "Use describeMatch or buildDescription on BugChecker instead.",
       link = "",
-      allowedOnPath =
-          ".*/third_party/java_src/error_prone/project/check_api/src/main/java/com/google/errorprone/bugpatterns/BugChecker.java"
-              + "|.*/third_party/java_src/error_prone/project/core/src/main/java/com/google/errorprone/refaster/RefasterScanner.java")
+      allowedPaths = {
+        "third_party/java_src/error_prone/project/check_api/src/main/java/com/google/errorprone/bugpatterns/BugChecker.java",
+        "third_party/java_src/error_prone/project/core/src/main/java/com/google/errorprone/refaster/RefasterScanner.java",
+      })
   public static Builder builder(
       ErrorPronePosition position, String name, @Nullable String link, String message) {
     return new Builder(position, name, link, message);
   }
 
   /** Builder for {@code Description}s. */
-  public static class Builder {
-
+  public static final class Builder {
     private final ErrorPronePosition position;
     private final String name;
     private String linkUrl;
@@ -264,6 +266,20 @@ public class Description {
     }
 
     /**
+     * Set a custom error message for this {@code Description}. The custom message will be used
+     * instead of the summary field as the text for the diagnostic message.
+     *
+     * @param format A custom error message format string without the check name ("[checkname]") or
+     *     link
+     * @param args arguments for the format string
+     */
+    @CanIgnoreReturnValue
+    @FormatMethod
+    public Builder setMessage(@FormatString String format, Object... args) {
+      return setMessage(String.format(format, args));
+    }
+
+    /**
      * Set a custom link URL. The custom URL will be used instead of the default one which forms
      * part of the {@code @}BugPattern.
      */
@@ -280,12 +296,13 @@ public class Description {
                 + " individual Descriptions causes any command line options to be ignored, which is"
                 + " potentially very confusing.",
         link = "",
-        allowedOnPath =
-            ".*/third_party/java_src/error_prone/project/check_api/src/main/java/com/google/errorprone/matchers/Description.java$|"
-                + ".*/java/com/google/devtools/javatools/staticanalysis/xlang/java/BugCheckerUsingXlang.java$|"
-                + ".*/java/com/google/devtools/staticanalysis/errorprone/RestrictedInheritanceChecker.java$|"
-                + ".*/third_party/java_src/error_prone/project/core/src/main/java/com/google/errorprone/bugpatterns/RestrictedApiChecker.java$|"
-                + ".*/third_party/java_src/error_prone/project/core/src/main/java/com/google/errorprone/refaster/RefasterScanner.java$")
+        allowedPaths = {
+          "third_party/java_src/error_prone/project/check_api/src/main/java/com/google/errorprone/matchers/Description.java",
+          "java/com/google/devtools/javatools/staticanalysis/xlang/java/BugCheckerUsingXlang.java",
+          "java/com/google/devtools/staticanalysis/errorprone/RestrictedInheritanceChecker.java",
+          "third_party/java_src/error_prone/project/core/src/main/java/com/google/errorprone/bugpatterns/RestrictedApiChecker.java",
+          "third_party/java_src/error_prone/project/core/src/main/java/com/google/errorprone/refaster/RefasterScanner.java",
+        })
     @CanIgnoreReturnValue
     public Builder overrideSeverity(SeverityLevel severity) {
       checkNotNull(severity, "severity must not be null");

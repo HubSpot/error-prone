@@ -1465,8 +1465,6 @@ public class ReturnMissingNullableTest {
             """
             package com.google.errorprone.bugpatterns.nullness;
 
-            import javax.annotation.Nullable;
-
             public class MissingNullableReturnTest {
               public static final java.util.function.Function<String, String> IDENTITY =
                   (s -> {
@@ -1485,8 +1483,6 @@ public class ReturnMissingNullableTest {
             """
             package com.google.errorprone.bugpatterns.nullness;
 
-            import javax.annotation.Nullable;
-
             public class MissingNullableReturnTest {
               public static java.util.function.Function<String, String> identity() {
                 return s -> s;
@@ -1503,8 +1499,6 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/MissingNullableReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
-
-            import javax.annotation.Nullable;
 
             public class MissingNullableReturnTest {
               public static java.util.function.Function<String, String> identity() {
@@ -1551,7 +1545,6 @@ public class ReturnMissingNullableTest {
             """
             package com.google.errorprone.bugpatterns.nullness;
 
-            import java.util.Optional;
             import javax.annotation.Nullable;
 
             public class MissingNullableReturnTest {
@@ -1576,7 +1569,6 @@ public class ReturnMissingNullableTest {
             package com.google.errorprone.bugpatterns.nullness;
 
             import java.util.concurrent.Callable;
-            import javax.annotation.Nullable;
 
             public class MissingNullableReturnTest {
               public Callable<?> get() {
@@ -1761,8 +1753,6 @@ public class ReturnMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/LiteralNullReturnTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
-
-            import static org.junit.Assert.fail;
 
             class LiteralNullReturnTest {
               void throwRuntimeException() {}
@@ -2533,6 +2523,152 @@ public class ReturnMissingNullableTest {
 
               @Override
               Integer get(String o);
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void switchCaseReassignment() {
+    createCompilationTestHelper()
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              String test(String x, int z) {
+                if (x == null) {
+                  switch (z) {
+                    case 1:
+                      x = "not null";
+                      return x;
+                    default:
+                      return "";
+                  }
+                }
+                return x;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void loopReassignment() {
+    createCompilationTestHelper()
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              String test(String x) {
+                if (x == null) {
+                  while (true) {
+                    x = "not null";
+                    return x;
+                  }
+                }
+                return x;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void likelyPublicApiOnly() {
+    createCompilationTestHelper()
+        .setArgs("-XepOpt:Nullness:LikelyPublicApiOnly=true")
+        .addSourceLines(
+            "PublicFoo.java",
+            """
+            public class PublicFoo {
+              public String publicMethod(boolean b) {
+                if (b) {
+                  // BUG: Diagnostic contains: @Nullable
+                  return null;
+                }
+                return "";
+              }
+
+              protected String protectedMethod(boolean b) {
+                if (b) {
+                  // BUG: Diagnostic contains: @Nullable
+                  return null;
+                }
+                return "";
+              }
+
+              String packagePrivateMethod(boolean b) {
+                if (b) {
+                  return null;
+                }
+                return "";
+              }
+
+              private String privateMethod(boolean b) {
+                if (b) {
+                  return null;
+                }
+                return "";
+              }
+
+              protected static class ProtectedInner {
+                public String methodInProtectedInner(boolean b) {
+                  if (b) {
+                    // BUG: Diagnostic contains: @Nullable
+                    return null;
+                  }
+                  return "";
+                }
+              }
+
+              static class PackagePrivateInner {
+                public String methodInPackagePrivateInner(boolean b) {
+                  if (b) {
+                    return null;
+                  }
+                  return "";
+                }
+              }
+
+              public Object anonymousAndLocal() {
+                class Local {
+                  public String methodInLocal(boolean b) {
+                    if (b) {
+                      return null;
+                    }
+                    return "";
+                  }
+                }
+                return new Object() {
+                  public String methodInAnonymous(boolean b) {
+                    if (b) {
+                      return null;
+                    }
+                    return "";
+                  }
+                };
+              }
+            }
+            """)
+        .addSourceLines(
+            "PackagePrivateFoo.java",
+            """
+            class PackagePrivateFoo {
+              public String publicMethodInPackagePrivateOuter(boolean b) {
+                if (b) {
+                  return null;
+                }
+                return "";
+              }
+
+              public static class PublicInnerInPackagePrivateOuter {
+                public String publicMethod(boolean b) {
+                  if (b) {
+                    return null;
+                  }
+                  return "";
+                }
+              }
             }
             """)
         .doTest();

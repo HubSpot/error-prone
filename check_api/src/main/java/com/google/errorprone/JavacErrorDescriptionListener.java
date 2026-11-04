@@ -48,7 +48,7 @@ import javax.tools.JavaFileObject;
  *
  * @author alexeagle@google.com (Alex Eagle)
  */
-public class JavacErrorDescriptionListener implements DescriptionListener {
+public final class JavacErrorDescriptionListener implements DescriptionListener {
   private final Log log;
   private final JavaFileObject sourceFile;
   private final BiFunction<Description, Fix, AppliedFix> fixToAppliedFix;

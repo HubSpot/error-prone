@@ -24,8 +24,10 @@ import static com.google.errorprone.VisitorState.memoize;
 import static com.google.errorprone.bugpatterns.nullness.NullnessUtils.fixByAddingNullableAnnotationToReturnType;
 import static com.google.errorprone.bugpatterns.nullness.NullnessUtils.hasDefinitelyNullBranch;
 import static com.google.errorprone.bugpatterns.nullness.NullnessUtils.isAlreadyAnnotatedNullable;
+import static com.google.errorprone.bugpatterns.nullness.NullnessUtils.isLikelyToBePublicApi;
 import static com.google.errorprone.bugpatterns.nullness.NullnessUtils.isVoid;
 import static com.google.errorprone.bugpatterns.nullness.NullnessUtils.nullnessChecksShouldBeConservative;
+import static com.google.errorprone.bugpatterns.nullness.NullnessUtils.onlyLikelyPublicApi;
 import static com.google.errorprone.bugpatterns.nullness.NullnessUtils.varsProvenNullByParentIf;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.matchers.Matchers.anyMethod;
@@ -40,10 +42,11 @@ import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.isConsideredFinal;
 import static com.google.errorprone.util.ASTHelpers.methodCanBeOverridden;
+import static com.google.errorprone.util.AnnotationNames.DO_NOT_CALL_ANNOTATION;
 import static com.sun.source.tree.Tree.Kind.NULL_LITERAL;
 import static java.lang.Boolean.FALSE;
-import static java.util.regex.Pattern.compile;
 import static javax.lang.model.type.TypeKind.TYPEVAR;
+import static org.safere.Pattern.compile;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
@@ -200,10 +203,12 @@ public class ReturnMissingNullable extends BugChecker implements CompilationUnit
                   .collect(toImmutableSet()));
 
   private final boolean beingConservative;
+  private final boolean onlyLikelyPublicApi;
 
   @Inject
   ReturnMissingNullable(ErrorProneFlags flags) {
     this.beingConservative = nullnessChecksShouldBeConservative(flags);
+    this.onlyLikelyPublicApi = onlyLikelyPublicApi(flags);
   }
 
   @Override
@@ -287,6 +292,9 @@ public class ReturnMissingNullable extends BugChecker implements CompilationUnit
         }
 
         MethodSymbol possibleOverride = getSymbol(tree);
+        if (onlyLikelyPublicApi && !isLikelyToBePublicApi(possibleOverride)) {
+          return;
+        }
 
         /*
          * TODO(cpovirk): Provide an option to shortcut if !hasAnnotation(possibleOverride,
@@ -308,8 +316,7 @@ public class ReturnMissingNullable extends BugChecker implements CompilationUnit
           return;
         }
 
-        if (hasAnnotation(
-            tree, "com.google.errorprone.annotations.DoNotCall", stateForCompilationUnit)) {
+        if (hasAnnotation(tree, DO_NOT_CALL_ANNOTATION, stateForCompilationUnit)) {
           return;
         }
 
@@ -358,6 +365,9 @@ public class ReturnMissingNullable extends BugChecker implements CompilationUnit
         }
 
         MethodSymbol method = getSymbol(methodTree);
+        if (onlyLikelyPublicApi && !isLikelyToBePublicApi(method)) {
+          return;
+        }
         List<? extends StatementTree> statements = methodTree.getBody().getStatements();
         if (beingConservative
             && statements.size() == 1

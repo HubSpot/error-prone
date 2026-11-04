@@ -30,9 +30,12 @@ import static com.google.errorprone.suppliers.Suppliers.INT_TYPE;
 import static com.google.errorprone.suppliers.Suppliers.STRING_TYPE;
 import static com.google.errorprone.suppliers.Suppliers.arrayOf;
 import static com.google.errorprone.suppliers.Suppliers.typeFromString;
+import static com.google.errorprone.util.ASTHelpers.findEnclosingMethod;
+import static com.google.errorprone.util.ASTHelpers.findEnclosingMethodPath;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.VisitorState;
@@ -48,6 +51,7 @@ import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LambdaExpressionTree;
@@ -454,24 +458,33 @@ public class JdkObsolete extends BugChecker
 
   static final Matcher<ExpressionTree> MATCHER_STRINGBUFFER =
       anyOf(
-          // a pre-JDK-8039124 concession
           instanceMethod()
               .onExactClass("java.util.regex.Matcher")
               .named("appendTail")
               .withParameters("java.lang.StringBuffer"),
           instanceMethod()
               .onExactClass("java.util.regex.Matcher")
-              .named("appendReplacement")
-              .withParameters("java.lang.StringBuffer", "java.lang.String"),
-          // TODO(cushon): back this out if https://github.com/google/re2j/pull/44 happens
-          instanceMethod()
-              .onExactClass("com.google.re2j.Matcher")
-              .named("appendTail")
-              .withParameters("java.lang.StringBuffer"),
-          instanceMethod()
-              .onExactClass("com.google.re2j.Matcher")
               .named("appendReplacement")
               .withParameters("java.lang.StringBuffer", "java.lang.String"));
+
+  private static final ImmutableSet<String> REGEX_MATCHERS =
+      ImmutableSet.of(
+          "java.util.regex.Matcher",
+          "com.google.re2j.Matcher",
+          "org.safere.Matcher",
+          "org.safere.crosscheck.Matcher");
+
+  private static final Matcher<ExpressionTree> MATCHER_APPEND_REPLACEMENT =
+      instanceMethod()
+          .onExactClassAny(REGEX_MATCHERS)
+          .named("appendReplacement")
+          .withParameters("java.lang.StringBuffer", "java.lang.String");
+
+  private static final Matcher<ExpressionTree> MATCHER_APPEND_TAIL =
+      instanceMethod()
+          .onExactClassAny(REGEX_MATCHERS)
+          .named("appendTail")
+          .withParameters("java.lang.StringBuffer");
 
   @Override
   public Description matchNewClass(NewClassTree tree, VisitorState state) {
@@ -492,7 +505,9 @@ public class JdkObsolete extends BugChecker
     if (description == NO_MATCH) {
       return NO_MATCH;
     }
-    if (owner.getQualifiedName().contentEquals("java.lang.StringBuffer")) {
+    if (owner.getQualifiedName().contentEquals("java.lang.StringBuffer")
+        && androidMinSdkVersion.isPresent()
+        && androidMinSdkVersion.get() < 34) {
       boolean[] found = {false};
       new TreeScanner<Void, Void>() {
         @Override
@@ -633,7 +648,7 @@ public class JdkObsolete extends BugChecker
       return Optional.empty();
     }
     VarSymbol varSym = ASTHelpers.getSymbol(varTree);
-    TreePath methodPath = findEnclosingMethod(state);
+    TreePath methodPath = findEnclosingMethodPath(state.getPath());
     if (methodPath == null) {
       return Optional.empty();
     }
@@ -651,10 +666,24 @@ public class JdkObsolete extends BugChecker
             return null;
           }
           // the LHS of a select (e.g. in `sb.append(...)`) does not escape
-          if (!(parent instanceof MemberSelectTree memberSelectTree)
-              || memberSelectTree.getExpression() != tree) {
-            escape[0] = true;
+          if (parent instanceof MemberSelectTree memberSelectTree
+              && memberSelectTree.getExpression() == tree) {
+            return null;
           }
+          if (parent instanceof MethodInvocationTree methodInvocationTree
+              && methodInvocationTree.getArguments().indexOf(tree) == 0) {
+            if (MATCHER_APPEND_REPLACEMENT.matches(methodInvocationTree, state)) {
+              return null;
+            }
+            Tree grandparent = getCurrentPath().getParentPath().getParentPath().getLeaf();
+            if (MATCHER_APPEND_TAIL.matches(methodInvocationTree, state)
+                && (grandparent instanceof ExpressionStatementTree
+                    || (grandparent instanceof MemberSelectTree memberSelectTree
+                        && memberSelectTree.getExpression() == methodInvocationTree))) {
+              return null;
+            }
+          }
+          escape[0] = true;
         }
         return null;
       }
@@ -671,29 +700,8 @@ public class JdkObsolete extends BugChecker
     return Optional.of(fix.build());
   }
 
-  private static @Nullable TreePath findEnclosingMethod(VisitorState state) {
-    TreePath path = state.getPath();
-    while (path != null) {
-      switch (path.getLeaf().getKind()) {
-        case METHOD -> {
-          return path;
-        }
-        case CLASS, LAMBDA_EXPRESSION -> {
-          return null;
-        }
-        default -> {}
-      }
-      path = path.getParentPath();
-    }
-    return null;
-  }
-
   private boolean shouldSkip(VisitorState state, Type type) {
-    TreePath path = findEnclosingMethod(state);
-    if (path == null) {
-      return false;
-    }
-    MethodTree enclosingMethod = (MethodTree) path.getLeaf();
+    MethodTree enclosingMethod = findEnclosingMethod(state);
     if (enclosingMethod == null) {
       return false;
     }

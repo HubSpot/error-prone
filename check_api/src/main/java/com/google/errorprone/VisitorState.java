@@ -71,7 +71,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * @author alexeagle@google.com (Alex Eagle)
  */
-public class VisitorState {
+public final class VisitorState {
 
   private final SharedState sharedState;
   public final Context context;
@@ -172,6 +172,9 @@ public class VisitorState {
   }
 
   private VisitorState withNoPathForMemoization() {
+    if (path == null) {
+      return this;
+    }
     return new VisitorState(context, null, suppressedState, sharedState);
   }
 
@@ -223,6 +226,14 @@ public class VisitorState {
 
   public Map<String, SeverityLevel> severityMap() {
     return sharedState.severityMap;
+  }
+
+  SharedState sharedState() {
+    return sharedState;
+  }
+
+  JavacInvocationInstance javacInvocationInstance() {
+    return sharedState.javacInvocationInstance;
   }
 
   public void reportMatch(Description description) {
@@ -288,10 +299,10 @@ public class VisitorState {
   /**
    * Given the binary name of a class, returns the {@link Type}.
    *
-   * <p>Prefer not to use this method for constant strings, or strings otherwise known at compile
-   * time. Instead, save the result of {@link
-   * com.google.errorprone.suppliers.Suppliers#typeFromString} as a class constant, and use its
-   * {@link Supplier#get} method to look up the Type when needed. This lookup will be faster,
+   * <p>Prefer not to use this method for constant class or interface name strings, or strings
+   * otherwise known at compile time. Instead, save the result of {@link ClassName#of} as a class
+   * constant, and use its {@link ClassName#type} method to look up the Type when needed (or use
+   * {@link #getSymtab()} for primitive and {@code void} types). This lookup will be faster,
    * improving Error Prone's analysis time.
    *
    * <p>If this method returns null, the compiler doesn't have access to this type, which means that
@@ -326,6 +337,10 @@ public class VisitorState {
   }
 
   /**
+   * Looks up the {@link Symbol} for a class name.
+   *
+   * <p>Prefer {@link ClassName#of} and {@link ClassName#symbol} for constant class names.
+   *
    * @param symStr the string representation of a symbol
    * @return the Symbol object, or null if it cannot be found
    */
@@ -338,6 +353,8 @@ public class VisitorState {
    * Returns the Name object corresponding to the named class, converting it to binary form along
    * the way if necessary (i.e., replacing Foo.Bar with Foo$Bar). To get the Name corresponding to
    * some string that is not a class name, see the more general {@link #getName(String)}.
+   *
+   * <p>Prefer {@link ClassName#of} and {@link ClassName#binaryName} for constant class names.
    */
   public Name binaryNameFromClassname(String className) {
     return getName(inferBinaryName(className));
@@ -349,6 +366,36 @@ public class VisitorState {
    * @param name the name to look up, which must be in binary form (i.e. with $ for nested classes).
    */
   public @Nullable ClassSymbol getSymbolFromName(Name name) {
+    Optional<ClassSymbol> cached = sharedState.symbolCache.get(name);
+    if (cached != null) {
+      return cached.orElse(null);
+    }
+    ClassSymbol sym = getSymbolFromNameInternal(name);
+    sharedState.symbolCache.put(name, Optional.ofNullable(sym));
+    return sym;
+  }
+
+  private @Nullable ClassSymbol getSymbolFromNameInternal(Name name) {
+    ClassSymbol result = lookupSymbolFromName(name);
+    if (result != null) {
+      return result;
+    }
+    String nameStr = name.toString();
+    int firstDollar = nameStr.indexOf('$');
+    if (firstDollar == -1) {
+      return null;
+    }
+    boolean completedEnclosing = false;
+    int startIdx = firstDollar == 0 ? nameStr.indexOf('$', 1) : firstDollar;
+    for (int idx = startIdx; idx != -1; idx = nameStr.indexOf('$', idx + 1)) {
+      if (getSymbolFromName(getName(nameStr.substring(0, idx))) != null) {
+        completedEnclosing = true;
+      }
+    }
+    return completedEnclosing ? lookupSymbolFromName(name) : null;
+  }
+
+  private @Nullable ClassSymbol lookupSymbolFromName(Name name) {
     boolean modular = sharedState.modules.getDefaultModule() != getSymtab().noModule;
     if (!modular) {
       return getSymbolFromString(getSymtab().noModule, name);
@@ -438,7 +485,12 @@ public class VisitorState {
     }
   }
 
-  /** Build an Array Type from another Type */
+  /**
+   * Build an array type from another type.
+   *
+   * <p>For constant types, prefer not to use this method. Instead, save the result of {@link
+   * com.google.errorprone.suppliers.Suppliers#arrayOf} as a class constant.
+   */
   public Type arrayTypeForType(Type baseType) {
     return new ArrayType(baseType, getSymtab().arrayClass);
   }
@@ -601,12 +653,21 @@ public class VisitorState {
     return Options.instance(context).getBoolean("androidCompatible");
   }
 
-  /** Returns a timing span for the given {@link Suppressible}. */
+  private static final AutoCloseable NO_TIMING_SPAN =
+      new AutoCloseable() {
+        @Override
+        public void close() {}
+      };
+
+  /**
+   * Returns a timing span for the given {@link Suppressible} if {@link
+   * ErrorProneOptions#recordTimings} is true, or else a span that records nothing.
+   */
   public AutoCloseable timingSpan(Suppressible suppressible) {
-    return sharedState.timings.span(suppressible);
+    return sharedState.recordTimings ? sharedState.timings.span(suppressible) : NO_TIMING_SPAN;
   }
 
-  private static class Cache<T> implements Supplier<T> {
+  private static final class Cache<T> implements Supplier<T> {
     private final Supplier<T> impl;
     /* Uses T instead of Optional<T> because we don't want to cache null results
     (b/138753468). These inline caches persist between compilation units, and a type that fails to
@@ -624,18 +685,12 @@ public class VisitorState {
 
     @Override
     public synchronized T get(VisitorState state) {
-      /*
-       * Don't let callers rely on the TreePath: The Cache is shared across the whole compilation,
-       * not just the current VisitorState's TreePath's CompilationUnit.
-       */
-      state = state.withNoPathForMemoization();
-
       /* javac is single-threaded, so in principle we don't really need to lock.
       But in practice it's cheap enough to be worth getting peace of mind that this is
       always correct. */
       T value = cache.get();
       if (value == null) {
-        value = impl.get(state);
+        value = compute(state);
         if (value != null) {
           cache = new SoftReference<>(value);
           provenance = state.sharedState.javacInvocationInstance;
@@ -643,12 +698,20 @@ public class VisitorState {
       } else {
         JavacInvocationInstance current = state.sharedState.javacInvocationInstance;
         if (provenance != current) {
-          value = impl.get(state);
+          value = compute(state);
           cache = new SoftReference<>(value);
           provenance = current;
         }
       }
       return value;
+    }
+
+    private T compute(VisitorState state) {
+      /*
+       * Don't let callers rely on the TreePath: The Cache is shared across the whole compilation,
+       * not just the current VisitorState's TreePath's CompilationUnit.
+       */
+      return impl.get(state.withNoPathForMemoization());
     }
   }
 
@@ -670,11 +733,12 @@ public class VisitorState {
    * <p>For the types that are typically stored in {@link Context}, caching the references over
    * {@code SomeClass.instance(context)} has sizable performance improvements in aggregate.
    */
-  private static final class SharedState {
+  static final class SharedState {
     private final Modules modules;
     private final Names names;
     private final Symtab symtab;
     private final ErrorProneTimings timings;
+    private final boolean recordTimings;
     private final Types types;
     private final TreeMaker treeMaker;
     private final JavacInvocationInstance javacInvocationInstance;
@@ -688,6 +752,7 @@ public class VisitorState {
     // smallest build and see how many types are loaded and use that. Or perhaps a heuristic
     // based on number of files?
     private final Map<String, Optional<Type>> typeCache = new HashMap<>();
+    private final Map<Name, Optional<ClassSymbol>> symbolCache = new HashMap<>();
 
     SharedState(
         Context context,
@@ -699,6 +764,7 @@ public class VisitorState {
       this.names = Names.instance(context);
       this.symtab = Symtab.instance(context);
       this.timings = ErrorProneTimings.instance(context);
+      this.recordTimings = errorProneOptions.recordTimings();
       this.types = Types.instance(context);
       this.treeMaker = TreeMaker.instance(context);
       this.javacInvocationInstance = JavacInvocationInstance.instance(context);

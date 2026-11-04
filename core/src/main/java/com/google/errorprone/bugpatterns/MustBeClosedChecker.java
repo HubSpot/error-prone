@@ -19,13 +19,17 @@ package com.google.errorprone.bugpatterns;
 import static com.google.errorprone.BugPattern.SeverityLevel.ERROR;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.matchers.Matchers.allOf;
+import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.enclosingClass;
 import static com.google.errorprone.matchers.Matchers.isSubtypeOf;
 import static com.google.errorprone.matchers.Matchers.methodIsConstructor;
 import static com.google.errorprone.matchers.Matchers.methodReturns;
 import static com.google.errorprone.matchers.Matchers.not;
+import static com.google.errorprone.matchers.method.MethodMatchers.staticMethod;
 import static com.google.errorprone.suppliers.Suppliers.typeFromString;
+import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
+import static com.google.errorprone.util.ASTHelpers.isGeneratedConstructor;
 import static com.google.errorprone.util.AnnotationNames.MUST_BE_CLOSED_ANNOTATION;
 
 import com.google.errorprone.BugPattern;
@@ -37,9 +41,9 @@ import com.google.errorprone.fixes.SuggestedFixes;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.suppliers.Supplier;
-import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ExpressionStatementTree;
+import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
@@ -48,11 +52,7 @@ import com.sun.source.tree.Tree;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Type;
 
-/**
- * Checks if a constructor or method annotated with {@link
- * com.google.errorprone.annotations.MustBeClosed} is called within the resource variable
- * initializer of a try-with-resources statement.
- */
+/** A {@link BugChecker}; see the associated {@link BugPattern} annotation for details. */
 @BugPattern(
     altNames = "MustBeClosed",
     summary =
@@ -63,7 +63,6 @@ import com.sun.tools.javac.code.Type;
     severity = ERROR)
 public class MustBeClosedChecker extends AbstractMustBeClosedChecker
     implements MethodTreeMatcher, ClassTreeMatcher {
-
   private static final Matcher<Tree> IS_AUTOCLOSEABLE = isSubtypeOf(AutoCloseable.class);
 
   private static final Matcher<MethodTree> METHOD_RETURNS_AUTO_CLOSEABLE_MATCHER =
@@ -71,6 +70,12 @@ public class MustBeClosedChecker extends AbstractMustBeClosedChecker
 
   private static final Matcher<MethodTree> AUTO_CLOSEABLE_CONSTRUCTOR_MATCHER =
       allOf(methodIsConstructor(), enclosingClass(isSubtypeOf(AutoCloseable.class)));
+
+  private static final Matcher<ExpressionTree> HARDCODED_MUST_BE_CLOSED_METHODS =
+      staticMethod().onClass("java.lang.foreign.Arena").namedAnyOf("ofConfined", "ofShared");
+
+  private static final Matcher<ExpressionTree> MUST_BE_CLOSED_ANNOTATION_OR_METHOD =
+      anyOf(HAS_MUST_BE_CLOSED_ANNOTATION, HARDCODED_MUST_BE_CLOSED_METHODS);
 
   /**
    * Check that the {@code MustBeClosed} annotation is only used for constructors of AutoCloseables
@@ -82,10 +87,10 @@ public class MustBeClosedChecker extends AbstractMustBeClosedChecker
     state.reportMatch(
         scanEntireMethodFor(
             (t, s) -> {
-              if (!HAS_MUST_BE_CLOSED_ANNOTATION.matches(t, s)) {
+              if (!MUST_BE_CLOSED_ANNOTATION_OR_METHOD.matches(t, s)) {
                 return false;
               }
-              if (t instanceof MethodInvocationTree && ASTHelpers.getSymbol(t).isConstructor()) {
+              if (t instanceof MethodInvocationTree && getSymbol(t).isConstructor()) {
                 // Invocations of constructors, like `this()` and `super()`, act kinda weird.
                 // they're handled specially in matchClass, and should be ignored here.
                 return false;
@@ -128,13 +133,13 @@ public class MustBeClosedChecker extends AbstractMustBeClosedChecker
         continue;
       }
 
-      if (!ASTHelpers.getSymbol(methodTree).isConstructor()
+      if (!getSymbol(methodTree).isConstructor()
           || hasAnnotation(methodTree, MUST_BE_CLOSED_ANNOTATION, state)
           || !invokedConstructorMustBeClosed(state, methodTree)) {
         continue;
       }
 
-      if (ASTHelpers.isGeneratedConstructor(methodTree)) {
+      if (isGeneratedConstructor(methodTree)) {
         state.reportMatch(
             buildDescription(tree)
                 .setMessage(
@@ -170,7 +175,7 @@ public class MustBeClosedChecker extends AbstractMustBeClosedChecker
       }
       if (mit.getMethodSelect() instanceof IdentifierTree id
           && (id.getName().contentEquals("super") || id.getName().contentEquals("this"))) {
-        MethodSymbol invokedConstructorSymbol = ASTHelpers.getSymbol(mit);
+        MethodSymbol invokedConstructorSymbol = getSymbol(mit);
         return hasAnnotation(invokedConstructorSymbol, MUST_BE_CLOSED_ANNOTATION, state);
       }
     }

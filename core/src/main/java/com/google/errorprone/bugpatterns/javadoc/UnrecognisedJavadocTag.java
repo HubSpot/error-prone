@@ -16,18 +16,10 @@
 
 package com.google.errorprone.bugpatterns.javadoc;
 
-import static com.google.common.collect.Range.closedOpen;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
-import static com.google.errorprone.bugpatterns.javadoc.Utils.getDiagnosticPosition;
-import static com.google.errorprone.bugpatterns.javadoc.Utils.getEndPosition;
-import static com.google.errorprone.bugpatterns.javadoc.Utils.getStartPosition;
+import static com.google.errorprone.bugpatterns.javadoc.Utils.diagnosticPosition;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 
-import com.google.common.collect.ImmutableRangeSet;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Range;
-import com.google.common.collect.RangeSet;
-import com.google.common.collect.TreeRangeSet;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker;
@@ -35,20 +27,15 @@ import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.MethodTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.VariableTreeMatcher;
 import com.google.errorprone.matchers.Description;
-import com.sun.source.doctree.DocTree;
-import com.sun.source.doctree.DocTree.Kind;
-import com.sun.source.doctree.LinkTree;
-import com.sun.source.doctree.LiteralTree;
+import com.sun.source.doctree.ErroneousTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.DocTreePath;
 import com.sun.source.util.DocTreePathScanner;
-import com.sun.tools.javac.parser.Tokens.Comment;
-import com.sun.tools.javac.tree.DCTree.DCDocComment;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
+import org.safere.Matcher;
+import org.safere.Pattern;
 
 /** Flags tags which haven't been recognised by the Javadoc parser. */
 @BugPattern(
@@ -80,49 +67,26 @@ public final class UnrecognisedJavadocTag extends BugChecker
     if (path == null) {
       return NO_MATCH;
     }
-    ImmutableRangeSet<Integer> recognisedTags = findRecognisedTags(path, state);
-    ImmutableSet<Integer> tagStrings = findTags(((DCDocComment) path.getDocComment()).comment);
-
-    for (int pos : tagStrings) {
-      if (!recognisedTags.contains(pos)) {
-        state.reportMatch(
-            buildDescription(getDiagnosticPosition(pos, path.getTreePath().getLeaf())).build());
-      }
-    }
-
-    return NO_MATCH;
-  }
-
-  private ImmutableRangeSet<Integer> findRecognisedTags(DocTreePath path, VisitorState state) {
-    RangeSet<Integer> tags = TreeRangeSet.create();
     new DocTreePathScanner<Void, Void>() {
       @Override
-      public Void visitLink(LinkTree linkTree, Void unused) {
-        tags.add(getRange(linkTree, state));
-        return super.visitLink(linkTree, null);
-      }
-
-      @Override
-      public Void visitLiteral(LiteralTree literalTree, Void unused) {
-        if (literalTree.getKind().equals(Kind.CODE)) {
-          tags.add(getRange(literalTree, state));
+      public Void visitErroneous(ErroneousTree node, Void unused) {
+        String body = node.getBody();
+        Matcher matcher = TAG.matcher(body);
+        if (matcher.lookingAt()) {
+          int end = body.indexOf('}');
+          String tag =
+              body.substring(0, end == -1 ? body.length() : end).replaceAll("\\R", " ").trim();
+          state.reportMatch(
+              buildDescription(diagnosticPosition(getCurrentPath(), state))
+                  .setMessage(
+                      "This Javadoc tag '%s' wasn't recognised by the parser. Is it malformed"
+                          + " somehow, perhaps with mismatched braces?",
+                      tag)
+                  .build());
         }
-        return super.visitLiteral(literalTree, null);
+        return super.visitErroneous(node, null);
       }
     }.scan(path, null);
-    return ImmutableRangeSet.copyOf(tags);
-  }
-
-  private static ImmutableSet<Integer> findTags(Comment comment) {
-    Matcher matcher = TAG.matcher(comment.getText());
-    ImmutableSet.Builder<Integer> tags = ImmutableSet.builder();
-    while (matcher.find()) {
-      tags.add(comment.getSourcePos(matcher.start()));
-    }
-    return tags.build();
-  }
-
-  private static Range<Integer> getRange(DocTree tree, VisitorState state) {
-    return closedOpen(getStartPosition(tree, state), getEndPosition(tree, state));
+    return NO_MATCH;
   }
 }

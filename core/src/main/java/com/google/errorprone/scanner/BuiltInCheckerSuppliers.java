@@ -29,7 +29,6 @@ import com.google.errorprone.bugpatterns.AmbiguousMethodReference;
 import com.google.errorprone.bugpatterns.AnnotationMirrorToString;
 import com.google.errorprone.bugpatterns.AnnotationPosition;
 import com.google.errorprone.bugpatterns.AnnotationValueToString;
-import com.google.errorprone.bugpatterns.ArrayAsKeyOfSetOrMap;
 import com.google.errorprone.bugpatterns.ArrayEquals;
 import com.google.errorprone.bugpatterns.ArrayFillIncompatibleType;
 import com.google.errorprone.bugpatterns.ArrayHashCode;
@@ -171,6 +170,7 @@ import com.google.errorprone.bugpatterns.GetClassOnAnnotation;
 import com.google.errorprone.bugpatterns.GetClassOnClass;
 import com.google.errorprone.bugpatterns.GetClassOnEnum;
 import com.google.errorprone.bugpatterns.GuiceNestedCombine;
+import com.google.errorprone.bugpatterns.HashCodeInObjectsHash;
 import com.google.errorprone.bugpatterns.HashtableContains;
 import com.google.errorprone.bugpatterns.HidingField;
 import com.google.errorprone.bugpatterns.ICCProfileGetInstance;
@@ -329,8 +329,9 @@ import com.google.errorprone.bugpatterns.ParametersButNotParameterized;
 import com.google.errorprone.bugpatterns.PatternMatchingInstanceof;
 import com.google.errorprone.bugpatterns.PreconditionsCheckNotNullRepeated;
 import com.google.errorprone.bugpatterns.PreconditionsInvalidPlaceholder;
+import com.google.errorprone.bugpatterns.PreferCharsetOverload;
 import com.google.errorprone.bugpatterns.PreferInstanceofOverGetKind;
-import com.google.errorprone.bugpatterns.PreferTestParameter;
+import com.google.errorprone.bugpatterns.PreferPreconditions;
 import com.google.errorprone.bugpatterns.PreferredInterfaceType;
 import com.google.errorprone.bugpatterns.PrimitiveArrayPassedToVarargsMethod;
 import com.google.errorprone.bugpatterns.PrimitiveAtomicReference;
@@ -404,7 +405,6 @@ import com.google.errorprone.bugpatterns.SystemConsoleNull;
 import com.google.errorprone.bugpatterns.SystemExitOutsideMain;
 import com.google.errorprone.bugpatterns.SystemOut;
 import com.google.errorprone.bugpatterns.TestExceptionChecker;
-import com.google.errorprone.bugpatterns.TestParametersNotInitialized;
 import com.google.errorprone.bugpatterns.TheoryButNoTheories;
 import com.google.errorprone.bugpatterns.ThreadBuilderNameWithPlaceholder;
 import com.google.errorprone.bugpatterns.ThreadJoinLoop;
@@ -480,6 +480,8 @@ import com.google.errorprone.bugpatterns.UnusedTypeParameter;
 import com.google.errorprone.bugpatterns.UnusedVariable;
 import com.google.errorprone.bugpatterns.UseCorrectAssertInTests;
 import com.google.errorprone.bugpatterns.UseEnumSwitch;
+import com.google.errorprone.bugpatterns.ValueClassEquals;
+import com.google.errorprone.bugpatterns.ValueClassIdentity;
 import com.google.errorprone.bugpatterns.VarChecker;
 import com.google.errorprone.bugpatterns.VarTypeName;
 import com.google.errorprone.bugpatterns.VarWithPrimitive;
@@ -513,7 +515,6 @@ import com.google.errorprone.bugpatterns.checkreturnvalue.UnnecessarilyUsedValue
 import com.google.errorprone.bugpatterns.checkreturnvalue.UsingJsr305CheckReturnValue;
 import com.google.errorprone.bugpatterns.collectionincompatibletype.AssertSameIncompatible;
 import com.google.errorprone.bugpatterns.collectionincompatibletype.CollectionIncompatibleType;
-import com.google.errorprone.bugpatterns.collectionincompatibletype.CollectionUndefinedEquality;
 import com.google.errorprone.bugpatterns.collectionincompatibletype.CompatibleWithMisuse;
 import com.google.errorprone.bugpatterns.collectionincompatibletype.IncompatibleArgumentType;
 import com.google.errorprone.bugpatterns.collectionincompatibletype.JUnitIncompatibleType;
@@ -585,10 +586,12 @@ import com.google.errorprone.bugpatterns.javadoc.InvalidSnippet;
 import com.google.errorprone.bugpatterns.javadoc.InvalidThrows;
 import com.google.errorprone.bugpatterns.javadoc.InvalidThrowsLink;
 import com.google.errorprone.bugpatterns.javadoc.MalformedInlineTag;
+import com.google.errorprone.bugpatterns.javadoc.MissingJavadoc;
 import com.google.errorprone.bugpatterns.javadoc.MissingSummary;
 import com.google.errorprone.bugpatterns.javadoc.NotJavadoc;
 import com.google.errorprone.bugpatterns.javadoc.PreferThrowsTag;
 import com.google.errorprone.bugpatterns.javadoc.ReturnFromVoid;
+import com.google.errorprone.bugpatterns.javadoc.TraditionalJavadocToMarkdown;
 import com.google.errorprone.bugpatterns.javadoc.UnescapedEntity;
 import com.google.errorprone.bugpatterns.javadoc.UnrecognisedJavadocTag;
 import com.google.errorprone.bugpatterns.javadoc.UrlInSee;
@@ -610,11 +613,18 @@ import com.google.errorprone.bugpatterns.nullness.NullableTypeParameter;
 import com.google.errorprone.bugpatterns.nullness.NullableWildcard;
 import com.google.errorprone.bugpatterns.nullness.ParameterMissingNullable;
 import com.google.errorprone.bugpatterns.nullness.RedundantNullCheck;
+import com.google.errorprone.bugpatterns.nullness.RequireNonNullRefactoring;
 import com.google.errorprone.bugpatterns.nullness.ReturnMissingNullable;
 import com.google.errorprone.bugpatterns.nullness.UnnecessaryCheckNotNull;
 import com.google.errorprone.bugpatterns.nullness.UnsafeWildcard;
 import com.google.errorprone.bugpatterns.nullness.VoidMissingNullable;
 import com.google.errorprone.bugpatterns.overloading.InconsistentOverloads;
+import com.google.errorprone.bugpatterns.testparameterinjector.AlmostExhaustiveTestParameter;
+import com.google.errorprone.bugpatterns.testparameterinjector.LoopToTestParameter;
+import com.google.errorprone.bugpatterns.testparameterinjector.SimplifyTestParameter;
+import com.google.errorprone.bugpatterns.testparameterinjector.SingleTestParameter;
+import com.google.errorprone.bugpatterns.testparameterinjector.SingleValueTestParameter;
+import com.google.errorprone.bugpatterns.testparameterinjector.TestParametersNotInitialized;
 import com.google.errorprone.bugpatterns.threadsafety.DoubleCheckedLocking;
 import com.google.errorprone.bugpatterns.threadsafety.GuardedByChecker;
 import com.google.errorprone.bugpatterns.threadsafety.ImmutableAnnotationChecker;
@@ -669,7 +679,7 @@ import java.util.Arrays;
  * Static helper class that provides {@link ScannerSupplier}s and {@link BugChecker}s for the
  * built-in Error Prone checks, as opposed to plugin checks or checks used in tests.
  */
-public class BuiltInCheckerSuppliers {
+public final class BuiltInCheckerSuppliers {
   @SafeVarargs
   public static ImmutableSet<BugCheckerInfo> getSuppliers(Class<? extends BugChecker>... checkers) {
     return getSuppliers(Arrays.asList(checkers));
@@ -740,6 +750,7 @@ public class BuiltInCheckerSuppliers {
           CollectionIncompatibleType.class,
           CollectionToArraySafeParameter.class,
           ComparableType.class,
+          CompareToZero.class,
           ComparingThisWithNull.class,
           ComparisonOutOfRange.class,
           CompatibleWithMisuse.class,
@@ -916,7 +927,6 @@ public class BuiltInCheckerSuppliers {
           AmbiguousMethodReference.class,
           AnnotateFormatMethod.class,
           ArgumentSelectionDefectChecker.class,
-          ArrayAsKeyOfSetOrMap.class,
           ArrayRecordComponent.class,
           AssertEqualsArgumentOrderChecker.class,
           AssertSameIncompatible.class,
@@ -955,10 +965,8 @@ public class BuiltInCheckerSuppliers {
           ClassNewInstance.class,
           CloseableProvides.class,
           ClosingStandardOutputStreams.class,
-          CollectionUndefinedEquality.class,
           CollectorShouldNotUseState.class,
           ComparableAndComparator.class,
-          CompareToZero.class,
           ComplexBooleanConstant.class,
           DateChecker.class,
           DateFormatConstant.class,
@@ -1008,6 +1016,7 @@ public class BuiltInCheckerSuppliers {
           FutureTransformAsync.class,
           GetClassOnEnum.class,
           GuiceNestedCombine.class,
+          HashCodeInObjectsHash.class,
           HidingField.class,
           ICCProfileGetInstance.class,
           IdentityHashMapUsage.class,
@@ -1131,8 +1140,8 @@ public class BuiltInCheckerSuppliers {
           ParameterName.class,
           PatternMatchingInstanceof.class,
           PreconditionsCheckNotNullRepeated.class,
+          PreferCharsetOverload.class,
           PreferInstanceofOverGetKind.class,
-          PreferTestParameter.class,
           PreferThrowsTag.class,
           PrimitiveAtomicReference.class,
           ProtectedMembersInFinalClass.class,
@@ -1215,6 +1224,7 @@ public class BuiltInCheckerSuppliers {
           UnusedTypeParameter.class,
           UnusedVariable.class,
           UseBinds.class,
+          ValueClassEquals.class,
           VariableNameSameAsType.class,
           VoidUsed.class,
           WaitNotInLoop.class,
@@ -1228,6 +1238,7 @@ public class BuiltInCheckerSuppliers {
           // keep-sorted start
           AddNullMarkedToClass.class,
           AddNullMarkedToPackageInfo.class,
+          AlmostExhaustiveTestParameter.class,
           AnnotationMirrorToString.class,
           AnnotationPosition.class,
           AnnotationValueToString.class,
@@ -1289,9 +1300,11 @@ public class BuiltInCheckerSuppliers {
           Java8ApiChecker.class,
           LambdaFunctionalInterface.class,
           LongLiteralLowerCaseSuffix.class,
+          LoopToTestParameter.class,
           MethodCanBeStatic.class,
           MissingBraces.class,
           MissingDefault.class,
+          MissingJavadoc.class,
           MissingRuntimeRetention.class,
           MixedArrayDimensions.class,
           MockitoDoSetup.class,
@@ -1307,6 +1320,7 @@ public class BuiltInCheckerSuppliers {
           ParameterComment.class,
           ParameterMissingNullable.class,
           PreferJavaTimeOverload.class,
+          PreferPreconditions.class,
           PreferredInterfaceType.class,
           PrimitiveArrayPassedToVarargsMethod.class,
           PrivateConstructorForNoninstantiableModule.class,
@@ -1319,9 +1333,13 @@ public class BuiltInCheckerSuppliers {
           RedundantThrows.class,
           RefersToDaggerCodegen.class,
           RemoveUnusedImports.class,
+          RequireNonNullRefactoring.class,
           ReturnMissingNullable.class,
           ReturnsNullCollection.class,
           ScopeOnModule.class,
+          SimplifyTestParameter.class,
+          SingleTestParameter.class,
+          SingleValueTestParameter.class,
           StaticOrDefaultInterfaceMethod.class,
           StaticQualifiedUsingExpression.class,
           StringFormatWithLiteral.class,
@@ -1338,6 +1356,7 @@ public class BuiltInCheckerSuppliers {
           ThrowsUncheckedException.class,
           TimeUnitMismatch.class,
           TooManyParameters.class,
+          TraditionalJavadocToMarkdown.class,
           TransientMisuse.class,
           TruthContainsExactlyElementsInUsage.class,
           TryFailRefactoring.class,
@@ -1365,6 +1384,7 @@ public class BuiltInCheckerSuppliers {
           UseCorrectAssertInTests.class,
           UseEnumSwitch.class,
           UsingJsr305CheckReturnValue.class,
+          ValueClassIdentity.class,
           VarChecker.class,
           VarWithPrimitive.class,
           Varifier.class,

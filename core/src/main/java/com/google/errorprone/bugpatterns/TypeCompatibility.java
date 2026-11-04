@@ -16,8 +16,14 @@
 
 package com.google.errorprone.bugpatterns;
 
+import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.common.collect.Iterables.isEmpty;
+import static com.google.common.collect.Streams.concat;
+import static com.google.errorprone.VisitorState.memoize;
+import static com.google.errorprone.matchers.ProtobufMatchers.DYNAMIC_MESSAGE;
+import static com.google.errorprone.matchers.ProtobufMatchers.MESSAGE;
+import static com.google.errorprone.matchers.ProtobufMatchers.MESSAGE_LITE;
 import static com.google.errorprone.suppliers.Suppliers.typeFromString;
 import static com.google.errorprone.util.ASTHelpers.findMatchingMethods;
 import static com.google.errorprone.util.ASTHelpers.getUpperBound;
@@ -25,6 +31,7 @@ import static com.google.errorprone.util.ASTHelpers.isCastable;
 import static com.google.errorprone.util.ASTHelpers.isSameType;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Streams;
 import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.VisitorState;
@@ -60,11 +67,19 @@ public final class TypeCompatibility {
   private static final String WITHOUT_EQUALS_REASON =
       ". Though these types are the same, the type doesn't implement equals.";
   private final boolean treatBuildersAsIncomparable;
+  private final Supplier<ImmutableSet<Name>> classesWithNonInheritedEquals;
 
   @Inject
   TypeCompatibility(ErrorProneFlags flags) {
     this.treatBuildersAsIncomparable =
         flags.getBoolean("TypeCompatibility:TreatBuildersAsIncomparable").orElse(true);
+    var extraTypes = flags.getSetOrEmpty("TypeCompatibility:ClassesWithNonInheritedEquals");
+    this.classesWithNonInheritedEquals =
+        memoize(
+            state ->
+                concat(CLASSES_WITH_NON_INHERITED_EQUALS.stream(), extraTypes.stream())
+                    .map(state::getName)
+                    .collect(toImmutableSet()));
   }
 
   public TypeCompatibilityReport compatibilityOfTypes(
@@ -94,18 +109,16 @@ public final class TypeCompatibility {
       // comparable to themselves. It would be reasonable to mistake Builders as having value
       // semantics, which may be misleading.
       if (treatBuildersAsIncomparable
-          && !leftUpperBound.tsym.isEnum()
           && leftUpperBound.isFinal()
           && leftUpperBound.tsym.name.toString().endsWith("Builder")) {
         Names names = state.getNames();
         MethodSymbol equals =
-            (MethodSymbol)
-                state.getSymtab().objectType.tsym.members().findFirst(state.getNames().equals);
+            (MethodSymbol) state.getSymtab().objectType.tsym.members().findFirst(names.equals);
         return isEmpty(
                 types
                     .membersClosure(leftUpperBound, /* skipInterface= */ false)
                     .getSymbolsByName(
-                        names.toString,
+                        names.equals,
                         m ->
                             m != equals
                                 && m.overrides(
@@ -167,7 +180,7 @@ public final class TypeCompatibility {
         : TypeCompatibilityReport.compatible();
   }
 
-  private static boolean isFeasiblyCompatible(Type leftType, Type rightType, VisitorState state) {
+  private boolean isFeasiblyCompatible(Type leftType, Type rightType, VisitorState state) {
     // If one type can be cast into the other, they are potentially equal to each other.
     // Note: we do this precisely in this order to allow primitive values to be checked pre-1.7:
     // 1.6: java.lang.Object can't be cast to primitives
@@ -188,13 +201,11 @@ public final class TypeCompatibility {
   }
 
   /**
-   * Returns if the method represents an override of equals(Object) that is not on `Object` or
-   * `Enum`.
-   *
-   * <p>This would represent an equals method that could specify equality semantics aside from
-   * object identity.
+   * Returns {@code true} if the given {@code equals} method represents an implementation of {@code
+   * equals(Object)} that is not on {@link Object}, {@link Enum}, {@link Record}, or other types
+   * whose {@code equals} declaration does not define cross-subtype value equality.
    */
-  private static boolean customEqualsMethod(MethodSymbol methodSymbol, VisitorState state) {
+  private boolean customEqualsMethod(MethodSymbol methodSymbol, VisitorState state) {
     ClassSymbol owningClass = methodSymbol.enclClass();
     return !methodSymbol.isStatic()
         && ((methodSymbol.flags() & Flags.SYNTHETIC) == 0)
@@ -205,7 +216,9 @@ public final class TypeCompatibility {
             .isSameType(
                 getOnlyElement(methodSymbol.getParameters()).type, state.getSymtab().objectType)
         && !owningClass.equals(state.getSymtab().objectType.tsym)
-        && !owningClass.equals(state.getSymtab().enumSym);
+        && !owningClass.equals(state.getSymtab().enumSym)
+        && !owningClass.equals(state.getSymtab().recordType.tsym)
+        && !classesWithNonInheritedEquals.get(state).contains(owningClass.getQualifiedName());
   }
 
   /**
@@ -247,16 +260,14 @@ public final class TypeCompatibility {
     // proto2-immutable: p.GeneratedMessage < p.AbstractMessage < p.Message
 
     // DynamicMessage is comparable to all other proto types.
-    Type dynamicMessage = COM_GOOGLE_PROTOBUF_DYNAMICMESSAGE.get(state);
-    if (isSameType(leftType, dynamicMessage, state)
-        || isSameType(rightType, dynamicMessage, state)) {
+    if (isSameType(leftType, DYNAMIC_MESSAGE, state)
+        || isSameType(rightType, DYNAMIC_MESSAGE, state)) {
       return false;
     }
 
-    Type protoBase = COM_GOOGLE_PROTOBUF_MESSAGE.get(state);
-    if (isSameType(nearestCommonSupertype, protoBase, state)
-        && !isSameType(leftType, protoBase, state)
-        && !isSameType(rightType, protoBase, state)) {
+    if (isSameType(nearestCommonSupertype, MESSAGE, state)
+        && !isSameType(leftType, MESSAGE, state)
+        && !isSameType(rightType, MESSAGE, state)) {
       // In this situation, there's a mix of (immutable proto2, others) messages. Here, we want to
       // figure out if the other is a proto2-mutable representing the same message/type as the
       // immutable proto.
@@ -276,8 +287,7 @@ public final class TypeCompatibility {
 
     // Otherwise, if these two types are *concrete* proto classes, but not the same message, then
     // consider them incompatible with each other.
-    Type messageLite = COM_GOOGLE_PROTOBUF_MESSAGELITE.get(state);
-    return isSubtype(nearestCommonSupertype, messageLite, state)
+    return isSubtype(nearestCommonSupertype, MESSAGE_LITE, state)
         && isConcrete(leftType, state.getTypes())
         && isConcrete(rightType, state.getTypes());
   }
@@ -392,14 +402,35 @@ public final class TypeCompatibility {
   private static final Supplier<Name> EQUALS =
       VisitorState.memoize(state -> state.getName("equals"));
 
-  private static final Supplier<Type> COM_GOOGLE_PROTOBUF_DYNAMICMESSAGE =
-      typeFromString("com.google.protobuf.DynamicMessage");
-
-  private static final Supplier<Type> COM_GOOGLE_PROTOBUF_MESSAGE =
-      typeFromString("com.google.protobuf.Message");
-
-  private static final Supplier<Type> COM_GOOGLE_PROTOBUF_MESSAGELITE =
-      typeFromString("com.google.protobuf.MessageLite");
-
   private static final Supplier<Type> JAVA_UTIL_COLLECTION = typeFromString("java.util.Collection");
+
+  private static final ImmutableSet<String> CLASSES_WITH_NON_INHERITED_EQUALS =
+      ImmutableSet.of(
+          "com.google.common.base.Converter",
+          "com.google.common.base.Equivalence",
+          "com.google.common.base.Function",
+          "com.google.common.base.Predicate",
+          "com.google.common.base.Supplier",
+          "com.google.common.flags.Flag",
+          "com.google.common.flogger.MetadataKey",
+          "com.google.common.reflect.AbstractInvocationHandler",
+          "com.sun.tools.javac.code.Type",
+          "java.awt.RenderingHints.Key",
+          "java.lang.ProcessHandle",
+          "java.net.InetAddress",
+          "java.nio.file.Path",
+          "java.security.BasicPermission",
+          "java.security.Permission",
+          "java.security.Principal",
+          "java.text.AttributedCharacterIterator.Attribute",
+          "java.text.Collator",
+          "java.text.DateFormat",
+          "java.text.NumberFormat",
+          "java.time.Clock",
+          "java.time.chrono.ChronoLocalDate",
+          "java.time.chrono.ChronoLocalDateTime",
+          "java.time.chrono.ChronoPeriod",
+          "java.time.chrono.ChronoZonedDateTime",
+          "java.util.Collection",
+          "java.util.Comparator");
 }

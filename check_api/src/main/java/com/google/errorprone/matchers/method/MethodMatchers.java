@@ -16,6 +16,7 @@
 
 package com.google.errorprone.matchers.method;
 
+import com.google.errorprone.ClassName;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.predicates.TypePredicate;
 import com.google.errorprone.predicates.TypePredicates;
@@ -23,8 +24,6 @@ import com.google.errorprone.suppliers.Supplier;
 
 import com.sun.source.tree.ExpressionTree;
 import com.sun.tools.javac.code.Type;
-
-import java.util.regex.Pattern;
 
 public final class MethodMatchers {
 
@@ -47,6 +46,9 @@ public final class MethodMatchers {
     /** Match on types with the given fully-qualified name. (e.g. {@code java.lang.String}) */
     MethodClassMatcher onExactClass(String className);
 
+    /** Match on the given class exactly. */
+    MethodClassMatcher onExactClass(ClassName className);
+
     /** Match on the given type exactly. */
     MethodClassMatcher onExactClass(Supplier<Type> classType);
 
@@ -56,14 +58,23 @@ public final class MethodMatchers {
     /** Match on types that are exactly the same as any of the given types. */
     MethodClassMatcher onExactClassAny(String... classTypes);
 
+    /** Match on types that are exactly the same as any of the given classes. */
+    MethodClassMatcher onExactClassAny(ClassName... classTypes);
+
     /** Match on descendants of the given fully-qualified type name. */
     MethodClassMatcher onDescendantOf(String className);
+
+    /** Match on descendants of the given class. */
+    MethodClassMatcher onDescendantOf(ClassName className);
 
     /** Match on descendants of the given type. */
     MethodClassMatcher onDescendantOf(Supplier<Type> classType);
 
     /** Match on types that are descendants of any of the given types. */
     MethodClassMatcher onDescendantOfAny(String... classTypes);
+
+    /** Match on types that are descendants of any of the given classes. */
+    MethodClassMatcher onDescendantOfAny(ClassName... classTypes);
 
     /** Match on types that are descendants of any of the given types. */
     MethodClassMatcher onDescendantOfAny(Iterable<String> classTypes);
@@ -83,6 +94,9 @@ public final class MethodMatchers {
     /** Match on types with the given fully-qualified name. (e.g. {@code java.lang.String}) */
     MethodClassMatcher onClass(String className);
 
+    /** Match on the given class exactly. */
+    MethodClassMatcher onClass(ClassName className);
+
     /** Match on the given type exactly. */
     MethodClassMatcher onClass(Supplier<Type> classType);
 
@@ -92,14 +106,23 @@ public final class MethodMatchers {
     /** Match on types that are equal to any of the given types. */
     MethodClassMatcher onClassAny(String... classNames);
 
+    /** Match on types that are equal to any of the given classes. */
+    MethodClassMatcher onClassAny(ClassName... classNames);
+
     /** Match on descendants of the given fully-qualified type name. */
     MethodClassMatcher onDescendantOf(String className);
+
+    /** Match on descendants of the given class. */
+    MethodClassMatcher onDescendantOf(ClassName className);
 
     /** Match on descendants of the given type. */
     MethodClassMatcher onDescendantOf(Supplier<Type> classType);
 
     /** Match on types that are descendants of any of the given types. */
     MethodClassMatcher onDescendantOfAny(String... classTypes);
+
+    /** Match on types that are descendants of any of the given classes. */
+    MethodClassMatcher onDescendantOfAny(ClassName... classTypes);
 
     /** Match on types that are descendants of any of the given types. */
     MethodClassMatcher onDescendantOfAny(Iterable<String> classTypes);
@@ -119,14 +142,23 @@ public final class MethodMatchers {
     /** Match on types with the given fully-qualified name. (e.g. {@code java.lang.String}) */
     MethodClassMatcher onClass(String className);
 
+    /** Match on the given class exactly. */
+    MethodClassMatcher onClass(ClassName className);
+
     /** Match on descendants of the given fully-qualified type name. */
     MethodClassMatcher onDescendantOf(String className);
+
+    /** Match on descendants of the given class. */
+    MethodClassMatcher onDescendantOf(ClassName className);
 
     /** Match on descendants of the given type. */
     MethodClassMatcher onDescendantOf(Supplier<Type> classType);
 
     /** Match on types that are descendants of any of the given types. */
     MethodClassMatcher onDescendantOfAny(String... classTypes);
+
+    /** Match on types that are descendants of any of the given classes. */
+    MethodClassMatcher onDescendantOfAny(ClassName... classTypes);
 
     /** Match on types that are descendants of any of the given types. */
     MethodClassMatcher onDescendantOfAny(Iterable<String> classTypes);
@@ -153,7 +185,10 @@ public final class MethodMatchers {
     MethodNameMatcher withAnyName();
 
     /** Match methods with a name that matches the given regular expression. */
-    MethodNameMatcher withNameMatching(Pattern pattern);
+    MethodNameMatcher withNameMatching(org.safere.Pattern pattern);
+
+    /** Match methods with a name that matches the given regular expression. */
+    MethodNameMatcher withNameMatching(java.util.regex.Pattern pattern);
   }
 
   /**
@@ -186,6 +221,9 @@ public final class MethodMatchers {
      */
     ParameterMatcher withParametersOfType(Supplier<Type> first, Supplier<Type>... rest);
 
+    /** Match methods whose formal parameters have the given types. */
+    ParameterMatcher withParametersOfType(ClassName first, ClassName... rest);
+
     /**
      * Match methods whose formal parameters have the given types.
      *
@@ -216,6 +254,9 @@ public final class MethodMatchers {
     /** Match on the given type exactly. */
     ConstructorClassMatcher forClass(String className);
 
+    /** Match on the given class exactly. */
+    ConstructorClassMatcher forClass(ClassName className);
+
     /** Match on the given type exactly. */
     ConstructorClassMatcher forClass(Supplier<Type> classType);
   }
@@ -241,6 +282,9 @@ public final class MethodMatchers {
      * Match constructors whose formal parameters have the given types.
      */
     ParameterMatcher withParametersOfType(Supplier<Type> first, Supplier<Type>... rest);
+
+    /** Match constructors whose formal parameters have the given types. */
+    ParameterMatcher withParametersOfType(ClassName first, ClassName... rest);
   }
 
   /**

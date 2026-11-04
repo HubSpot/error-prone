@@ -7,6 +7,8 @@ on:
         description: "version number for this release."
         required: true
 
+permissions: {}
+
 jobs:
   build-maven-jars:
     runs-on: ubuntu-latest
@@ -14,24 +16,26 @@ jobs:
       contents: write
     steps:          
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: 'Set up JDK 25'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           java-version: 25
           distribution: 'zulu'
           cache: 'maven'
 
       - name: 'Set up JDK 23'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           java-version: 23
           distribution: 'zulu'
           cache: 'maven'
 
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           java-version: 21
           distribution: 'zulu'
@@ -41,7 +45,18 @@ jobs:
           server-password: CI_DEPLOY_PASSWORD
           gpg-private-key: ${{ secrets.GPG_SIGNING_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
-     
+
+      - name: Set up Maven 3.9.16
+        run: |
+          set -euo pipefail
+          V=3.9.16
+          SHA512=831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6
+          URL=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/$V/apache-maven-$V-bin.tar.gz
+          curl -fsSL "$URL" -o /tmp/maven.tgz
+          echo "$SHA512  /tmp/maven.tgz" | sha512sum -c -
+          tar xzf /tmp/maven.tgz -C "$HOME"
+          echo "$HOME/apache-maven-$V/bin" >> "$GITHUB_PATH"
+
       - name: Bump Version Number
         run: |
           mvn --no-transfer-progress versions:set versions:commit -DnewVersion="${GITHUB_EVENT_INPUTS_VERSION}"
@@ -70,7 +85,7 @@ jobs:
           GITHUB_EVENT_INPUTS_VERSION: ${{ github.event.inputs.version }}
           
       - name: Draft Release Entry
-        uses: softprops/action-gh-release@v2.5.0
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           draft: true
           name: Error Prone ${{ github.event.input.version }} 

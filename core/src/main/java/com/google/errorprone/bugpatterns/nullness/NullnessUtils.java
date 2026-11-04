@@ -26,16 +26,22 @@ import static com.google.errorprone.matchers.Matchers.instanceMethod;
 import static com.google.errorprone.matchers.Matchers.staticMethod;
 import static com.google.errorprone.suppliers.Suppliers.JAVA_LANG_VOID_TYPE;
 import static com.google.errorprone.util.ASTHelpers.enclosingClass;
+import static com.google.errorprone.util.ASTHelpers.enclosingElements;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.stripParentheses;
+import static com.google.errorprone.util.AnnotationNames.NULL_MARKED_ANNOTATION;
+import static com.google.errorprone.util.AnnotationNames.NULL_UNMARKED_ANNOTATION;
 import static com.sun.source.tree.Tree.Kind.NULL_LITERAL;
 import static com.sun.tools.javac.parser.Tokens.TokenKind.DOT;
 import static java.lang.Boolean.TRUE;
 import static java.util.Objects.requireNonNull;
+import static javax.lang.model.element.Modifier.PROTECTED;
+import static javax.lang.model.element.Modifier.PUBLIC;
 
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Iterables;
 import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.nullness.NullnessUtils.NullCheck.Polarity;
@@ -50,10 +56,12 @@ import com.sun.source.tree.ArrayTypeTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.BlockTree;
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ConditionalExpressionTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.IfTree;
+import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ParameterizedTypeTree;
@@ -82,7 +90,7 @@ import org.jspecify.annotations.Nullable;
  *
  * @author awturner@google.com (Andy Turner)
  */
-final class NullnessUtils {
+public final class NullnessUtils {
   private NullnessUtils() {}
 
   private static final Matcher<ExpressionTree> OPTIONAL_OR_NULL =
@@ -107,6 +115,70 @@ final class NullnessUtils {
     return flags.getBoolean("Nullness:Conservative").orElse(true);
   }
 
+  static boolean onlyLikelyPublicApi(ErrorProneFlags flags) {
+    return flags.getBoolean("Nullness:LikelyPublicApiOnly").orElse(false);
+  }
+
+  static boolean isLikelyToBePublicApi(Symbol sym) {
+    return enclosingElements(sym)
+        .allMatch(
+            s ->
+                switch (s) {
+                  case ClassSymbol c -> isPublicOrProtected(c);
+                  case MethodSymbol m -> isPublicOrProtected(m);
+                  case VarSymbol v ->
+                      switch (v.getKind()) {
+                        case FIELD, ENUM_CONSTANT -> isPublicOrProtected(v);
+                        case RECORD_COMPONENT -> true;
+                        case PARAMETER ->
+                            /*
+                             * We have to make sure it's a method parameter, not a lambda parameter.
+                             * (A lambda parameter has its "enclosing element" set to the actually
+                             * enclosing method or to a synthetic MethodSymbol if the lambda is in a
+                             * field initializer or initializer block.)
+                             */
+                            ((MethodSymbol) v.getEnclosingElement()).getParameters().contains(v);
+                        default -> false;
+                      };
+                  default -> true;
+                });
+  }
+
+  static boolean isLikelyToBePublicApi(TreePath path) {
+    Tree child = null;
+    for (Tree tree : path) {
+      if (tree instanceof BlockTree || tree instanceof LambdaExpressionTree) {
+        return false;
+      }
+      if (tree instanceof VariableTree variableTree) {
+        return child != variableTree.getInitializer()
+            && isLikelyToBePublicApi(getSymbol(variableTree));
+      }
+      if (tree instanceof MethodTree methodTree) {
+        /*
+         * Checking whether we are inside getDefaultValue is irrelevant for adding annotations, but
+         * it's future-proofing for any other isLikelyToBePublicApi use case in the future.
+         *
+         * Incidentally, Gemini notices that Java allows `int i() default (@Nullable int) 0;`! But
+         * to JSpecify, an annotation on the root type of a cast is already inapplicable, and a cast
+         * like `(Class<@NonNull Foo>) Foo.class` in an annotation default value is forbidden by
+         * javac.
+         */
+        return child != methodTree.getDefaultValue()
+            && isLikelyToBePublicApi(getSymbol(methodTree));
+      }
+      if (tree instanceof ClassTree) {
+        return isLikelyToBePublicApi(getSymbol(tree));
+      }
+      child = tree;
+    }
+    throw new AssertionError("tree without enclosing element: " + Iterables.toString(path));
+  }
+
+  private static boolean isPublicOrProtected(Symbol symbol) {
+    return symbol.getModifiers().contains(PUBLIC) || symbol.getModifiers().contains(PROTECTED);
+  }
+
   /*
    * TODO(cpovirk): Walking up the tree of enclosing elements may be more expensive than we'd like.
    * (But I haven't checked.) To improve upon that, would we go so far as to build special tracking
@@ -128,8 +200,8 @@ final class NullnessUtils {
     for (; sym != null; sym = sym.getEnclosingElement()) {
       // https://jspecify.dev/docs/spec/#null-marked-scope
       // TODO(cpovirk): Including handling of @kotlin.Metadata.
-      boolean marked = hasAnnotation(sym, "org.jspecify.annotations.NullMarked", state);
-      boolean unmarked = hasAnnotation(sym, "org.jspecify.annotations.NullUnmarked", state);
+      boolean marked = hasAnnotation(sym, NULL_MARKED_ANNOTATION, state);
+      boolean unmarked = hasAnnotation(sym, NULL_UNMARKED_ANNOTATION, state);
       if (marked && !unmarked) {
         return true;
       }
@@ -210,7 +282,7 @@ final class NullnessUtils {
     if (typeTree instanceof ParameterizedTypeTree ptt) {
       typeTree = ptt.getType();
     }
-    switch (typeTree.getKind()) {
+    return switch (typeTree.getKind()) {
       case ARRAY_TYPE -> {
         Tree beforeBrackets = typeTree;
         while (true) {
@@ -225,8 +297,7 @@ final class NullnessUtils {
           }
         }
         // For an explanation of "int @Foo [][] f," etc., see JLS 4.11.
-        return nullableAnnotationToUse.fixPostfixingOnto(
-            beforeBrackets, state, suppressionToRemove);
+        yield nullableAnnotationToUse.fixPostfixingOnto(beforeBrackets, state, suppressionToRemove);
       }
       case MEMBER_SELECT -> {
         int lastDot =
@@ -235,19 +306,19 @@ final class NullnessUtils {
                 .findFirst()
                 .get()
                 .pos();
-        return nullableAnnotationToUse.fixPostfixingOnto(lastDot, state, suppressionToRemove);
+        yield nullableAnnotationToUse.fixPostfixingOnto(lastDot, state, suppressionToRemove);
       }
-      case ANNOTATED_TYPE -> {
-        return nullableAnnotationToUse.fixPrefixingOnto(
-            ((AnnotatedTypeTree) typeTree).getAnnotations().getFirst(), state, suppressionToRemove);
-      }
-      case IDENTIFIER -> {
-        return nullableAnnotationToUse.fixPrefixingOnto(typeTree, state, suppressionToRemove);
-      }
+      case ANNOTATED_TYPE ->
+          nullableAnnotationToUse.fixPrefixingOnto(
+              ((AnnotatedTypeTree) typeTree).getAnnotations().getFirst(),
+              state,
+              suppressionToRemove);
+      case IDENTIFIER ->
+          nullableAnnotationToUse.fixPrefixingOnto(typeTree, state, suppressionToRemove);
       default ->
           throw new AssertionError(
               "unexpected kind for type tree: " + typeTree.getKind() + " for " + typeTree);
-    }
+    };
     // TODO(cpovirk): Remove any @NonNull, etc. annotation that is present?
   }
 
@@ -472,7 +543,13 @@ final class NullnessUtils {
     }
   }
 
-  static boolean hasDefinitelyNullBranch(
+  /**
+   * Returns {@code true} if the given expression can definitely evaluate to {@code null} along at
+   * least one execution branch (for example, explicit {@code null} literals, conditional/ternary
+   * branches returning {@code null}, known-null variables, or calls to methods like {@code
+   * Optional.orNull()}).
+   */
+  public static boolean hasDefinitelyNullBranch(
       ExpressionTree tree,
       Set<VarSymbol> definitelyNullVars,
       /*

@@ -33,6 +33,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.errorprone.BaseErrorProneJavaCompiler;
 import com.google.errorprone.BugCheckerRefactoringTestHelper;
 import com.google.errorprone.BugPattern;
+import com.google.errorprone.ClassName;
 import com.google.errorprone.CompilationTestHelper;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker;
@@ -235,7 +236,6 @@ public class SuggestedFixesTest {
             "Test.java",
             """
             import com.google.errorprone.fixes.SuggestedFixesTest.EditModifiers;
-            import javax.annotation.Nullable;
 
             @EditModifiers(value = "non-sealed", kind = EditModifiers.EditKind.ADD)
             sealed interface Test {
@@ -275,7 +275,6 @@ public class SuggestedFixesTest {
             "Test.java",
             """
             import com.google.errorprone.fixes.SuggestedFixesTest.EditModifiers;
-            import javax.annotation.Nullable;
 
             @EditModifiers(value = "non-sealed", kind = EditModifiers.EditKind.REMOVE)
             sealed interface Test {
@@ -293,7 +292,6 @@ public class SuggestedFixesTest {
             "Test.java",
             """
             import com.google.errorprone.fixes.SuggestedFixesTest.EditModifiers;
-            import javax.annotation.Nullable;
 
             @EditModifiers(value = "final", kind = EditModifiers.EditKind.ADD)
             class Test {
@@ -313,7 +311,6 @@ public class SuggestedFixesTest {
             "Test.java",
             """
             import com.google.errorprone.fixes.SuggestedFixesTest.EditModifiers;
-            import javax.annotation.Nullable;
 
             @EditModifiers(value = "public", kind = EditModifiers.EditKind.ADD)
             class Test {
@@ -355,7 +352,6 @@ public class SuggestedFixesTest {
             "Test.java",
             """
             import com.google.errorprone.fixes.SuggestedFixesTest.EditModifiers;
-            import javax.annotation.Nullable;
 
             @EditModifiers(
                 value = {"final", "static"},
@@ -537,6 +533,8 @@ public class SuggestedFixesTest {
             """)
         .doTest();
   }
+
+  private static final Supplier<Type> SOMEANNOTATION = typeFromString("some.pkg.SomeAnnotation");
 
   /** A test check that adds an annotation to all return types. */
   @BugPattern(summary = "Add an annotation", severity = ERROR)
@@ -873,6 +871,113 @@ public class SuggestedFixesTest {
   @Test
   public void qualifyTypeString_deeplyNestedType() {
     qualifyDeeplyNestedType(new ReplaceReturnTypeString("pkg.Outer.Inner.Innermost"));
+  }
+
+  /** A test check that replaces all methods' return types with a given {@link ClassName}. */
+  @BugPattern(summary = "Change the method return type", severity = ERROR)
+  public static class ReplaceReturnTypeClassName extends BugChecker
+      implements BugChecker.MethodTreeMatcher {
+    private final ClassName newReturnType;
+
+    public ReplaceReturnTypeClassName(ClassName newReturnType) {
+      this.newReturnType = newReturnType;
+    }
+
+    @Override
+    public Description matchMethod(MethodTree tree, VisitorState state) {
+      SuggestedFix.Builder builder = SuggestedFix.builder();
+      String qualifiedName = SuggestedFixes.qualifyType(state, builder, newReturnType);
+      return describeMatch(
+          tree.getReturnType(), builder.replace(tree.getReturnType(), qualifiedName).build());
+    }
+  }
+
+  /** Test checker for {@link #qualifyTypeClassName_dollarPrefixedLoadedType}. */
+  @BugPattern(summary = "Change the method return type", severity = ERROR)
+  public static final class ReplaceReturnTypeDollarPrefixed extends ReplaceReturnTypeClassName {
+    public ReplaceReturnTypeDollarPrefixed() {
+      super(ClassName.of("com.example.$AutoValue_Foo"));
+    }
+  }
+
+  /** Test checker for {@link #qualifyTypeClassName_unloadedNestedType}. */
+  @BugPattern(summary = "Change the method return type", severity = ERROR)
+  public static final class ReplaceReturnTypeUnloadedNested extends ReplaceReturnTypeClassName {
+    public ReplaceReturnTypeUnloadedNested() {
+      super(ClassName.of("com.example.Unloaded.Nested"));
+    }
+  }
+
+  @Test
+  public void qualifyTypeClassName_nestedType() {
+    qualifyNestedType(new ReplaceReturnTypeClassName(ClassName.of("pkg.Outer.Inner")));
+  }
+
+  @Test
+  public void qualifyTypeClassName_deeplyNestedType() {
+    qualifyDeeplyNestedType(
+        new ReplaceReturnTypeClassName(ClassName.of("pkg.Outer.Inner.Innermost")));
+  }
+
+  @Test
+  public void qualifyTypeClassName_dollarPrefixedLoadedType() {
+    BugCheckerRefactoringTestHelper.newInstance(ReplaceReturnTypeDollarPrefixed.class, getClass())
+        .addInputLines(
+            "com/example/$AutoValue_Foo.java",
+            """
+            package com.example;
+
+            public class $AutoValue_Foo {}
+            """)
+        .expectUnchanged()
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              Void foo() {
+                return null;
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            import com.example.$AutoValue_Foo;
+
+            class Test {
+              $AutoValue_Foo foo() {
+                return null;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void qualifyTypeClassName_unloadedNestedType() {
+    BugCheckerRefactoringTestHelper.newInstance(ReplaceReturnTypeUnloadedNested.class, getClass())
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              Void foo() {
+                return null;
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            import com.example.Unloaded;
+
+            class Test {
+              Unloaded.Nested foo() {
+                return null;
+              }
+            }
+            """)
+        .allowBreakingChanges()
+        .doTest();
   }
 
   @Test
@@ -1503,6 +1608,45 @@ class Test {
                 java.util.function.Predicate<Integer> isEven =
                     (@SuppressWarnings("AParameter")
                         Integer x) -> x % 2 == 0;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void customSuppressWarningsFix() {
+    BugCheckerRefactoringTestHelper refactorTestHelper =
+        BugCheckerRefactoringTestHelper.newInstance(SuppressMe.class, getClass());
+    refactorTestHelper
+        .addInputLines(
+            "SuppressWarnings.java",
+            """
+            package com.example;
+
+            public @interface SuppressWarnings {
+              String[] value();
+            }
+            """)
+        .expectUnchanged()
+        .addInputLines(
+            "Test.java",
+            """
+            public class Test {
+              @com.example.SuppressWarnings("one")
+              public void doIt() {
+                System.out.println("" + 42);
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            public class Test {
+              @SuppressWarnings("SuppressMe")
+              @com.example.SuppressWarnings("one")
+              public void doIt() {
+                System.out.println("" + 42);
               }
             }
             """)
@@ -2518,7 +2662,6 @@ public class Test {
           java.util.List list;
         }
         """;
-
     // This compilation will succeed because we only consider the compilation errors in the first
     // class.
     CompilationTestHelper.newInstance(
@@ -2865,5 +3008,83 @@ public class Test {
         .doTest();
   }
 
-  private static final Supplier<Type> SOMEANNOTATION = typeFromString("some.pkg.SomeAnnotation");
+  /** A test check that tests variableNamer with extraScope. */
+  @BugPattern(summary = "Test variable namer with extra scope", severity = ERROR)
+  public static class VariableNamerChecker extends BugChecker implements MethodTreeMatcher {
+    @Override
+    public Description matchMethod(MethodTree tree, VisitorState state) {
+      if (tree.getBody() == null || tree.getBody().getStatements().isEmpty()) {
+        return NO_MATCH;
+      }
+      SuggestedFixes.VariableNamer namer =
+          SuggestedFixes.variableNamer(state, tree.getBody().getStatements());
+      String name = namer.avoidShadowing("x");
+      return describeMatch(
+          tree,
+          SuggestedFix.prefixWith(
+              tree.getBody().getStatements().get(0), "int " + name + " = 0;\n"));
+    }
+  }
+
+  @Test
+  public void variableNamerWithExtraScope() {
+    BugCheckerRefactoringTestHelper.newInstance(VariableNamerChecker.class, getClass())
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              void f() {
+                int a = 1;
+                int x = 2;
+                class Local {
+                  int x1 = 3;
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              void f() {
+                int x2 = 0;
+                int a = 1;
+                int x = 2;
+                class Local {
+                  int x1 = 3;
+                }
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void variableNamerWithExtraScope_localClassClash() {
+    BugCheckerRefactoringTestHelper.newInstance(VariableNamerChecker.class, getClass())
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              void f() {
+                int a = 1;
+                int x = 2;
+                class x2 {}
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              void f() {
+                int x3 = 0;
+                int a = 1;
+                int x = 2;
+                class x2 {}
+              }
+            }
+            """)
+        .doTest();
+  }
 }

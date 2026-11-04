@@ -18,9 +18,10 @@ package com.google.errorprone.bugpatterns;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.ChildMultiMatcher.MatchType.AT_LEAST_ONE;
 import static com.google.errorprone.matchers.Matchers.annotations;
-import static com.google.errorprone.suppliers.Suppliers.typeFromString;
+import static com.google.errorprone.matchers.ProtobufMatchers.MESSAGE_LITE;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
+import static com.google.errorprone.util.MoreAnnotations.isTypeAnnotation;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
@@ -32,7 +33,6 @@ import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.fixes.SuggestedFixes;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.MultiMatcher;
-import com.google.errorprone.suppliers.Supplier;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.ClassTree;
@@ -45,11 +45,6 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.PackageSymbol;
-import com.sun.tools.javac.code.Type;
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Target;
-import java.util.Arrays;
-import java.util.List;
 import java.util.Set;
 import javax.inject.Inject;
 import javax.lang.model.element.Name;
@@ -84,7 +79,10 @@ public class BadImport extends BugChecker implements ImportTreeMatcher {
           "Type",
           "Key",
           "Id",
-          "Provider");
+          "Provider",
+          "OfDouble",
+          "OfInt",
+          "OfLong");
 
   private static final ImmutableSet<String> BAD_STATIC_IDENTIFIERS =
       ImmutableSet.of(
@@ -104,9 +102,7 @@ public class BadImport extends BugChecker implements ImportTreeMatcher {
           );
 
   private static final MultiMatcher<Tree, AnnotationTree> HAS_TYPE_USE_ANNOTATION =
-      annotations(AT_LEAST_ONE, (t, state) -> isTypeAnnotation(t));
-
-  private static final String MESSAGE_LITE = "com.google.protobuf.MessageLite";
+      annotations(AT_LEAST_ONE, (t, state) -> isTypeAnnotation(getSymbol(t.getAnnotationType())));
 
   /**
    * Enclosing types that their nested type imports are vague.
@@ -170,7 +166,7 @@ public class BadImport extends BugChecker implements ImportTreeMatcher {
       return Description.NO_MATCH;
     }
 
-    if (isSubtype(symbol.type, COM_GOOGLE_PROTOBUF_MESSAGELITE.get(state), state)) {
+    if (isSubtype(symbol.type, MESSAGE_LITE, state)) {
       return Description.NO_MATCH;
     }
 
@@ -288,20 +284,4 @@ public class BadImport extends BugChecker implements ImportTreeMatcher {
     }
     return buildDescription(firstFound).setMessage(message).addFix(builder.build()).build();
   }
-
-  private static boolean isTypeAnnotation(AnnotationTree t) {
-    Symbol annotationSymbol = getSymbol(t.getAnnotationType());
-    if (annotationSymbol == null) {
-      return false;
-    }
-    Target target = annotationSymbol.getAnnotation(Target.class);
-    if (target == null) {
-      return false;
-    }
-    List<ElementType> value = Arrays.asList(target.value());
-    return value.contains(ElementType.TYPE_USE) || value.contains(ElementType.TYPE_PARAMETER);
-  }
-
-  private static final Supplier<Type> COM_GOOGLE_PROTOBUF_MESSAGELITE =
-      typeFromString(MESSAGE_LITE);
 }

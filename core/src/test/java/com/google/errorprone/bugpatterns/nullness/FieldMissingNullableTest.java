@@ -120,8 +120,6 @@ public class FieldMissingNullableTest {
             """
             package com.google.errorprone.bugpatterns.nullness;
 
-            import javax.annotation.Nullable;
-
             public class NullableParameterTest {
               // BUG: Diagnostic contains: @Nullable
               public static final String MESSAGE = null;
@@ -137,8 +135,6 @@ public class FieldMissingNullableTest {
             "com/google/errorprone/bugpatterns/nullness/NullableParameterTest.java",
             """
             package com.google.errorprone.bugpatterns.nullness;
-
-            import javax.annotation.Nullable;
 
             public class NullableParameterTest {
               private String message = "hello";
@@ -529,8 +525,6 @@ public class FieldMissingNullableTest {
             """
             package com.google.errorprone.bugpatterns.nullness;
 
-            import javax.annotation.Nullable;
-
             public class NullableParameterTest {
               private String message = "hello";
 
@@ -631,6 +625,32 @@ public class FieldMissingNullableTest {
               private final @org.jspecify.annotations.Nullable Object obj2 = null;
 
               class Nullable {}
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void likelyPublicApiOnly() {
+    createCompilationTestHelper()
+        .setArgs("-XepOpt:Nullness:LikelyPublicApiOnly=true")
+        .addSourceLines(
+            "PublicFoo.java",
+            """
+            public class PublicFoo {
+              // BUG: Diagnostic contains: @Nullable
+              public Object publicField = null;
+              // BUG: Diagnostic contains: @Nullable
+              protected Object protectedField = null;
+              Object packagePrivateField = null;
+              private Object privateField = null;
+            }
+            """)
+        .addSourceLines(
+            "PackagePrivateFoo.java",
+            """
+            class PackagePrivateFoo {
+              public Object publicFieldInPackagePrivateClass = null;
             }
             """)
         .doTest();

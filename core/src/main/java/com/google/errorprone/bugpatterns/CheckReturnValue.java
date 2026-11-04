@@ -30,9 +30,10 @@ import static com.google.errorprone.bugpatterns.checkreturnvalue.ErrorMessages.a
 import static com.google.errorprone.bugpatterns.checkreturnvalue.ErrorMessages.conflictingAnnotations;
 import static com.google.errorprone.bugpatterns.checkreturnvalue.ErrorMessages.invocationResultIgnored;
 import static com.google.errorprone.bugpatterns.checkreturnvalue.ErrorMessages.methodReferenceIgnoresResult;
-import static com.google.errorprone.bugpatterns.checkreturnvalue.ExternalCanIgnoreReturnValue.externalIgnoreList;
-import static com.google.errorprone.bugpatterns.checkreturnvalue.ExternalCanIgnoreReturnValue.methodNameAndParams;
-import static com.google.errorprone.bugpatterns.checkreturnvalue.ExternalCanIgnoreReturnValue.surroundingClass;
+import static com.google.errorprone.bugpatterns.checkreturnvalue.ExternalApiList.externalIgnorableList;
+import static com.google.errorprone.bugpatterns.checkreturnvalue.ExternalApiList.externalUnspecifiedList;
+import static com.google.errorprone.bugpatterns.checkreturnvalue.ExternalApiList.methodNameAndParams;
+import static com.google.errorprone.bugpatterns.checkreturnvalue.ExternalApiList.surroundingClass;
 import static com.google.errorprone.bugpatterns.checkreturnvalue.ProtoRules.mutableProtos;
 import static com.google.errorprone.bugpatterns.checkreturnvalue.ProtoRules.protoBuilders;
 import static com.google.errorprone.bugpatterns.checkreturnvalue.ResultUsePolicy.EXPECTED;
@@ -70,6 +71,7 @@ import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.util.ASTHelpers;
+import com.google.errorprone.util.SourceVersion;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
@@ -178,7 +180,8 @@ public class CheckReturnValue extends AbstractReturnValueIgnored
                 productionSubcomponentBuilders(),
 
                 // This is conceptually lower precedence than the above rules.
-                externalIgnoreList());
+                externalIgnorableList(),
+                externalUnspecifiedList());
     var crvPackages = flags.getListOrEmpty(CRV_PACKAGES);
     if (!crvPackages.isEmpty()) {
       builder.addRule(PackagesRule.fromPatterns(crvPackages));
@@ -329,7 +332,10 @@ public class CheckReturnValue extends AbstractReturnValueIgnored
 
   private Description describeInvocationResultIgnored(
       ExpressionTree invocationTree, String shortCall, MethodSymbol symbol, VisitorState state) {
-    String assignmentToUnused = "var unused = ...";
+    String assignmentToUnused =
+        SourceVersion.supportsUnnamedVariablesAndPatterns(state.context)
+            ? "var _ = ..."
+            : "var unused = ...";
     String message =
         invocationResultIgnored(shortCall, assignmentToUnused, apiTrailer(symbol, state));
     return buildDescription(invocationTree)
@@ -373,7 +379,11 @@ public class CheckReturnValue extends AbstractReturnValueIgnored
             + "."
             + state.getTypes().findDescriptorSymbol(getType(tree).asElement()).getSimpleName();
     String methodReference = state.getSourceForNode(tree);
-    String assignmentLambda = parensAndMaybeEllipsis + " -> { var unused = ...; }";
+    String assignmentLambda =
+        parensAndMaybeEllipsis
+            + (SourceVersion.supportsUnnamedVariablesAndPatterns(state.context)
+                ? " -> { var _ = ...; }"
+                : " -> { var unused = ...; }");
     String message =
         methodReferenceIgnoresResult(
             shortCall,

@@ -348,8 +348,6 @@ public class UnusedVariableTest {
             """
             package unusedvars;
 
-            import java.io.IOException;
-            import java.io.ObjectStreamException;
             import java.util.List;
             import javax.inject.Inject;
 
@@ -1716,21 +1714,21 @@ public class UnusedVariableTest {
     refactoringHelper
         .addInputLines(
             "Test.java",
-"""
-import static java.util.stream.Collectors.toList;
+            """
+            import static java.util.stream.Collectors.toList;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+            import java.util.ArrayList;
+            import java.util.Collection;
+            import java.util.List;
 
-public class Test {
-  public void f(List<List<String>> lists) {
-    List<String> result =
-        lists.stream().collect(ArrayList::new, Collection::addAll, Collection::addAll);
-    result = lists.stream().collect(ArrayList::new, ArrayList::addAll, ArrayList::addAll);
-  }
-}
-""")
+            public class Test {
+              public void f(List<List<String>> lists) {
+                List<String> result =
+                    lists.stream().collect(ArrayList::new, Collection::addAll, Collection::addAll);
+                result = lists.stream().collect(ArrayList::new, ArrayList::addAll, ArrayList::addAll);
+              }
+            }
+            """)
         .addOutputLines(
             "Test.java",
             """
@@ -1753,26 +1751,22 @@ public class Test {
     refactoringHelper
         .addInputLines(
             "Test.java",
-"""
-import static java.util.stream.Collectors.toList;
+            """
+            import java.util.ArrayList;
+            import java.util.Collection;
+            import java.util.List;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-
-public class Test {
-  public void f(List<List<String>> lists) {
-    List<String> result =
-        lists.stream().collect(ArrayList::new, Collection::addAll, Collection::addAll);
-    result = lists.stream().collect(ArrayList::new, ArrayList::addAll, ArrayList::addAll);
-  }
-}
-""")
+            public class Test {
+              public void f(List<List<String>> lists) {
+                List<String> result =
+                    lists.stream().collect(ArrayList::new, Collection::addAll, Collection::addAll);
+                result = lists.stream().collect(ArrayList::new, ArrayList::addAll, ArrayList::addAll);
+              }
+            }
+            """)
         .addOutputLines(
             "Test.java",
             """
-            import static java.util.stream.Collectors.toList;
-
             import java.util.ArrayList;
             import java.util.Collection;
             import java.util.List;
@@ -2060,8 +2054,6 @@ public class Test {
         .addSourceLines(
             "Test.java",
             """
-            import java.util.Collections;
-            import java.util.Comparator;
             import java.util.List;
 
             class Test {
@@ -2272,6 +2264,264 @@ public class Test {
             }
             """)
         .expectUnchanged()
+        .doTest();
+  }
+
+  @Test
+  public void refasterBeforeTemplate_unusedLocalVariable_noFinding() {
+    helper
+        .addSourceLines(
+            "BeforeTemplate.java",
+            """
+            package com.google.errorprone.refaster.annotation;
+
+            public @interface BeforeTemplate {}
+            """)
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.errorprone.refaster.annotation.BeforeTemplate;
+
+            class Test {
+              @BeforeTemplate
+              void before(String s) {
+                String local = s.trim();
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void refasterAfterTemplate_unusedLocalVariable_noFinding() {
+    helper
+        .addSourceLines(
+            "AfterTemplate.java",
+            """
+            package com.google.errorprone.refaster.annotation;
+
+            public @interface AfterTemplate {}
+            """)
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.errorprone.refaster.annotation.AfterTemplate;
+
+            class Test {
+              @AfterTemplate
+              void after(String s) {
+                String local = s.trim();
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void refasterTemplate_unusedParameter_flagged() {
+    helper
+        .addSourceLines(
+            "BeforeTemplate.java",
+            """
+            package com.google.errorprone.refaster.annotation;
+
+            public @interface BeforeTemplate {}
+            """)
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.errorprone.refaster.annotation.BeforeTemplate;
+
+            class Test {
+              @BeforeTemplate
+              // BUG: Diagnostic contains: The parameter 'bar' is never read
+              void before(String foo, String bar) {
+                System.out.println(foo);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void refasterTemplate_regularMethod_unusedLocalVariable_flagged() {
+    helper
+        .addSourceLines(
+            "BeforeTemplate.java",
+            """
+            package com.google.errorprone.refaster.annotation;
+
+            public @interface BeforeTemplate {}
+            """)
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.errorprone.refaster.annotation.BeforeTemplate;
+
+            class Test {
+              @BeforeTemplate
+              void before(String s) {
+                String local = s.trim();
+              }
+
+              void regularMethod(String s) {
+                // BUG: Diagnostic contains: The local variable 'local' is never read
+                String local = s.trim();
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void fieldOnlyAccessedViaVarHandle_notFlagged() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            import java.lang.invoke.MethodHandles;
+            import java.lang.invoke.VarHandle;
+
+            class Test {
+              private final class Worker {
+                static final VarHandle RUN_NEXT;
+
+                static {
+                  try {
+                    RUN_NEXT =
+                        MethodHandles.lookup().findVarHandle(Test.Worker.class, "runNext", Runnable.class);
+                  } catch (ReflectiveOperationException e) {
+                    throw new ExceptionInInitializerError(e);
+                  }
+                }
+
+                volatile Runnable runNext;
+
+                Runnable take() {
+                  return (Runnable) RUN_NEXT.getAndSet(this, null);
+                }
+              }
+
+              Runnable take(Worker w) {
+                return w.take();
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void staticFieldOnlyAccessedViaStaticVarHandle_notFlagged() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            import java.lang.invoke.MethodHandles;
+            import java.lang.invoke.VarHandle;
+
+            class Test {
+              private static final VarHandle COUNT;
+
+              static {
+                try {
+                  COUNT = MethodHandles.lookup().findStaticVarHandle(Test.class, "count", int.class);
+                } catch (ReflectiveOperationException e) {
+                  throw new ExceptionInInitializerError(e);
+                }
+              }
+
+              private static volatile int count;
+
+              int increment() {
+                return (int) COUNT.getAndAdd(1);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void fieldOnlyAccessedViaAtomicFieldUpdater_notFlagged() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+            import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+
+            class Test {
+              private static final AtomicIntegerFieldUpdater<Test> COUNT =
+                  AtomicIntegerFieldUpdater.newUpdater(Test.class, "count");
+              private static final AtomicReferenceFieldUpdater<Test, String> NAME =
+                  AtomicReferenceFieldUpdater.newUpdater(Test.class, String.class, "name");
+
+              private volatile int count;
+              private volatile String name;
+
+              int increment() {
+                return COUNT.incrementAndGet(this);
+              }
+
+              String getName() {
+                return NAME.get(this);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void varHandleForDifferentField_unrelatedFieldStillFlagged() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            import java.lang.invoke.MethodHandles;
+            import java.lang.invoke.VarHandle;
+
+            class Test {
+              private static final VarHandle COUNT;
+
+              static {
+                try {
+                  COUNT = MethodHandles.lookup().findVarHandle(Test.class, "count", int.class);
+                } catch (ReflectiveOperationException e) {
+                  throw new ExceptionInInitializerError(e);
+                }
+              }
+
+              private volatile int count;
+
+              // BUG: Diagnostic contains: The field 'other' is never read
+              private volatile int other;
+
+              int increment() {
+                return (int) COUNT.getAndAdd(this, 1);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void nonLiteralOwnerWithLiteralFieldType_fieldTypeClassNotTreatedAsOwner() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+
+            class Test {
+              private static final class Foo {
+                // BUG: Diagnostic contains: The field 'value' is never read
+                private volatile String value;
+              }
+
+              static <T> AtomicReferenceFieldUpdater<T, Foo> updater(Class<T> ownerClass) {
+                return AtomicReferenceFieldUpdater.newUpdater(ownerClass, Foo.class, "value");
+              }
+            }
+            """)
         .doTest();
   }
 }

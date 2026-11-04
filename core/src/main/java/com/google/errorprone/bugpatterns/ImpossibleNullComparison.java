@@ -24,6 +24,16 @@ import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.instanceMethod;
 import static com.google.errorprone.matchers.Matchers.receiverOfInvocation;
 import static com.google.errorprone.matchers.Matchers.staticMethod;
+import static com.google.errorprone.matchers.ProtobufMatchers.EXTENDABLE_MESSAGE;
+import static com.google.errorprone.matchers.ProtobufMatchers.EXTENDABLE_MESSAGE_LITE;
+import static com.google.errorprone.matchers.ProtobufMatchers.EXTENSION_LITE;
+import static com.google.errorprone.matchers.ProtobufMatchers.EXTENSION_LITE_CLASS;
+import static com.google.errorprone.matchers.ProtobufMatchers.FIELD_DESCRIPTOR;
+import static com.google.errorprone.matchers.ProtobufMatchers.FIELD_DESCRIPTOR_CLASS;
+import static com.google.errorprone.matchers.ProtobufMatchers.GENERATED_MESSAGE;
+import static com.google.errorprone.matchers.ProtobufMatchers.GENERATED_MESSAGE_LITE;
+import static com.google.errorprone.matchers.ProtobufMatchers.MESSAGE_LITE_OR_BUILDER;
+import static com.google.errorprone.matchers.ProtobufMatchers.MESSAGE_OR_BUILDER;
 import static com.google.errorprone.util.ASTHelpers.getReceiver;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getType;
@@ -45,7 +55,6 @@ import com.google.errorprone.fixes.SuggestedFixes;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.matchers.Matchers;
-import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.CaseTree;
@@ -116,24 +125,24 @@ public final class ImpossibleNullComparison extends BugChecker
 
   private static final Matcher<ExpressionTree> EXTENSION_METHODS_WITH_FIX =
       instanceMethod()
-          .onDescendantOf("com.google.protobuf.GeneratedMessage.ExtendableMessage")
+          .onDescendantOfAny(EXTENDABLE_MESSAGE, EXTENDABLE_MESSAGE_LITE)
           .named("getExtension")
-          .withParameters("com.google.protobuf.ExtensionLite");
+          .withParametersOfType(EXTENSION_LITE);
 
   private static final Matcher<ExpressionTree> EXTENSION_METHODS_WITH_NO_FIX =
       anyOf(
           instanceMethod()
-              .onDescendantOf("com.google.protobuf.MessageOrBuilder")
+              .onDescendantOf(MESSAGE_OR_BUILDER)
               .named("getRepeatedField")
-              .withParameters("com.google.protobuf.Descriptors.FieldDescriptor", "int"),
+              .withParameters(FIELD_DESCRIPTOR_CLASS, "int"),
           instanceMethod()
-              .onDescendantOf("com.google.protobuf.GeneratedMessage.ExtendableMessage")
+              .onDescendantOfAny(EXTENDABLE_MESSAGE, EXTENDABLE_MESSAGE_LITE)
               .named("getExtension")
-              .withParameters("com.google.protobuf.ExtensionLite", "int"),
+              .withParameters(EXTENSION_LITE_CLASS, "int"),
           instanceMethod()
-              .onDescendantOf("com.google.protobuf.MessageOrBuilder")
+              .onDescendantOf(MESSAGE_OR_BUILDER)
               .named("getField")
-              .withParameters("com.google.protobuf.Descriptors.FieldDescriptor"));
+              .withParametersOfType(FIELD_DESCRIPTOR));
 
   private static final Matcher<ExpressionTree> OF_NULLABLE =
       anyOf(
@@ -144,15 +153,19 @@ public final class ImpossibleNullComparison extends BugChecker
     return tree.getKind() == Kind.NULL_LITERAL;
   }
 
-  /** Matcher for generated protobufs. */
-  private static final Matcher<ExpressionTree> PROTO_RECEIVER =
+  /** Matcher for generated protobufs (legacy message-only behavior). */
+  private static final Matcher<ExpressionTree> PROTO_RECEIVER_LEGACY =
+      instanceMethod().onDescendantOfAny(GENERATED_MESSAGE_LITE, GENERATED_MESSAGE);
+
+  /** Matcher for generated protobufs and builders/OrBuilders. */
+  private static final Matcher<ExpressionTree> PROTO_RECEIVER_OR_BUILDER =
       instanceMethod()
-          .onDescendantOfAny(
-              "com.google.protobuf.GeneratedMessageLite", "com.google.protobuf.GeneratedMessage");
+          .onDescendantOfAny(MESSAGE_LITE_OR_BUILDER, GENERATED_MESSAGE, GENERATED_MESSAGE_LITE);
 
   private final boolean matchTestAssertions;
   private final boolean checkPrimitives;
   private final boolean checkValueOf;
+  private final boolean checkOrBuilder;
 
   @Inject
   ImpossibleNullComparison(ErrorProneFlags flags) {
@@ -160,6 +173,7 @@ public final class ImpossibleNullComparison extends BugChecker
         flags.getBoolean("ProtoFieldNullComparison:MatchTestAssertions").orElse(true);
     this.checkPrimitives = flags.getBoolean("ImmutableNullComparison:CheckPrimitives").orElse(true);
     this.checkValueOf = flags.getBoolean("ImpossibleNullComparison:CheckValueOf").orElse(true);
+    this.checkOrBuilder = flags.getBoolean("ImpossibleNullComparison:CheckOrBuilder").orElse(true);
   }
 
   @Override
@@ -169,7 +183,7 @@ public final class ImpossibleNullComparison extends BugChecker
     return Description.NO_MATCH;
   }
 
-  private class NullComparisonScanner extends TreePathScanner<Void, Void> {
+  private final class NullComparisonScanner extends TreePathScanner<Void, Void> {
     private final Map<Symbol, ExpressionTree> effectivelyFinalValues = new HashMap<>();
     private final VisitorState state;
 
@@ -203,7 +217,10 @@ public final class ImpossibleNullComparison extends BugChecker
             @Override
             public @Nullable ExpressionTree visitMethodInvocation(
                 MethodInvocationTree node, Void unused) {
-              return PROTO_RECEIVER.matches(node, state) ? node : null;
+              return (checkOrBuilder ? PROTO_RECEIVER_OR_BUILDER : PROTO_RECEIVER_LEGACY)
+                      .matches(node, state)
+                  ? node
+                  : null;
             }
 
             @Override
@@ -300,7 +317,7 @@ public final class ImpossibleNullComparison extends BugChecker
       return stream(GetterTypes.values())
           .filter(gt -> !gt.equals(GetterTypes.PRIMITIVE) || checkPrimitives)
           .filter(gt -> !gt.equals(GetterTypes.VALUE_OF) || checkValueOf)
-          .map(type -> type.match(resolvedTree, state))
+          .map(type -> type.match(resolvedTree, state, checkOrBuilder))
           .filter(Objects::nonNull)
           .findFirst();
     }
@@ -354,10 +371,21 @@ public final class ImpossibleNullComparison extends BugChecker
           .named("valueOf")
           .withParameters("java.lang.String");
 
+  private static final Matcher<ExpressionTree> CLASS_FOR_NAME_MATCHER =
+      anyOf(
+          staticMethod()
+              .onClass("java.lang.Class")
+              .named("forName")
+              .withParameters("java.lang.String"),
+          staticMethod()
+              .onClass("java.lang.Class")
+              .named("forName")
+              .withParameters("java.lang.String", "boolean", "java.lang.ClassLoader"));
+
   private enum GetterTypes {
     OPTIONAL_GET {
       @Override
-      @Nullable Fixer match(ExpressionTree tree, VisitorState state) {
+      @Nullable Fixer match(ExpressionTree tree, VisitorState state, boolean checkOrBuilder) {
         if (!OPTIONAL_GET_MATCHER.matches(tree, state)) {
           return null;
         }
@@ -368,7 +396,7 @@ public final class ImpossibleNullComparison extends BugChecker
     },
     GUAVA_OPTIONAL_GET {
       @Override
-      @Nullable Fixer match(ExpressionTree tree, VisitorState state) {
+      @Nullable Fixer match(ExpressionTree tree, VisitorState state, boolean checkOrBuilder) {
         if (!GUAVA_OPTIONAL_GET_MATCHER.matches(tree, state)) {
           return null;
         }
@@ -378,7 +406,7 @@ public final class ImpossibleNullComparison extends BugChecker
     },
     MULTIMAP_GET {
       @Override
-      @Nullable Fixer match(ExpressionTree tree, VisitorState state) {
+      @Nullable Fixer match(ExpressionTree tree, VisitorState state, boolean checkOrBuilder) {
         if (!MULTIMAP_GET_MATCHER.matches(tree, state)) {
           return null;
         }
@@ -394,7 +422,7 @@ public final class ImpossibleNullComparison extends BugChecker
     },
     TABLE_ROW_GET {
       @Override
-      @Nullable Fixer match(ExpressionTree tree, VisitorState state) {
+      @Nullable Fixer match(ExpressionTree tree, VisitorState state, boolean checkOrBuilder) {
         if (!TABLE_ROW_MATCHER.matches(tree, state)) {
           return null;
         }
@@ -410,7 +438,7 @@ public final class ImpossibleNullComparison extends BugChecker
     },
     TABLE_COLUMN_GET {
       @Override
-      @Nullable Fixer match(ExpressionTree tree, VisitorState state) {
+      @Nullable Fixer match(ExpressionTree tree, VisitorState state, boolean checkOrBuilder) {
         if (!TABLE_COLUMN_MATCHER.matches(tree, state)) {
           return null;
         }
@@ -426,14 +454,14 @@ public final class ImpossibleNullComparison extends BugChecker
     },
     PRIMITIVE {
       @Override
-      @Nullable Fixer match(ExpressionTree tree, VisitorState state) {
+      @Nullable Fixer match(ExpressionTree tree, VisitorState state, boolean checkOrBuilder) {
         var type = getType(tree);
         return type != null && type.isPrimitive() ? GetterTypes::emptyFix : null;
       }
     },
     VALUE_OF {
       @Override
-      @Nullable Fixer match(ExpressionTree tree, VisitorState state) {
+      @Nullable Fixer match(ExpressionTree tree, VisitorState state, boolean checkOrBuilder) {
         if (!NON_NULL_VALUE_OF.matches(tree, state)) {
           return null;
         }
@@ -441,11 +469,20 @@ public final class ImpossibleNullComparison extends BugChecker
         return GetterTypes::emptyFix;
       }
     },
+    CLASS_FOR_NAME {
+      @Override
+      @Nullable Fixer match(ExpressionTree tree, VisitorState state, boolean checkOrBuilder) {
+        if (!CLASS_FOR_NAME_MATCHER.matches(tree, state)) {
+          return null;
+        }
+        return GetterTypes::emptyFix;
+      }
+    },
     /** {@code proto.getFoo()} */
     SCALAR {
       @Override
-      @Nullable Fixer match(ExpressionTree tree, VisitorState state) {
-        if (!PROTO_RECEIVER.matches(tree, state)) {
+      @Nullable Fixer match(ExpressionTree tree, VisitorState state, boolean checkOrBuilder) {
+        if (!protoReceiver(checkOrBuilder).matches(tree, state)) {
           return null;
         }
         if (!(tree instanceof MethodInvocationTree method)) {
@@ -491,8 +528,8 @@ public final class ImpossibleNullComparison extends BugChecker
     /** {@code proto.getRepeatedFoo(index)} */
     VECTOR_INDEXED {
       @Override
-      @Nullable Fixer match(ExpressionTree tree, VisitorState state) {
-        if (!PROTO_RECEIVER.matches(tree, state)) {
+      @Nullable Fixer match(ExpressionTree tree, VisitorState state, boolean checkOrBuilder) {
+        if (!protoReceiver(checkOrBuilder).matches(tree, state)) {
           return null;
         }
         if (!(tree instanceof MethodInvocationTree method)) {
@@ -523,8 +560,8 @@ public final class ImpossibleNullComparison extends BugChecker
     /** {@code proto.getRepeatedFooList()} */
     VECTOR {
       @Override
-      @Nullable Fixer match(ExpressionTree tree, VisitorState state) {
-        if (!PROTO_RECEIVER.matches(tree, state)) {
+      @Nullable Fixer match(ExpressionTree tree, VisitorState state, boolean checkOrBuilder) {
+        if (!protoReceiver(checkOrBuilder).matches(tree, state)) {
           return null;
         }
         if (!(tree instanceof MethodInvocationTree method)) {
@@ -551,8 +588,8 @@ public final class ImpossibleNullComparison extends BugChecker
     /** {@code proto.getField(f)} or {@code proto.getExtension(outer, extension)}; */
     EXTENSION_METHOD {
       @Override
-      @Nullable Fixer match(ExpressionTree tree, VisitorState state) {
-        if (!PROTO_RECEIVER.matches(tree, state)) {
+      @Nullable Fixer match(ExpressionTree tree, VisitorState state, boolean checkOrBuilder) {
+        if (!protoReceiver(checkOrBuilder).matches(tree, state)) {
           return null;
         }
         if (EXTENSION_METHODS_WITH_NO_FIX.matches(tree, state)) {
@@ -565,7 +602,7 @@ public final class ImpossibleNullComparison extends BugChecker
           MethodInvocationTree methodInvocation = (MethodInvocationTree) tree;
           Type argumentType =
               ASTHelpers.getType(Iterables.getOnlyElement(methodInvocation.getArguments()));
-          Symbol extension = COM_GOOGLE_PROTOBUF_EXTENSIONLITE.get(state);
+          Symbol extension = EXTENSION_LITE.symbol(state);
           Type genericsArgument = state.getTypes().asSuper(argumentType, extension);
 
           // If there are not two arguments then it is a raw type
@@ -598,6 +635,10 @@ public final class ImpossibleNullComparison extends BugChecker
       }
     };
 
+    private static Matcher<ExpressionTree> protoReceiver(boolean checkOrBuilder) {
+      return checkOrBuilder ? PROTO_RECEIVER_OR_BUILDER : PROTO_RECEIVER_LEGACY;
+    }
+
     /**
      * Returns a Fixer representing a situation where we don't have a fix, but want to mark a
      * callsite as containing a bug.
@@ -614,7 +655,7 @@ public final class ImpossibleNullComparison extends BugChecker
       return methodName.startsWith("get");
     }
 
-    abstract Fixer match(ExpressionTree tree, VisitorState state);
+    abstract Fixer match(ExpressionTree tree, VisitorState state, boolean checkOrBuilder);
   }
 
   private enum ProblemUsage {
@@ -685,7 +726,4 @@ public final class ImpossibleNullComparison extends BugChecker
 
     abstract SuggestedFix fix(Fixer fixer, ExpressionTree tree, VisitorState state);
   }
-
-  private static final Supplier<Symbol> COM_GOOGLE_PROTOBUF_EXTENSIONLITE =
-      VisitorState.memoize(state -> state.getSymbolFromString("com.google.protobuf.ExtensionLite"));
 }

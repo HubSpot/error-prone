@@ -26,6 +26,7 @@ import static com.google.errorprone.matchers.Matchers.not;
 import static com.google.errorprone.matchers.Matchers.staticMethod;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasDirectAnnotationWithSimpleName;
+import static com.google.errorprone.util.AnnotationNames.BEFORE_TEMPLATE_ANNOTATION;
 
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.matchers.ChildMultiMatcher.MatchType;
@@ -39,7 +40,7 @@ import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
 import com.sun.tools.javac.code.Type;
 import java.util.List;
-import java.util.regex.Pattern;
+import org.safere.Pattern;
 
 /**
  * Matchers for the various checkers in this package. They are factored out into this class so that
@@ -60,9 +61,6 @@ final class Matchers {
     }
 
     Type superType = owner.getSuperclass();
-    if (superType == null) {
-      return false;
-    }
 
     Symbol superSymbol = superType.tsym;
     if (superSymbol == null) {
@@ -87,7 +85,7 @@ final class Matchers {
    * If the method is a refaster-before template then it might be explicitly matching bad behaviour.
    */
   private static final Matcher<MethodInvocationTree> METHOD_ANNOTATED_WITH_BEFORETEMPLATE =
-      enclosingMethod(hasAnnotation("com.google.errorprone.refaster.annotation.BeforeTemplate"));
+      enclosingMethod(hasAnnotation(BEFORE_TEMPLATE_ANNOTATION));
 
   private static boolean isTwoParameterAssert(MethodInvocationTree tree, VisitorState state) {
     List<VarSymbol> parameters = getSymbol(tree).getParameters();

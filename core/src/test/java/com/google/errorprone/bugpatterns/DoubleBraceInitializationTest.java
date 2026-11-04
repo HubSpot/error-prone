@@ -451,7 +451,6 @@ class Test {
             """
             import java.util.Collections;
             import java.util.HashMap;
-            import java.util.Map;
 
             class Test {
               private void test() {
@@ -469,11 +468,53 @@ class Test {
             import com.google.common.collect.ImmutableMap;
             import java.util.Collections;
             import java.util.HashMap;
-            import java.util.Map;
 
             class Test {
               private void test() {
                 ImmutableMap.of();
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void blockLambda() {
+    testHelper
+        .addInputLines(
+            "Test.java",
+            """
+            import java.util.Collections;
+            import java.util.HashMap;
+            import java.util.Map;
+            import java.util.function.Supplier;
+
+            class Test {
+              private Supplier<Map<String, Object>> test() {
+                return () -> {
+                  return Collections.unmodifiableMap(
+                      new HashMap<String, Object>() {
+                        {
+                        }
+                      });
+                };
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            import com.google.common.collect.ImmutableMap;
+            import java.util.Collections;
+            import java.util.HashMap;
+            import java.util.Map;
+            import java.util.function.Supplier;
+
+            class Test {
+              private Supplier<Map<String, Object>> test() {
+                return () -> {
+                  return ImmutableMap.of();
+                };
               }
             }
             """)

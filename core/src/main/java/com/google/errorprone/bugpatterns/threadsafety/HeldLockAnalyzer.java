@@ -133,7 +133,7 @@ public final class HeldLockAnalyzer {
         .orElse(locks);
   }
 
-  private static class LockScanner extends TreePathScanner<Void, HeldLockSet> {
+  private static final class LockScanner extends TreePathScanner<Void, HeldLockSet> {
 
     private final VisitorState visitorState;
     private final LockEventListener listener;
@@ -306,7 +306,7 @@ public final class HeldLockAnalyzer {
           LockResource.create("com.google.common.util.concurrent.Monitor", "leave"),
           LockResource.create("java.util.concurrent.Semaphore", "release"));
 
-  private static class LockOperationFinder extends TreeScanner<Void, Void> {
+  private static final class LockOperationFinder extends TreeScanner<Void, Void> {
 
     static Collection<GuardedByExpression> find(
         Tree tree, VisitorState state, Matcher<ExpressionTree> lockOperationMatcher) {
@@ -475,16 +475,14 @@ public final class HeldLockAnalyzer {
 
     private static GuardedByExpression helper(
         GuardedByExpression lockExpression, GuardedByExpression memberAccess) {
-      switch (lockExpression.kind()) {
+      return switch (lockExpression.kind()) {
         case SELECT -> {
           GuardedByExpression.Select lockSelect = (GuardedByExpression.Select) lockExpression;
-          return F.select(helper(lockSelect.base(), memberAccess), lockSelect.sym());
+          yield F.select(helper(lockSelect.base(), memberAccess), lockSelect.sym());
         }
-        case THIS -> {
-          return memberAccess;
-        }
+        case THIS -> memberAccess;
         default -> throw new IllegalGuardedBy(lockExpression.toString());
-      }
+      };
     }
 
     private ExpectedLockCalculator() {}
