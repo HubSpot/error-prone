@@ -345,7 +345,7 @@ public class CompileTimeConstantCheckerTest {
   }
 
   /** Holder for a method we wish to reference from a test. */
-  public static class Holder {
+  public static final class Holder {
     public static void m(String s, @CompileTimeConstant String... p) {}
 
     private Holder() {}
@@ -514,7 +514,6 @@ public class CompileTimeConstantCheckerTest {
             package test;
 
             import com.google.errorprone.annotations.CompileTimeConstant;
-            import java.util.function.Consumer;
 
             public class CompileTimeConstantTestCase {
               interface ConstantFn {
@@ -540,7 +539,6 @@ public class CompileTimeConstantCheckerTest {
             package test;
 
             import com.google.errorprone.annotations.CompileTimeConstant;
-            import java.util.function.Consumer;
 
             public class CompileTimeConstantTestCase {
               interface ConstantFn {
@@ -585,7 +583,6 @@ public class CompileTimeConstantCheckerTest {
             package test;
 
             import com.google.errorprone.annotations.CompileTimeConstant;
-            import java.util.function.Consumer;
 
             public class CompileTimeConstantTestCase {
               interface ConstantFn {
@@ -612,7 +609,6 @@ public class CompileTimeConstantCheckerTest {
             package test;
 
             import com.google.errorprone.annotations.CompileTimeConstant;
-            import java.util.function.Consumer;
 
             public class CompileTimeConstantTestCase {
               interface ConstantFn {
@@ -949,6 +945,84 @@ public class CompileTimeConstantCheckerTest {
                   };
             }
             """)
+        .doTest();
+  }
+
+  @Test
+  public void recordAndInterfaceFields() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.common.collect.ImmutableList;
+            import com.google.errorprone.annotations.CompileTimeConstant;
+
+            public class Test {
+              interface ConstInterface {
+                @CompileTimeConstant ImmutableList<String> LIST = ImmutableList.of("a");
+              }
+
+              record GoodRecord(@CompileTimeConstant String s) {
+                void invoke(GoodRecord other) {
+                  ctcMethod(s);
+                  ctcMethod(this.s);
+                  ctcMethod(other.s);
+                  ctcListMethod(ConstInterface.LIST);
+                }
+              }
+
+              record BadRecord(@CompileTimeConstant String s) {
+                BadRecord(String s) {
+                  // BUG: Diagnostic contains: Non-compile-time constant expression
+                  this.s = s;
+                }
+              }
+
+              static void ctcMethod(@CompileTimeConstant String s) {}
+
+              static void ctcListMethod(@CompileTimeConstant ImmutableList<String> list) {}
+
+              static void testRecordConstruction(String nonConst) {
+                new GoodRecord("const");
+                // BUG: Diagnostic contains: Non-compile-time constant expression
+                new GoodRecord(nonConst);
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void qualifiedCompileTimeConstantFieldAccess() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+"""
+import com.google.common.collect.ImmutableList;
+import com.google.errorprone.annotations.CompileTimeConstant;
+
+public class Test {
+  static class Other {
+    @CompileTimeConstant static final ImmutableList<String> LIST = ImmutableList.of("a");
+  }
+
+  @CompileTimeConstant final String s;
+
+  Test(@CompileTimeConstant String s) {
+    this.s = s;
+  }
+
+  void invoke(Test other) {
+    ctcMethod(this.s);
+    ctcMethod(other.s);
+    ctcListMethod(Other.LIST);
+  }
+
+  static void ctcMethod(@CompileTimeConstant String s) {}
+
+  static void ctcListMethod(@CompileTimeConstant ImmutableList<String> list) {}
+}
+""")
         .doTest();
   }
 }

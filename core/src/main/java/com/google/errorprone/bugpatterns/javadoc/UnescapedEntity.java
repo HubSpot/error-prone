@@ -36,12 +36,14 @@ import com.google.errorprone.bugpatterns.BugChecker.MethodTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.VariableTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
+import com.google.errorprone.util.ErrorProneComment.ErrorProneCommentStyle;
 import com.sun.source.doctree.DocTree;
 import com.sun.source.doctree.EndElementTree;
 import com.sun.source.doctree.ErroneousTree;
 import com.sun.source.doctree.LinkTree;
 import com.sun.source.doctree.LiteralTree;
 import com.sun.source.doctree.SeeTree;
+import com.sun.source.doctree.SnippetTree;
 import com.sun.source.doctree.StartElementTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.MethodTree;
@@ -54,9 +56,9 @@ import com.sun.tools.javac.util.Position;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
+import org.safere.Matcher;
+import org.safere.Pattern;
 
 /**
  * Finds unescaped entities in Javadocs.
@@ -109,9 +111,13 @@ public final class UnescapedEntity extends BugChecker
     if (path == null) {
       return NO_MATCH;
     }
+    Comment comment = ((DCDocComment) path.getDocComment()).comment;
+    if (ErrorProneCommentStyle.from(comment.getStyle()) == ErrorProneCommentStyle.JAVADOC_LINE) {
+      // TODO(b/530215233): Add support for Markdown Javadocs
+      return NO_MATCH;
+    }
     RangesFinder rangesFinder = new RangesFinder(state);
     rangesFinder.scan(path, null);
-    Comment comment = ((DCDocComment) path.getDocComment()).comment;
     Matcher matcher = GENERIC_PATTERN.matcher(comment.getText());
     RangeSet<Integer> generics = TreeRangeSet.create();
     while (matcher.find()) {
@@ -221,6 +227,12 @@ public final class UnescapedEntity extends BugChecker
     public Void visitSee(SeeTree seeTree, Void unused) {
       excludeFromCodeFixes(seeTree);
       return super.visitSee(seeTree, null);
+    }
+
+    @Override
+    public Void visitSnippet(SnippetTree snippetTree, Void unused) {
+      excludeFromCodeFixes(snippetTree);
+      return super.visitSnippet(snippetTree, null);
     }
 
     private void excludeFromCodeFixes(DocTree tree) {

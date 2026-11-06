@@ -25,6 +25,12 @@ import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.kindIs;
 import static com.google.errorprone.matchers.Matchers.staticMethod;
 import static com.google.errorprone.matchers.Matchers.typePredicateMatcher;
+import static com.google.errorprone.matchers.ProtobufMatchers.MESSAGE_LITE_BUILDER_CLASS;
+import static com.google.errorprone.matchers.ProtobufMatchers.PROTO_BUILDER_MUTATOR;
+import static com.google.errorprone.matchers.ProtobufMatchers.PROTO_BUILD_METHOD;
+import static com.google.errorprone.matchers.ProtobufMatchers.PROTO_GETTER;
+import static com.google.errorprone.matchers.ProtobufMatchers.PROTO_NEW_BUILDER_METHOD;
+import static com.google.errorprone.matchers.ProtobufMatchers.PROTO_TO_BUILDER_METHOD;
 import static com.google.errorprone.matchers.method.MethodMatchers.constructor;
 import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
 import static com.google.errorprone.predicates.TypePredicates.isDescendantOf;
@@ -66,8 +72,8 @@ import com.sun.tools.javac.code.Symbol.VarSymbol;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.safere.Pattern;
 
 /**
  * Matches creation of new collections/proto builders which are modified but never used.
@@ -123,32 +129,21 @@ public class ModifiedButNotUsed extends BugChecker
               "set",
               "sort");
 
-  private static final String MESSAGE = "com.google.protobuf.MessageLite";
-
-  private static final String MESSAGE_BUILDER = MESSAGE + ".Builder";
-
   static final Matcher<ExpressionTree> FLUENT_SETTER =
       anyOf(
-          instanceMethod()
-              .onDescendantOf(MESSAGE_BUILDER)
-              .withNameMatching(Pattern.compile("(add|clear|merge|remove|set|put).*")),
+          PROTO_BUILDER_MUTATOR,
           instanceMethod()
               .onDescendantOfAny(
                   GUAVA_IMMUTABLES.stream().map(c -> c + ".Builder").collect(toImmutableSet()))
               .namedAnyOf("add", "addAll", "put", "putAll"));
 
-  private static final Matcher<ExpressionTree> FLUENT_CHAIN =
-      anyOf(
-          FLUENT_SETTER,
-          instanceMethod()
-              .onDescendantOf(MESSAGE_BUILDER)
-              .withNameMatching(Pattern.compile("get.+")));
+  private static final Matcher<ExpressionTree> FLUENT_CHAIN = anyOf(FLUENT_SETTER, PROTO_GETTER);
 
   private static final Matcher<Tree> COLLECTION_TYPE =
       typePredicateMatcher(isDescendantOfAny(COLLECTIONS));
 
   private static final Matcher<Tree> PROTO_TYPE =
-      typePredicateMatcher(isDescendantOf(MESSAGE_BUILDER));
+      typePredicateMatcher(isDescendantOf(MESSAGE_LITE_BUILDER_CLASS));
 
   private static final Matcher<ExpressionTree> FLUENT_CONSTRUCTOR =
       anyOf(
@@ -163,9 +158,11 @@ public class ModifiedButNotUsed extends BugChecker
           staticMethod()
               .onDescendantOfAny(GUAVA_IMMUTABLES)
               .namedAnyOf("builder", "builderWithExpectedSize"),
-          allOf(kindIs(Kind.NEW_CLASS), constructor().forClass(isDescendantOf(MESSAGE_BUILDER))),
-          staticMethod().onDescendantOf(MESSAGE).named("newBuilder"),
-          instanceMethod().onDescendantOf(MESSAGE).namedAnyOf("toBuilder", "newBuilderForType"));
+          allOf(
+              kindIs(Kind.NEW_CLASS),
+              constructor().forClass(isDescendantOf(MESSAGE_LITE_BUILDER_CLASS))),
+          PROTO_NEW_BUILDER_METHOD,
+          PROTO_TO_BUILDER_METHOD);
 
   private static final Matcher<ExpressionTree> NEW_COLLECTION =
       anyOf(
@@ -179,9 +176,7 @@ public class ModifiedButNotUsed extends BugChecker
 
   private static final Matcher<ExpressionTree> BUILD_CALL =
       anyOf(
-          instanceMethod()
-              .onDescendantOf("com.google.protobuf.MessageLite.Builder")
-              .namedAnyOf("build", "buildPartial"),
+          PROTO_BUILD_METHOD,
           instanceMethod()
               .onDescendantOfAny(
                   GUAVA_IMMUTABLES.stream().map(c -> c + ".Builder").collect(toImmutableList()))
@@ -301,7 +296,7 @@ public class ModifiedButNotUsed extends BugChecker
         .orElse(false);
   }
 
-  private static class UnusedScanner extends TreePathScanner<Void, Void> {
+  private static final class UnusedScanner extends TreePathScanner<Void, Void> {
     private final Symbol symbol;
     private final VisitorState state;
     private final Matcher<IdentifierTree> matcher;

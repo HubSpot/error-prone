@@ -95,19 +95,21 @@ public abstract class Template<M extends TemplateMatch> implements Serializable 
 
   public abstract ImmutableClassToInstanceMap<Annotation> annotations();
 
+  public abstract ImmutableList<UTypeVar> ruleTypeVariables();
+
   public abstract ImmutableList<UTypeVar> templateTypeVariables();
+
+  public abstract Template<M> withRuleTypeVariables(Iterable<UTypeVar> ruleTypeVariables);
 
   public abstract ImmutableMap<String, UType> expressionArgumentTypes();
 
-  public abstract Iterable<M> match(JCTree tree, Context context);
+  public abstract Iterable<M> match(
+      JCTree tree, Context context, JCCompilationUnit compilationUnit);
 
   public abstract Fix replace(M match);
 
-  Iterable<UTypeVar> typeVariables(Context context) {
-    ImmutableList<UTypeVar> ruleTypeVars = context.get(RefasterRule.RULE_TYPE_VARS);
-    return Iterables.concat(
-        (ruleTypeVars == null) ? ImmutableList.<UTypeVar>of() : ruleTypeVars,
-        templateTypeVariables());
+  Iterable<UTypeVar> typeVariables() {
+    return Iterables.concat(ruleTypeVariables(), templateTypeVariables());
   }
 
   boolean autoboxing() {
@@ -142,7 +144,8 @@ public abstract class Template<M extends TemplateMatch> implements Serializable 
     for (PlaceholderExpressionKey key :
         Ordering.natural()
             .immutableSortedCopy(
-                Iterables.filter(inliner.bindings.keySet(), PlaceholderExpressionKey.class))) {
+                Iterables.filter(
+                    inliner.bindings.asMap().keySet(), PlaceholderExpressionKey.class))) {
       Type type = key.method.returnType().inline(inliner);
       // Skip void placeholder expressions, because
       // a) if the expected type is void, any actual type is acceptable
@@ -187,7 +190,8 @@ public abstract class Template<M extends TemplateMatch> implements Serializable 
     for (PlaceholderExpressionKey key :
         Ordering.natural()
             .immutableSortedCopy(
-                Iterables.filter(inliner.bindings.keySet(), PlaceholderExpressionKey.class))) {
+                Iterables.filter(
+                    inliner.bindings.asMap().keySet(), PlaceholderExpressionKey.class))) {
       Type keyType = key.method.returnType().inline(inliner);
       // See comment in `expectedTypes` for why we skip void placeholder keys.
       if (!keyType.getTag().equals(TypeTag.VOID)) {
@@ -245,13 +249,13 @@ public abstract class Template<M extends TemplateMatch> implements Serializable 
     Types types = unifier.types();
     ListBuffer<Type> varsBuffer = new ListBuffer<>();
     ListBuffer<Type> bindingsBuffer = new ListBuffer<>();
-    for (UTypeVar typeVar : typeVariables(unifier.getContext())) {
+    for (UTypeVar typeVar : typeVariables()) {
       varsBuffer.add(inliner.inlineAsVar(typeVar));
       bindingsBuffer.add(unifier.getBinding(typeVar.key()).type());
     }
     List<Type> vars = varsBuffer.toList();
     List<Type> bindings = bindingsBuffer.toList();
-    for (UTypeVar typeVar : typeVariables(unifier.getContext())) {
+    for (UTypeVar typeVar : typeVariables()) {
       List<Type> bounds = types.getBounds(inliner.inlineAsVar(typeVar));
       bounds = types.subst(bounds, vars, bindings);
       if (!types.isSubtypeUnchecked(unifier.getBinding(typeVar.key()).type(), bounds, warner)) {
@@ -264,8 +268,8 @@ public abstract class Template<M extends TemplateMatch> implements Serializable 
     return true;
   }
 
-  protected static Pretty pretty(Context context, Writer writer) {
-    JCCompilationUnit unit = context.get(JCCompilationUnit.class);
+  protected static Pretty pretty(Inliner inliner, Writer writer) {
+    JCCompilationUnit unit = inliner.compilationUnit();
     try {
       final String unitContents = unit.getSourceFile().getCharContent(false).toString();
       return new HubSpotPretty(writer, true) {
@@ -508,7 +512,7 @@ public abstract class Template<M extends TemplateMatch> implements Serializable 
    */
   private ImmutableList<UTypeVar> freeTypeVars(Unifier unifier) {
     ImmutableList.Builder<UTypeVar> builder = ImmutableList.builder();
-    for (UTypeVar var : typeVariables(unifier.getContext())) {
+    for (UTypeVar var : typeVariables()) {
       if (unifier.getBinding(var.key()) == null) {
         builder.add(var);
       }

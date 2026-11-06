@@ -340,19 +340,27 @@ public class AssertThrowsMinimizerTest {
               }
             }
             """)
-        // TODO(b/498209711): This should be .expectUnchanged()
-        .addOutputLines(
+        .expectUnchanged()
+        .doTest();
+  }
+
+  @Test
+  public void stringConcatenation() {
+    compilationHelper
+        .addInputLines(
             "Test.java",
             """
             import static org.junit.Assert.assertThrows;
 
+            import java.util.concurrent.TimeUnit;
+
             class Test {
-              void f(Helper helper, int width) {
-                int i = width + 1;
-                assertThrows(IllegalStateException.class, () -> helper.consume(i));
+              void f(String str) {
+                assertThrows(IllegalArgumentException.class, () -> TimeUnit.valueOf("fail" + str));
               }
             }
             """)
+        .expectUnchanged()
         .doTest();
   }
 
@@ -750,6 +758,59 @@ class Test {
   }
 
   @Test
+  public void memberReference() {
+    compilationHelper
+        .addInputLines(
+            "RpcClientContext.java",
+            """
+            package com.google.net.rpc3.client;
+
+            public class RpcClientContext {
+              public static RpcClientContext create() {
+                return null;
+              }
+            }
+            """)
+        .expectUnchanged()
+        .addInputLines(
+            "Test.java",
+            """
+            import static org.junit.Assert.assertThrows;
+
+            import com.google.net.rpc3.client.RpcClientContext;
+            import java.util.function.Supplier;
+
+            class Test {
+              void consume(Supplier<RpcClientContext> r) {}
+
+              void m() {
+                assertThrows(IllegalArgumentException.class, () -> consume(RpcClientContext::create));
+              }
+            }
+            """)
+        .expectUnchanged()
+        .doTest();
+  }
+
+  @Test
+  public void staticMethodCall_receiverIsNotHoisted() {
+    compilationHelper
+        .addInputLines(
+            "Test.java",
+            """
+            import static org.junit.Assert.assertThrows;
+
+            class Test {
+              void f() {
+                assertThrows(RuntimeException.class, () -> Helper.onlyUnchecked());
+              }
+            }
+            """)
+        .expectUnchanged()
+        .doTest();
+  }
+
+  @Test
   public void newArray() {
     compilationHelper
         .addInputLines(
@@ -803,8 +864,6 @@ class Test {
             """
             import static org.junit.Assert.assertThrows;
 
-            import java.util.ArrayList;
-            import java.util.List;
             import java.util.function.Supplier;
 
             class Test {
@@ -874,8 +933,6 @@ class Test {
             """
             import static org.junit.Assert.assertThrows;
 
-            import java.util.ArrayList;
-            import java.util.List;
             import java.util.function.Supplier;
 
             class Test {
@@ -992,10 +1049,6 @@ class Test {
             """
             import static org.junit.Assert.assertThrows;
 
-            import java.util.ArrayList;
-            import java.util.List;
-            import java.util.function.Supplier;
-
             abstract class Test {
               void f() {
                 assertThrows(IllegalStateException.class, () -> doSomething(getString(), getString()));
@@ -1010,10 +1063,6 @@ class Test {
             "Test.java",
             """
             import static org.junit.Assert.assertThrows;
-
-            import java.util.ArrayList;
-            import java.util.List;
-            import java.util.function.Supplier;
 
             abstract class Test {
               void f() {
@@ -1037,10 +1086,6 @@ class Test {
             "Test.java",
             """
             import static org.junit.Assert.assertThrows;
-
-            import java.util.ArrayList;
-            import java.util.List;
-            import java.util.function.Supplier;
 
             abstract class Test {
               void f(String s, Object o) {
@@ -1066,10 +1111,6 @@ class Test {
             """
             import static org.junit.Assert.assertThrows;
 
-            import java.util.ArrayList;
-            import java.util.List;
-            import java.util.function.Supplier;
-
             abstract class Test {
               void f(String s, Object o) {
                 String s2 = getString();
@@ -1089,6 +1130,49 @@ class Test {
               abstract void doSomething(String s);
 
               abstract void doSomething(Object o);
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void parenthesizedTree() {
+    compilationHelper
+        .addInputLines(
+            "Test.java",
+            """
+            import static org.junit.Assert.assertThrows;
+
+            abstract class Test {
+              void f() {
+                assertThrows(IllegalStateException.class, () -> doSomething((1 + 1)));
+                assertThrows(IllegalStateException.class, () -> doSomething((getString())));
+              }
+
+              abstract void doSomething(int i);
+
+              abstract void doSomething(String s);
+
+              abstract String getString();
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            import static org.junit.Assert.assertThrows;
+
+            abstract class Test {
+              void f() {
+                assertThrows(IllegalStateException.class, () -> doSomething((1 + 1)));
+                String s = (getString());
+                assertThrows(IllegalStateException.class, () -> doSomething(s));
+              }
+
+              abstract void doSomething(int i);
+
+              abstract void doSomething(String s);
+
+              abstract String getString();
             }
             """)
         .doTest();

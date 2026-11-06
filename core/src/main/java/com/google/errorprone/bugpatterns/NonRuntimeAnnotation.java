@@ -20,6 +20,7 @@ import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.errorprone.BugPattern.SeverityLevel.ERROR;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
+import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.getUpperBound;
 import static com.google.errorprone.util.ASTHelpers.isSameType;
@@ -44,8 +45,13 @@ public class NonRuntimeAnnotation extends BugChecker implements MethodInvocation
 
   private static final Matcher<ExpressionTree> MATCHER =
       instanceMethod()
-          .onExactClass("java.lang.Class")
-          .named("getAnnotation")
+          .onDescendantOf("java.lang.reflect.AnnotatedElement")
+          .namedAnyOf(
+              "getAnnotation",
+              "isAnnotationPresent",
+              "getAnnotationsByType",
+              "getDeclaredAnnotation",
+              "getDeclaredAnnotationsByType")
           .withParameters("java.lang.Class");
 
   @Override
@@ -67,9 +73,8 @@ public class NonRuntimeAnnotation extends BugChecker implements MethodInvocation
       case SOURCE, CLASS -> {
         return buildDescription(tree)
             .setMessage(
-                String.format(
-                    "%s; %s has %s retention",
-                    message(), type.asElement().getSimpleName(), retention))
+                "Calling %s on an annotation that is not retained at runtime; %s has %s retention",
+                getSymbol(tree).getSimpleName(), type.asElement().getSimpleName(), retention)
             .build();
       }
     }

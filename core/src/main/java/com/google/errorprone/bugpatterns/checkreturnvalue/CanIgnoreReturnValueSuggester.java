@@ -20,7 +20,7 @@ import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.fixes.SuggestedFixes.qualifyType;
-import static com.google.errorprone.suppliers.Suppliers.typeFromString;
+import static com.google.errorprone.matchers.ProtobufMatchers.MESSAGE_LITE_BUILDER;
 import static com.google.errorprone.util.ASTHelpers.getAnnotationWithSimpleName;
 import static com.google.errorprone.util.ASTHelpers.getReceiver;
 import static com.google.errorprone.util.ASTHelpers.getReturnType;
@@ -32,6 +32,12 @@ import static com.google.errorprone.util.ASTHelpers.isSameType;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
 import static com.google.errorprone.util.ASTHelpers.streamSuperMethods;
 import static com.google.errorprone.util.ASTHelpers.stripParentheses;
+import static com.google.errorprone.util.AnnotationNames.AFTER_TEMPLATE_ANNOTATION;
+import static com.google.errorprone.util.AnnotationNames.AUTO_BUILDER_ANNOTATION;
+import static com.google.errorprone.util.AnnotationNames.AUTO_VALUE_ANNOTATION;
+import static com.google.errorprone.util.AnnotationNames.AUTO_VALUE_BUILDER_ANNOTATION;
+import static com.google.errorprone.util.AnnotationNames.CAN_IGNORE_RETURN_VALUE_ANNOTATION;
+import static com.google.errorprone.util.AnnotationNames.IMMUTABLE_ANNOTATION;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
@@ -43,7 +49,6 @@ import com.google.errorprone.bugpatterns.BugChecker.MethodTreeMatcher;
 import com.google.errorprone.bugpatterns.WellKnownKeep;
 import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
-import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ExpressionTree;
@@ -78,27 +83,22 @@ import javax.inject.Inject;
     severity = WARNING)
 public final class CanIgnoreReturnValueSuggester extends BugChecker implements MethodTreeMatcher {
 
-  private static final String AUTO_VALUE = "com.google.auto.value.AutoValue";
-  private static final String IMMUTABLE = "com.google.errorprone.annotations.Immutable";
   private static final String CRV_SIMPLE_NAME = "CheckReturnValue";
   private static final String CIRV_SIMPLE_NAME = "CanIgnoreReturnValue";
   private static final ImmutableSet<String> EXEMPTING_METHOD_ANNOTATIONS =
-      ImmutableSet.of("com.google.errorprone.refaster.annotation.AfterTemplate");
+      ImmutableSet.of(AFTER_TEMPLATE_ANNOTATION);
 
   private static final ImmutableSet<String> EXEMPTING_CLASS_ANNOTATIONS =
       ImmutableSet.of(
           // keep-sorted start
-          "com.google.auto.value.AutoBuilder",
-          "com.google.auto.value.AutoValue.Builder",
           "dagger.Component.Builder",
           "dagger.Subcomponent.Builder",
           "dagger.producers.ProductionComponent.Builder",
-          "dagger.producers.ProductionSubcomponent.Builder"
+          "dagger.producers.ProductionSubcomponent.Builder",
+          AUTO_BUILDER_ANNOTATION,
+          AUTO_VALUE_BUILDER_ANNOTATION
           // keep-sorted end
           );
-
-  private static final Supplier<Type> PROTO_BUILDER =
-      typeFromString("com.google.protobuf.MessageLite.Builder");
 
   private static final ImmutableSet<String> BANNED_METHOD_PREFIXES =
       ImmutableSet.of("get", "is", "has", "new", "clone", "copy");
@@ -215,14 +215,14 @@ public final class CanIgnoreReturnValueSuggester extends BugChecker implements M
     }
 
     // now annotate it with @CanIgnoreReturnValue
-    String cirv = "com.google.errorprone.annotations.CanIgnoreReturnValue";
-    fix.prefixWith(methodTree, "@" + qualifyType(state, fix, cirv) + "\n");
+    fix.prefixWith(
+        methodTree, "@" + qualifyType(state, fix, CAN_IGNORE_RETURN_VALUE_ANNOTATION) + "\n");
 
     return describeMatch(methodTree, fix.build());
   }
 
   private static boolean isMethodHandledByCrvLogic(MethodSymbol methodSymbol, VisitorState state) {
-    if (isSubtype(methodSymbol.owner.type, PROTO_BUILDER.get(state), state)) {
+    if (isSubtype(methodSymbol.owner.type, MESSAGE_LITE_BUILDER, state)) {
       return true;
     }
 
@@ -239,7 +239,8 @@ public final class CanIgnoreReturnValueSuggester extends BugChecker implements M
 
   private static boolean classLooksLikeBuilder(Symbol owner, VisitorState state) {
     boolean classIsImmutable =
-        hasAnnotation(owner, IMMUTABLE, state) || hasAnnotation(owner, AUTO_VALUE, state);
+        hasAnnotation(owner, IMMUTABLE_ANNOTATION, state)
+            || hasAnnotation(owner, AUTO_VALUE_ANNOTATION, state);
     return owner.getSimpleName().toString().endsWith("Builder") && !classIsImmutable;
   }
 
@@ -301,65 +302,57 @@ public final class CanIgnoreReturnValueSuggester extends BugChecker implements M
   }
 
   private static boolean methodReturnsIgnorableValues(MethodTree tree, VisitorState state) {
-    class ReturnValuesFromMethodAreIgnorable extends TreeScanner<Void, Void> {
-      private final VisitorState state;
-      private final Type enclosingClassType;
-      private final Type methodReturnType;
-      private boolean atLeastOneReturn = false;
-      private boolean allReturnsIgnorable = true;
+    MethodSymbol methodSymbol = getSymbol(tree);
+    Type enclosingClassType = methodSymbol.enclClass().type;
+    Type methodReturnType = methodSymbol.getReturnType();
+    var returnValuesScanner =
+        new TreeScanner<Void, Void>() {
+          private boolean atLeastOneReturn = false;
+          private boolean allReturnsIgnorable = true;
 
-      private ReturnValuesFromMethodAreIgnorable(VisitorState state, MethodSymbol methSymbol) {
-        this.state = state;
-        this.methodReturnType = methSymbol.getReturnType();
-        this.enclosingClassType = methSymbol.enclClass().type;
-      }
-
-      @Override
-      public Void visitReturn(ReturnTree returnTree, Void unused) {
-        atLeastOneReturn = true;
-        if (!returnsThisOrSelf(returnTree)
-            && !isIgnorableMethodCallOnSameInstance(returnTree, state)) {
-          allReturnsIgnorable = false;
-        }
-        // Don't descend deeper into returns, since we already checked the body of this return.
-        return null;
-      }
-
-      private boolean isIgnorableMethodCallOnSameInstance(
-          ReturnTree returnTree, VisitorState state) {
-        if (returnTree.getExpression() instanceof MethodInvocationTree mit) {
-          ExpressionTree receiver = getReceiver(mit);
-          MethodSymbol calledMethod = getSymbol(mit);
-          if ((receiver == null && !calledMethod.isStatic())
-              || isIdentifier(receiver, "this")
-              || isIdentifier(receiver, "super")) {
-            // If the method we're calling is @CIRV and the enclosing class could be represented by
-            // the object being returned by the other method, then it's probable that the other
-            // method is likely to be an ignorable result.
-            return hasDirectAnnotationWithSimpleName(calledMethod, CIRV_SIMPLE_NAME)
-                && isSubtype(enclosingClassType, methodReturnType, state)
-                && isSubtype(enclosingClassType, getReturnType(mit), state);
+          @Override
+          public Void visitReturn(ReturnTree returnTree, Void unused) {
+            atLeastOneReturn = true;
+            if (!returnsThisOrSelf(returnTree)
+                && !isIgnorableMethodCallOnSameInstance(returnTree)) {
+              allReturnsIgnorable = false;
+            }
+            // Don't descend deeper into returns, since we already checked the body of this return.
+            return null;
           }
-        }
-        return false;
-      }
 
-      @Override
-      public Void visitLambdaExpression(LambdaExpressionTree node, Void unused) {
-        // don't descend into lambdas
-        return null;
-      }
+          private boolean isIgnorableMethodCallOnSameInstance(ReturnTree returnTree) {
+            if (returnTree.getExpression() instanceof MethodInvocationTree mit) {
+              ExpressionTree receiver = getReceiver(mit);
+              MethodSymbol calledMethod = getSymbol(mit);
+              if ((receiver == null && !calledMethod.isStatic())
+                  || isIdentifier(receiver, "this")
+                  || isIdentifier(receiver, "super")) {
+                // If the method we're calling is @CIRV and the enclosing class could be represented
+                // by the object being returned by the other method, then it's probable that the
+                // other method is likely to be an ignorable result.
+                return hasDirectAnnotationWithSimpleName(calledMethod, CIRV_SIMPLE_NAME)
+                    && isSubtype(enclosingClassType, methodReturnType, state)
+                    && isSubtype(enclosingClassType, getReturnType(mit), state);
+              }
+            }
+            return false;
+          }
 
-      @Override
-      public Void visitNewClass(NewClassTree node, Void unused) {
-        // don't descend into declarations of anonymous classes
-        return null;
-      }
-    }
+          @Override
+          public Void visitLambdaExpression(LambdaExpressionTree node, Void unused) {
+            // don't descend into lambdas
+            return null;
+          }
 
-    var scanner = new ReturnValuesFromMethodAreIgnorable(state, getSymbol(tree));
-    scanner.scan(tree, null);
-    return scanner.atLeastOneReturn && scanner.allReturnsIgnorable;
+          @Override
+          public Void visitNewClass(NewClassTree node, Void unused) {
+            // don't descend into declarations of anonymous classes
+            return null;
+          }
+        };
+    returnValuesScanner.scan(tree, null);
+    return returnValuesScanner.atLeastOneReturn && returnValuesScanner.allReturnsIgnorable;
   }
 
   private static boolean methodAlwaysReturnsInputParam(MethodTree methodTree, VisitorState state) {
@@ -367,37 +360,36 @@ public final class CanIgnoreReturnValueSuggester extends BugChecker implements M
     if (methodTree.getParameters().isEmpty()) {
       return false;
     }
-    class AllReturnsAreInputParams extends TreeScanner<Void, Void> {
-      private final Set<Symbol> returnedSymbols = new HashSet<>();
+    var allReturnsScanner =
+        new TreeScanner<Void, Void>() {
+          private final Set<Symbol> returnedSymbols = new HashSet<>();
 
-      @Override
-      public Void visitReturn(ReturnTree returnTree, Void unused) {
-        // even for cases where getExpression() or getSymbol() returns null, we still want to add
-        // those to the returnedSymbols set (that's important if there's > 1 returns)
-        returnedSymbols.add(getSymbol(stripParentheses(returnTree.getExpression())));
-        return null;
-      }
+          @Override
+          public Void visitReturn(ReturnTree returnTree, Void unused) {
+            // even for cases where getExpression() or getSymbol() returns null, we still want to
+            // add those to the returnedSymbols set (that's important if there's > 1 returns)
+            returnedSymbols.add(getSymbol(stripParentheses(returnTree.getExpression())));
+            return null;
+          }
 
-      @Override
-      public Void visitLambdaExpression(LambdaExpressionTree node, Void unused) {
-        // don't descend into lambdas
-        return null;
-      }
+          @Override
+          public Void visitLambdaExpression(LambdaExpressionTree node, Void unused) {
+            // don't descend into lambdas
+            return null;
+          }
 
-      @Override
-      public Void visitNewClass(NewClassTree node, Void unused) {
-        // don't descend into declarations of anonymous classes
-        return null;
-      }
-    }
-
-    AllReturnsAreInputParams scanner = new AllReturnsAreInputParams();
-    scanner.scan(methodTree, null);
+          @Override
+          public Void visitNewClass(NewClassTree node, Void unused) {
+            // don't descend into declarations of anonymous classes
+            return null;
+          }
+        };
+    allReturnsScanner.scan(methodTree, null);
     // if we have more than 1 returned symbol, then the value isn't ignorable
-    if (scanner.returnedSymbols.size() != 1) {
+    if (allReturnsScanner.returnedSymbols.size() != 1) {
       return false;
     }
-    Symbol returnedSymbol = getOnlyElement(scanner.returnedSymbols);
+    Symbol returnedSymbol = getOnlyElement(allReturnsScanner.returnedSymbols);
     if (returnedSymbol == null) {
       return false;
     }

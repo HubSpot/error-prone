@@ -89,11 +89,6 @@ public final class UnusedMethodTest {
             """
             package unusedvars;
 
-            import java.io.IOException;
-            import java.io.ObjectStreamException;
-            import java.util.List;
-            import javax.inject.Inject;
-
             public class Unuseds {
               // BUG: Diagnostic contains:
               private void notUsedMethod() {}
@@ -144,6 +139,112 @@ public final class UnusedMethodTest {
               }
 
               private void readObjectNoData() throws ObjectStreamException {}
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void exemptedByBeamDoFnAnnotations() {
+    helper
+        .addSourceLines(
+            "org/apache/beam/sdk/transforms/DoFn.java",
+            """
+            package org.apache.beam.sdk.transforms;
+
+            public class DoFn {
+              public @interface OnTimer {
+                String value() default "";
+              }
+
+              public @interface OnTimerFamily {
+                String value() default "";
+              }
+
+              public @interface OnWindowExpiration {}
+
+              public @interface Setup {}
+
+              public @interface Teardown {}
+
+              public @interface GetInitialRestriction {}
+
+              public @interface SplitRestriction {}
+
+              public @interface TruncateRestriction {}
+
+              public @interface GetRestrictionCoder {}
+
+              public @interface NewTracker {}
+
+              public @interface GetSize {}
+
+              public @interface GetInitialWatermarkEstimatorState {}
+
+              public @interface GetWatermarkEstimatorStateCoder {}
+
+              public @interface NewWatermarkEstimator {}
+
+              public @interface RequiresStableInput {}
+
+              public @interface RequiresTimeSortedInput {}
+            }
+            """)
+        .addSourceLines(
+            "TestDoFn.java",
+            """
+            import org.apache.beam.sdk.transforms.DoFn;
+
+            public class TestDoFn {
+              private static class InnerDoFn {
+                @DoFn.OnTimer("t")
+                public void onTimer() {}
+
+                @DoFn.OnTimerFamily("tf")
+                public void onTimerFamily() {}
+
+                @DoFn.OnWindowExpiration
+                public void onWindowExpiration() {}
+
+                @DoFn.Setup
+                public void setup() {}
+
+                @DoFn.Teardown
+                public void teardown() {}
+
+                @DoFn.GetInitialRestriction
+                public void getInitialRestriction() {}
+
+                @DoFn.SplitRestriction
+                public void splitRestriction() {}
+
+                @DoFn.TruncateRestriction
+                public void truncateRestriction() {}
+
+                @DoFn.GetRestrictionCoder
+                public void getRestrictionCoder() {}
+
+                @DoFn.NewTracker
+                public void newTracker() {}
+
+                @DoFn.GetSize
+                public void getSize() {}
+
+                @DoFn.GetInitialWatermarkEstimatorState
+                public void getInitialWatermarkEstimatorState() {}
+
+                @DoFn.GetWatermarkEstimatorStateCoder
+                public void getWatermarkEstimatorStateCoder() {}
+
+                @DoFn.NewWatermarkEstimator
+                public void newWatermarkEstimator() {}
+
+                @DoFn.RequiresStableInput
+                public void requiresStableInput() {}
+
+                @DoFn.RequiresTimeSortedInput
+                public void requiresTimeSortedInput() {}
+              }
             }
             """)
         .doTest();
@@ -249,6 +350,43 @@ public final class UnusedMethodTest {
             package unusedvars;
 
             public class UnusedWithComment {}
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void removal_markdownJavadocs() {
+    refactoringHelper
+        .addInputLines(
+            "UnusedWithComment.java",
+            """
+            package unusedvars;
+
+            public class UnusedWithComment {
+              /// Method comment
+              private void test1() {}
+
+              /// First line of method comment Second line of method comment
+              private void test2() {}
+
+              // Keep this comment
+
+              /// First line of method comment
+              ///
+              /// Second line of method comment
+              private void test3() {}
+            }
+            """)
+        .addOutputLines(
+            "UnusedWithComment.java",
+            """
+            package unusedvars;
+
+            public class UnusedWithComment {
+
+              // Keep this comment
+
+            }
             """)
         .doTest();
   }

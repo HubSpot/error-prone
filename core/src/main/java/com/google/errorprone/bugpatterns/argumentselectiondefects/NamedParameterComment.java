@@ -25,9 +25,9 @@ import com.google.errorprone.util.ErrorProneComment.ErrorProneCommentStyle;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import java.util.Arrays;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.safere.Matcher;
+import org.safere.Pattern;
 
 /**
  * Helper methods for checking if a commented argument matches a formal parameter and for generating
@@ -73,7 +73,7 @@ public final class NamedParameterComment {
   }
 
   private static boolean isApproximateMatchingComment(ErrorProneComment comment, String formal) {
-    switch (comment.getStyle()) {
+    return switch (comment.getStyle()) {
       case BLOCK, LINE -> {
         // sometimes people use comments around arguments for higher level structuring - such as
         // dividing two separate blocks of arguments. In these cases we want to avoid concluding
@@ -84,12 +84,10 @@ public final class NamedParameterComment {
             Arrays.asList(commentText.split("[^a-zA-Z0-9_]+", -1)).contains(formal);
         boolean tooLong = commentText.length() > formal.length() + 5 && commentText.length() > 50;
         boolean tooMuchMarkup = CharMatcher.anyOf("-*!@<>").countIn(commentText) > 5;
-        return textMatches && !tooLong && !tooMuchMarkup;
+        yield textMatches && !tooLong && !tooMuchMarkup;
       }
-      default -> {
-        return false;
-      }
-    }
+      default -> false;
+    };
   }
 
   /**

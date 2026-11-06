@@ -34,11 +34,13 @@ import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
 import static com.google.errorprone.util.ErrorProneTokens.getTokens;
+import static com.google.errorprone.util.MoreAnnotations.getBooleanValue;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.errorprone.BugPattern;
+import com.google.errorprone.ClassName;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.AssignmentTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.VariableTreeMatcher;
@@ -48,10 +50,8 @@ import com.google.errorprone.matchers.InjectMatchers;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.matchers.Matchers;
 import com.google.errorprone.matchers.MultiMatcher;
-import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.util.ASTHelpers;
 import com.google.errorprone.util.ErrorProneToken;
-import com.google.errorprone.util.MoreAnnotations;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.ClassTree;
@@ -65,7 +65,6 @@ import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.parser.Tokens.TokenKind;
 import java.util.Collection;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.lang.model.element.Modifier;
@@ -104,18 +103,15 @@ public final class UnnecessaryAssignment extends BugChecker
   /** Returns true if the tree is annotated with @com.google.inject.Inject(optional = true). */
   private static boolean isOptionalInject(Tree tree, VisitorState state) {
     var symbol = getSymbol(tree);
-    var compound = symbol.attribute(GUICE_INJECT.get(state));
+    var compound = symbol.attribute(GUICE_INJECT.symbol(state));
     if (compound == null) {
       return false;
     }
-    return MoreAnnotations.getValue(compound, "optional")
-        .map(a -> Objects.equals(a.getValue(), true))
-        .orElse(false);
+    return getBooleanValue(compound, "optional").orElse(false);
   }
 
-  private static final Supplier<Symbol> GUICE_INJECT =
-      VisitorState.memoize(
-          state -> state.getSymbolFromString(InjectMatchers.GUICE_INJECT_ANNOTATION));
+  private static final ClassName GUICE_INJECT =
+      ClassName.of(InjectMatchers.GUICE_INJECT_ANNOTATION);
 
   private static final Matcher<ExpressionTree> MOCK_FACTORY =
       staticMethod().onClass("org.mockito.Mockito").named("mock");

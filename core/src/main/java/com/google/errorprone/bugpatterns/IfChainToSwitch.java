@@ -20,7 +20,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
-import static com.google.errorprone.bugpatterns.SwitchUtils.COMPILE_TIME_CONSTANT_MATCHER;
+import static com.google.errorprone.bugpatterns.SwitchUtils.KINDS_CONVERTIBLE_WITHOUT_BRACES;
 import static com.google.errorprone.bugpatterns.SwitchUtils.getReferencedLocalVariablesInTree;
 import static com.google.errorprone.bugpatterns.SwitchUtils.hasBreakOutOfTree;
 import static com.google.errorprone.bugpatterns.SwitchUtils.isEnumValue;
@@ -28,21 +28,25 @@ import static com.google.errorprone.bugpatterns.SwitchUtils.renderComments;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.util.ASTHelpers.constValue;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
+import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.isConsideredFinal;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
 import static com.google.errorprone.util.ASTHelpers.sameVariable;
 import static com.google.errorprone.util.ASTHelpers.stripParentheses;
-import static com.sun.source.tree.Tree.Kind.EXPRESSION_STATEMENT;
-import static com.sun.source.tree.Tree.Kind.THROW;
+import static com.google.errorprone.util.ASTHelpers.unboxedType;
+import static com.google.errorprone.util.Reachability.CanCompleteNormallyPatch.CANNOT_COMPLETE_NORMALLY_ANALYZE_INSIDE;
+import static com.google.errorprone.util.Reachability.CanCompleteNormallyPatch.CANNOT_COMPLETE_NORMALLY_SKIP_INSIDE;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
+import static java.util.Collections.disjoint;
 import static java.util.stream.Collectors.joining;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Range;
+import com.google.common.collect.Streams;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.VisitorState;
@@ -55,17 +59,20 @@ import com.google.errorprone.matchers.Description;
 import com.google.errorprone.util.ASTHelpers;
 import com.google.errorprone.util.ErrorProneComment;
 import com.google.errorprone.util.Reachability;
+import com.google.errorprone.util.Reachability.CanCompleteNormallyPatch;
 import com.google.errorprone.util.SourceVersion;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.BindingPatternTree;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.BreakTree;
+import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IfTree;
 import com.sun.source.tree.InstanceOfTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.SwitchExpressionTree;
+import com.sun.source.tree.SwitchTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.Tree.Kind;
 import com.sun.source.tree.VariableTree;
@@ -76,7 +83,6 @@ import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.TypeVariableSymbol;
 import com.sun.tools.javac.code.Type;
-import com.sun.tools.javac.code.TypeTag;
 import com.sun.tools.javac.code.Types;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -90,15 +96,12 @@ import java.util.Set;
 import java.util.stream.Stream;
 import javax.inject.Inject;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.type.TypeKind;
 import org.jspecify.annotations.Nullable;
 
 /** Checks for chains of if statements that may be converted to a switch. */
 @BugPattern(severity = WARNING, summary = "This if-chain may be converted into a switch")
 public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
-  // Braces are not required if there is exactly one statement on the right hand of the arrow, and
-  // it's either an ExpressionStatement or a Throw.  Refer to JLS 14 §14.11.1
-  private static final ImmutableSet<Kind> KINDS_CONVERTIBLE_WITHOUT_BRACES =
-      ImmutableSet.of(THROW, EXPRESSION_STATEMENT);
   // Types that are allowed for CaseConstant expressions to be assignable to in a switch, as
   // specified in JLS 21 §14.11.1.
   private static final ImmutableSet<String> ALLOWED_SWITCH_CASE_CONSTANT_TYPES =
@@ -113,16 +116,21 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
           "java.lang.Integer",
           "java.lang.String");
 
+  // Non-reference types that are allowed for switch subjects, as specified in JLS 21 §14.11.
+  private static final ImmutableSet<TypeKind> ALLOWED_SWITCH_SUBJECT_NON_REFERENCE_TYPES =
+      ImmutableSet.of(TypeKind.CHAR, TypeKind.BYTE, TypeKind.SHORT, TypeKind.INT);
   private final boolean enableMain;
   private final boolean enableSafe;
   private final int maxChainLength;
+  private final int minChainLength;
   private final ConstantExpressions constantExpressions;
 
   @Inject
   IfChainToSwitch(ErrorProneFlags flags, ConstantExpressions constantExpressions) {
-    enableMain = flags.getBoolean("IfChainToSwitch:EnableMain").orElse(false);
+    enableMain = flags.getBoolean("IfChainToSwitch:EnableMain").orElse(true);
     enableSafe = flags.getBoolean("IfChainToSwitch:EnableSafe").orElse(false);
     maxChainLength = flags.getInteger("IfChainToSwitch:MaxChainLength").orElse(50);
+    minChainLength = flags.getInteger("IfChainToSwitch:MinChainLength").orElse(4);
     this.constantExpressions = constantExpressions;
   }
 
@@ -184,7 +192,7 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
 
     if (!ifChainAnalysisState.validity().equals(Validity.VALID)
         // Exclude short if-chains, since they may be more readable as-is
-        || ifChainAnalysisState.depth() < 3) {
+        || ifChainAnalysisState.depth() < minChainLength) {
       return NO_MATCH;
     }
 
@@ -290,22 +298,46 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
         List<String> terms = new ArrayList<>();
         for (InstanceOfIr instanceOfIr : caseIr.instanceOfOptional().get()) {
           StringBuilder renderedInstanceOf = new StringBuilder();
-          if (instanceOfIr.patternVariable().isPresent()) {
-            renderedInstanceOf.append(
-                printRawTypesAsWildcards(
-                    getType(instanceOfIr.patternVariable().get()), state, suggestedFixBuilder));
+          switch (instanceOfIr) {
+            case InstanceOfIr.BindingPattern bindingPattern -> {
+              VariableTree patternVariable = bindingPattern.patternVariable();
+              Type patternType = getType(patternVariable);
+              Symbol sym = getSymbol(patternVariable);
+              // Applying `final` to a pattern variable that is reassigned would not compile, so in
+              // that case fall back to erasing the element type's arguments, which compiles
+              boolean requiresFinal = typePatternRequiresFinal(patternType, state);
+              boolean canApplyFinalModifier = isConsideredFinal(sym);
+              renderedInstanceOf
+                  .append(requiresFinal && canApplyFinalModifier ? "final " : "")
+                  .append(
+                      printRawTypesAsWildcards(
+                          patternType,
+                          state,
+                          suggestedFixBuilder,
+                          /* eraseGenericArrayTypeArguments= */ requiresFinal
+                              && !canApplyFinalModifier));
 
-            Symbol sym = ASTHelpers.getSymbol(instanceOfIr.patternVariable().get());
-            renderedInstanceOf.append(" ").append(sym.getSimpleName());
-          } else if (instanceOfIr.expression().isPresent()) {
-            renderedInstanceOf.append(
-                printRawTypesAsWildcards(getType(instanceOfIr.type()), state, suggestedFixBuilder));
-            if (SourceVersion.supportsUnnamedVariablesAndPatterns(state.context)) {
-              renderedInstanceOf.append(" _");
-            } else {
-              // It's possible that "unused" could conflict with an existing local variable name;
-              // support for unnamed variables gets around this, but requires later Java versions
-              renderedInstanceOf.append(" unused");
+              renderedInstanceOf.append(" ").append(sym.getSimpleName());
+            }
+            case InstanceOfIr.TypeTest typeTest -> {
+              Type patternType = getType(typeTest.type());
+              // The pattern variable rendered below is synthesized here and is never reassigned, so
+              // a `final` modifier may always be applied to it.
+              renderedInstanceOf
+                  .append(typePatternRequiresFinal(patternType, state) ? "final " : "")
+                  .append(
+                      printRawTypesAsWildcards(
+                          patternType,
+                          state,
+                          suggestedFixBuilder,
+                          /* eraseGenericArrayTypeArguments= */ false));
+              if (SourceVersion.supportsUnnamedVariablesAndPatterns(state.context)) {
+                renderedInstanceOf.append(" _");
+              } else {
+                // It's possible that "unused" could conflict with an existing local variable name;
+                // support for unnamed variables gets around this, but requires later Java versions
+                renderedInstanceOf.append(" unused");
+              }
             }
           }
           terms.add(renderedInstanceOf.toString());
@@ -373,36 +405,64 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
   }
 
   /**
+   * Returns whether a type pattern for the supplied {@code Type} must be prefixed with a modifier
+   * in order to be successfully parsed as a {@code case} label.
+   *
+   * <p>Empirically, javac cannot parse a generic array type in a {@code case} label unless the
+   * pattern starts with a modifier: {@code case List<?>[] l} is rejected with "illegal start of
+   * expression", whereas {@code case final List<?>[] l} is accepted. (Both appear to be permitted
+   * by the formal grammar for a TypePattern specified in JLS 21 § 14.30.1.)
+   */
+  private static boolean typePatternRequiresFinal(Type type, VisitorState state) {
+    Types types = state.getTypes();
+    if (!types.isArray(type)) {
+      return false;
+    }
+    Type elementType = type;
+    while (types.isArray(elementType)) {
+      elementType = types.elemtype(elementType);
+    }
+    // Matches the condition under which printRawTypesAsWildcards renders type arguments.
+    return !elementType.tsym.getTypeParameters().isEmpty();
+  }
+
+  /**
    * Renders Java source code representation of the supplied {@code Type} that is suitable for use
    * in fixes, where any raw types are replaced with wildcard types. For example, `List` becomes
    * `List<?>`.
+   *
+   * <p>Array types are rendered by applying the same treatment to the element type, so {@code
+   * List[]} becomes {@code List<?>[]} and {@code List<?>[]} is preserved rather than being erased
+   * to {@code List[]}. When {@code eraseGenericArrayTypeArguments} is set, the element type's
+   * arguments are instead erased, so that {@code List<?>[]} renders as {@code List[]}.
    */
   private static String printRawTypesAsWildcards(
-      Type type, VisitorState state, SuggestedFix.Builder suggestedFixBuilder) {
+      Type type,
+      VisitorState state,
+      SuggestedFix.Builder suggestedFixBuilder,
+      boolean eraseGenericArrayTypeArguments) {
     StringBuilder sb = new StringBuilder();
-    List<TypeVariableSymbol> typeParameters = type.tsym.getTypeParameters();
-    List<Type> typeArguments = type.getTypeArguments();
     Types types = state.getTypes();
 
-    // Unwrap array-of's
-    if (types.isArray(type)) {
-      Type at = type;
-      StringBuilder suffix = new StringBuilder();
-      while (types.isArray(at)) {
-        suffix.append("[]");
-        at = types.elemtype(at);
-      }
-      // Primitive types are always in context and don't need qualification
-      sb.append(
-          at.isPrimitive()
-              ? SuggestedFixes.prettyType(at, state)
-              : SuggestedFixes.qualifyType(state, suggestedFixBuilder, at.tsym));
-      sb.append(suffix);
-    } else {
-      sb.append(SuggestedFixes.qualifyType(state, suggestedFixBuilder, type.tsym));
+    // Unwrap array-of's. Type parameters and arguments must be read from the element type rather
+    // than from the array type itself, both because an array type has none of its own and because
+    // they are rendered before the `[]` suffixes.
+    Type elementType = type;
+    StringBuilder arraySuffix = new StringBuilder();
+    while (types.isArray(elementType)) {
+      arraySuffix.append("[]");
+      elementType = types.elemtype(elementType);
     }
 
-    if (!typeParameters.isEmpty()) {
+    // Primitive types are always in context and don't need qualification
+    sb.append(
+        elementType.isPrimitive()
+            ? SuggestedFixes.prettyType(elementType, state)
+            : SuggestedFixes.qualifyType(state, suggestedFixBuilder, elementType.tsym));
+
+    List<TypeVariableSymbol> typeParameters = elementType.tsym.getTypeParameters();
+    List<Type> typeArguments = elementType.getTypeArguments();
+    if (!typeParameters.isEmpty() && !eraseGenericArrayTypeArguments) {
       if (typeArguments.isEmpty()) {
         sb.append("<");
         sb.repeat("?,", max(0, typeParameters.size() - 1))
@@ -417,6 +477,7 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
         sb.append(">");
       }
     }
+    sb.append(arraySuffix);
 
     return sb.toString();
   }
@@ -586,63 +647,32 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
               .filter(
                   caseIr ->
                       caseIr.arrowRhsOptional().isPresent()
-                          && Reachability.canCompleteNormally(
-                              caseIr.arrowRhsOptional().get(), ImmutableMap.of()))
+                          && Reachability.canCompleteNormally(caseIr.arrowRhsOptional().get()))
               .count();
 
-      if (emptyRhsBlockCount + canCompleteNormallyBlockCount == 0) {
-        // All cases cannot complete normally, so we need to do reachability analysis
-        Tree cannotCompleteNormallyTree = ifTree;
-        // Search up the AST for enclosing statement blocks, marking any newly-dead code for
-        // deletion along the way
-        Tree prev = state.getPath().getLeaf();
-        for (Tree tree : state.getPath().getParentPath()) {
-          if (tree instanceof BlockTree blockTree) {
-            var statements = blockTree.getStatements();
-            int indexInBlock = statements.indexOf(prev);
-            // A single mock of the immediate child statement block (or switch) is sufficient to
-            // analyze reachability here; deeper-nested statements are not relevant.
-            boolean nextStatementReachable =
-                Reachability.canCompleteNormally(
-                    statements.get(indexInBlock),
-                    ImmutableMap.of(cannotCompleteNormallyTree, false));
-            // If we continue to the ancestor statement block, it will be because the end of this
-            // statement block is not reachable
-            cannotCompleteNormallyTree = blockTree;
-            if (nextStatementReachable) {
-              break;
-            }
-            // If a next statement in this block exists, then it is not reachable.
-            if (indexInBlock + numberPulledUp < statements.size() - 1) {
-              String deletedRegion =
-                  state
-                      .getSourceCode()
-                      .subSequence(
-                          state.getEndPosition(statements.get(indexInBlock + numberPulledUp)),
-                          state.getEndPosition(blockTree))
-                      .toString();
-              // If the region we would delete looks interesting, bail out and just delete the
-              // orphaned statements.
-              if (deletedRegion.contains("LINT.")) {
-                statements
-                    .subList(indexInBlock + 1, statements.size())
-                    .forEach(suggestedFixBuilder.get()::delete);
-              } else {
-                // If the region doesn't seem to contain interesting comments, delete it along with
-                // comments: those comments are often just of the form "Unreachable code".
-                suggestedFixBuilder
-                    .get()
-                    .replace(
-                        state.getEndPosition(statements.get(indexInBlock)),
-                        state.getEndPosition(blockTree),
-                        "}");
-              }
-            }
-          }
-          // Only applies in lowest block
-          numberPulledUp = 0;
+      // javac treats a switch as exhaustive only if it has a `default` or is enhanced (JLS 21
+      // §14.11.2: a pattern or `null` label, or a selector whose type is not a legacy type such
+      // as an enum).  A switch covering every enum constant without  a `default` is therefore
+      // not exhaustive to javac, even though this check "knows" it is
+      boolean javacSeesSwitchAsExhaustive =
+          cases.stream()
+              .anyMatch(
+                  caseIr ->
+                      caseIr.hasDefault()
+                          || caseIr.hasCaseNull()
+                          || caseIr.instanceOfOptional().isPresent());
 
-          prev = tree;
+      // If javac sees the switch as exhaustive, no case can complete normally, and no `break`
+      // exits the switch (chains with such a `break` are rejected earlier), then javac also sees
+      // the switch as unable to complete normally, so the statements that follow it are dead code
+      // to javac and need to be deleted.  Code after an enclosing statement may also become
+      // dead, so that is analyzed too.
+      //
+      // If javac believes the switch can complete normally, then it believes the statements that
+      // follow it are still reachable, so they are left in place.
+      if (emptyRhsBlockCount + canCompleteNormallyBlockCount == 0 && javacSeesSwitchAsExhaustive) {
+        if (!deleteDeadCodeInAncestors(ifTree, state, suggestedFixBuilder.get(), numberPulledUp)) {
+          return Optional.empty();
         }
       }
     }
@@ -652,6 +682,159 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
         // fixing it merely puts the new case in the correct position
         ? maybeFixDominance(cases, state, subject, /* canReorderCases= */ true)
         : Optional.of(cases);
+  }
+
+  /**
+   * Deletes dead code in ancestors after a switch that cannot complete normally. Returns true if
+   * successful, false if the refactoring should be aborted.
+   */
+  private static boolean deleteDeadCodeInAncestors(
+      StatementTree ifTree,
+      VisitorState state,
+      SuggestedFix.Builder suggestedFixBuilder,
+      int numberPulledUp) {
+    // No case can complete normally and javac sees the switch as exhaustive, so the switch
+    // cannot complete normally, and we need to do reachability analysis.  `Reachability` sees
+    // only the original code, so the switch is represented by the trees it will be built from:
+    // the if-chain (whose branches become its cases) and any pulled-up statements that follow
+    // it (which become its `default` case).
+    //
+    // The if-chain is given to `Reachability` as a patch that cannot complete normally, because
+    // the switch cannot, but that is still analyzed inside, so that the jumps it contains are
+    // recorded.  Statements that are to be deleted are not analyzed inside, so that any jumps
+    // they contain are not recorded.
+    Set<Tree> deletedTrees = new HashSet<>();
+    // Search up the AST for enclosing statement lists, marking any newly-dead code for
+    // deletion along the way
+    Tree childTree = state.getPath().getLeaf();
+    for (TreePath path = state.getPath().getParentPath();
+        path != null;
+        path = path.getParentPath()) {
+      Tree tree = path.getLeaf();
+      List<? extends StatementTree> statements =
+          getEnclosedStatements(tree).orElse(ImmutableList.of());
+      int indexInStatements = statements.indexOf(childTree);
+      if (indexInStatements >= 0) {
+        ImmutableMap.Builder<Tree, CanCompleteNormallyPatch> patches = ImmutableMap.builder();
+        patches.put(ifTree, CANNOT_COMPLETE_NORMALLY_ANALYZE_INSIDE);
+        deletedTrees.forEach(
+            deletedTree -> patches.put(deletedTree, CANNOT_COMPLETE_NORMALLY_SKIP_INSIDE));
+        boolean nextStatementReachable =
+            Reachability.canCompleteNormally(
+                statements.get(indexInStatements), patches.buildOrThrow());
+        // Everything after this statement in this list (other than any pulled-up statements,
+        // which move into the switch) is about to be deleted, so accumulate it for the
+        // ancestors' analyses.  Only deleted statements are patched this way: a statement that
+        // survives must still be analyzed inside.
+        int firstDeletedIndex = indexInStatements + 1 + numberPulledUp;
+        deletedTrees.addAll(statements.subList(firstDeletedIndex, statements.size()));
+        if (nextStatementReachable) {
+          break;
+        }
+        // If a next statement in this statement list exists, then it is not reachable.
+        if (firstDeletedIndex < statements.size()) {
+          List<? extends StatementTree> deletedStatements =
+              statements.subList(firstDeletedIndex, statements.size());
+          if (deletedStatements.stream().anyMatch(IfChainToSwitch::hasIfInTree)) {
+            // This code is now unreachable, so leaving it in place would not compile, but it
+            // contains an `if` that this check may rewrite under a separate finding whose fix
+            // would overlap this deletion.  Decline to convert instead.
+            return false;
+          }
+          // A block is deleted up to and including its closing brace, which is then written
+          // back.  A colon-style `case` has no block nor closing brace, so its dead statements
+          // are deleted up to the last of them.
+          int deletionEndPosition;
+          String replacement;
+          switch (tree) {
+            case BlockTree blockTree -> {
+              deletionEndPosition = state.getEndPosition(blockTree);
+              replacement = "}";
+            }
+            case CaseTree caseTree -> {
+              // A local variable declared in a colon-style `case` remains in scope in the later
+              // case groups of the same switch block.  If any of them refers to it, then
+              // deleting it would break them.  Nor can it be kept, because it is now
+              // unreachable.  Decline to produce a finding instead
+              if (isDeletedVariableReferencedLater(
+                  path.getParentPath().getLeaf(), caseTree, deletedStatements)) {
+                return false;
+              }
+              deletionEndPosition = state.getEndPosition(statements.getLast());
+              replacement = "";
+            }
+            // Only a block or a colon-style `case` holds statements (see
+            // `getEnclosedStatements`)
+            default -> throw new AssertionError("Unexpected tree type: " + tree.getKind());
+          }
+          int deletionStartPosition = state.getEndPosition(statements.get(firstDeletedIndex - 1));
+          String deletedRegion =
+              state
+                  .getSourceCode()
+                  .subSequence(deletionStartPosition, deletionEndPosition)
+                  .toString();
+          // If the region we would delete looks interesting, bail out and just delete the
+          // orphaned statements.
+          if (deletedRegion.contains("LINT.")) {
+            statements
+                .subList(firstDeletedIndex, statements.size())
+                .forEach(suggestedFixBuilder::delete);
+          } else {
+            // If the region doesn't seem to contain interesting comments, delete it along with
+            // comments: those comments are often just of the form "Unreachable code".
+            suggestedFixBuilder.replace(deletionStartPosition, deletionEndPosition, replacement);
+          }
+        }
+      }
+      // Only applies in lowest statement list
+      numberPulledUp = 0;
+      childTree = tree;
+    }
+    return true;
+  }
+
+  /**
+   * Returns the statements that {@code tree} holds directly, or empty if it holds none. Statements
+   * can only be held by a block or a colon-style {@code case}.
+   */
+  private static Optional<List<? extends StatementTree>> getEnclosedStatements(Tree tree) {
+    return switch (tree) {
+      case BlockTree blockTree -> Optional.of(blockTree.getStatements());
+      // Empty for an arrow-style `case`, whose body is a single statement rather than a list
+      case CaseTree caseTree -> Optional.ofNullable(caseTree.getStatements());
+      default -> Optional.empty();
+    };
+  }
+
+  /** Returns the cases that follow {@code caseTree} in {@code switchTree}, its enclosing switch. */
+  private static List<? extends CaseTree> getSubsequentCases(Tree switchTree, CaseTree caseTree) {
+    List<? extends CaseTree> cases =
+        switch (switchTree) {
+          case SwitchTree s -> s.getCases();
+          case SwitchExpressionTree s -> s.getCases();
+          default -> throw new IllegalArgumentException("not a switch: " + switchTree.getKind());
+        };
+    return cases.subList(cases.indexOf(caseTree) + 1, cases.size());
+  }
+
+  /**
+   * Returns whether a local variable declared by {@code deletedStatements}, which are deleted from
+   * {@code caseTree}, is referred to by a later case of {@code switchTree} (its enclosing
+   * `switch`).
+   */
+  private static boolean isDeletedVariableReferencedLater(
+      Tree switchTree, CaseTree caseTree, List<? extends StatementTree> deletedStatements) {
+    ImmutableSet<Symbol> deletedVariableSymbols =
+        deletedStatements.stream()
+            .filter(VariableTree.class::isInstance)
+            .map(s -> getSymbol((VariableTree) s))
+            .collect(toImmutableSet());
+    return !deletedVariableSymbols.isEmpty()
+        && getSubsequentCases(switchTree, caseTree).stream()
+            .anyMatch(
+                laterCase ->
+                    !disjoint(
+                        getReferencedLocalVariablesInTree(laterCase), deletedVariableSymbols));
   }
 
   /**
@@ -683,8 +866,10 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
       int subsequentStatementsLimit = 1;
       if (subsequentIfStatements.size() <= subsequentStatementsLimit) {
         for (StatementTree statement : subsequentIfStatements) {
-          if (hasBreakOrYieldInTree(statement)) {
-            // Statements containing break or yield cannot be pulled up
+          if (hasBreakOrYieldInTree(statement) || hasIfInTree(statement)) {
+            // Statements containing break or yield cannot be pulled up.  Neither can statements
+            // containing an `if`, which this check may rewrite under a separate finding whose fix
+            // would overlap the deletion performed here.
             break;
           }
           int startPos =
@@ -727,6 +912,18 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
           // Check for compile-time constants
           Object constant = constValue(expression);
           if (constant != null) {
+            // Canonicialize constants (by widening) to detect identical values across various
+            // (boxed) primitive types
+            constant =
+                switch (constant) {
+                  case Float f -> (double) f;
+                  case Double d -> d;
+                  case Number n -> n.longValue(); // primitive integer type
+                  case Boolean bool -> bool;
+                  case Character c -> (long) c;
+                  default -> constant;
+                };
+
             if (seenConstants.contains(constant)) {
               return Optional.empty();
             }
@@ -734,7 +931,7 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
           }
 
           // Check for enums
-          var sym = ASTHelpers.getSymbol(expression);
+          var sym = getSymbol(expression);
           if (sym != null && sym.getKind() == ElementKind.ENUM_CONSTANT) {
             if (seenConstants.contains(sym)) {
               return Optional.empty();
@@ -859,10 +1056,7 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
 
     // Is the predicate sensible?
     Set<String> handledEnumValues = new HashSet<>(ifChainAnalysisState.handledEnumValues());
-    int caseStartPosition =
-        cases.isEmpty()
-            ? ifTreeRange.lowerEndpoint()
-            : cases.getLast().caseSourceCodeRange().upperEndpoint();
+    int caseStartPosition = nextCaseStartPosition(cases, ifTreeRange);
     Optional<ExpressionTree> newSubjectOptional =
         validatePredicateForSubject(
             condition,
@@ -934,6 +1128,24 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
     return result != null && result;
   }
 
+  /** Determines whether any {@code if} statement is present in the tree. */
+  private static boolean hasIfInTree(Tree tree) {
+    Boolean result =
+        new TreeScanner<Boolean, Void>() {
+          @Override
+          public Boolean visitIf(IfTree ifTree, Void unused) {
+            return true;
+          }
+
+          @Override
+          public Boolean reduce(@Nullable Boolean left, @Nullable Boolean right) {
+            return Objects.equals(left, true) || Objects.equals(right, true);
+          }
+        }.scan(tree, null);
+
+    return result != null && result;
+  }
+
   /**
    * Validates whether the predicate of the if statement can be converted by this checker to a
    * switch, returning the expression being switched on if so. If it cannot be converted by this
@@ -993,9 +1205,8 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
       if (!mustBeSingleInstanceOf) {
         switch (binaryTree.getKind()) {
           case Kind.EQUAL_TO -> {
-            // Either lhs or rhs must be a compile-time constant.
-            if (COMPILE_TIME_CONSTANT_MATCHER.matches(lhs, state)
-                || COMPILE_TIME_CONSTANT_MATCHER.matches(rhs, state)) {
+            // Either lhs or rhs must be usable as a case constant.
+            if (isCaseConstant(lhs) || isCaseConstant(rhs)) {
               return validateCompileTimeConstantForSubject(lhs, rhs, params);
             } else {
               // Predicate is a binary tree, but neither side is a constant.
@@ -1161,19 +1372,13 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
           if (subject.isEmpty()) {
             return Optional.empty();
           }
-          instanceOfs.add(
-              new InstanceOfIr(
-                  /* expression= */ Optional.of(instanceOfTree.getExpression()),
-                  /* patternVariable= */ Optional.empty(),
-                  /* type= */ instanceOfTree.getType()));
+          instanceOfs.add(new InstanceOfIr.TypeTest(instanceOfTree.getType()));
         }
         case BinaryTree bt when bt.getKind().equals(Kind.EQUAL_TO) -> {
           // Maybe comparing to a non-null compile-time constant? (`case null` not supported here
           // due to Java syntax restrictions)
-          if ((COMPILE_TIME_CONSTANT_MATCHER.matches(bt.getLeftOperand(), state)
-                  && !isNull(bt.getLeftOperand()))
-              || (COMPILE_TIME_CONSTANT_MATCHER.matches(bt.getRightOperand(), state)
-                  && !isNull(bt.getRightOperand()))) {
+          if ((isCaseConstant(bt.getLeftOperand()) && !isNull(bt.getLeftOperand()))
+              || (isCaseConstant(bt.getRightOperand()) && !isNull(bt.getRightOperand()))) {
             subject =
                 validateCompileTimeConstantForSubject(
                     bt.getLeftOperand(), bt.getRightOperand(), params.withSubject(subject));
@@ -1183,9 +1388,7 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
             }
 
             var compileTimeConstantExpression =
-                COMPILE_TIME_CONSTANT_MATCHER.matches(bt.getLeftOperand(), state)
-                    ? bt.getLeftOperand()
-                    : bt.getRightOperand();
+                isCaseConstant(bt.getLeftOperand()) ? bt.getLeftOperand() : bt.getRightOperand();
             caseExpressions.add(compileTimeConstantExpression);
           } else {
             // Maybe comparing to an enum value?
@@ -1225,6 +1428,7 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
               subjectAndCaseExpressionsOptional.get();
           subject = Optional.of(subjectAndCaseExpressions.subject());
           caseExpressions.addAll(subjectAndCaseExpressions.expressions());
+          instanceOfs.addAll(subjectAndCaseExpressions.instanceOfs());
         }
         default -> {
           // Unsupported
@@ -1244,6 +1448,22 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
 
   private static boolean isNull(ExpressionTree expression) {
     return expression.getKind() == Kind.NULL_LITERAL;
+  }
+
+  /**
+   * Determines whether the given expression may be rendered as a {@code CaseConstant} of a {@code
+   * switch}, which JLS 21 §14.11.1 requires to be a constant expression (JLS 21 §15.29) or the
+   * {@code null} literal. (Enum constants are also permitted, but are handled separately by {@link
+   * #validateEnumPredicateForSubject}.)
+   *
+   * <p>Note that this is deliberately narrower than {@code
+   * SwitchUtils.COMPILE_TIME_CONSTANT_MATCHER}, which additionally accepts expressions that javac
+   * does not fold to a constant, such as a parameter annotated {@code @CompileTimeConstant} or a
+   * conditional expression with a non-constant condition. Using those as a case constant would
+   * produce code that does not compile ("constant expression required").
+   */
+  private static boolean isCaseConstant(ExpressionTree expression) {
+    return isNull(expression) || constValue(expression) != null;
   }
 
   /**
@@ -1282,31 +1502,21 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
 
     if (instanceOfTree.getPattern() instanceof BindingPatternTree bpt) {
       boolean addDefault = hasElse && !hasElseIf;
-      int previousCaseEndPosition =
-          cases.isEmpty()
-              ? ifTreeRange.lowerEndpoint()
-              : cases.getLast().caseSourceCodeRange().upperEndpoint();
+      int caseStartPosition = nextCaseStartPosition(cases, ifTreeRange);
       cases.add(
           new CaseIr(
               /* hasCaseNull= */ false,
               /* hasDefault= */ false,
               /* instanceOfOptional= */ Optional.of(
                   ImmutableList.of(
-                      new InstanceOfIr(
-                          Optional.ofNullable(instanceOfTree.getExpression()),
-                          Optional.ofNullable(bpt.getVariable()),
-                          instanceOfTree.getType()))),
+                      new InstanceOfIr.BindingPattern(
+                          bpt.getVariable(), instanceOfTree.getType()))),
               /* guardOptional= */ Optional.empty(),
               /* expressionsOptional= */ Optional.empty(),
               /* arrowRhsOptional= */ arrowRhsOptional,
-              /* caseSourceCodeRange= */ Range.closedOpen(
-                  previousCaseEndPosition, caseEndPosition)));
+              /* caseSourceCodeRange= */ Range.closedOpen(caseStartPosition, caseEndPosition)));
 
       if (addDefault) {
-        previousCaseEndPosition =
-            cases.isEmpty()
-                ? ifTreeRange.lowerEndpoint()
-                : cases.getLast().caseSourceCodeRange().upperEndpoint();
         cases.add(
             new CaseIr(
                 /* hasCaseNull= */ false,
@@ -1323,25 +1533,17 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
       }
     } else if (instanceOfTree.getType() != null) {
       boolean addDefault = hasElse && !hasElseIf;
-      int previousCaseEndPosition =
-          cases.isEmpty()
-              ? ifTreeRange.lowerEndpoint()
-              : cases.getLast().caseSourceCodeRange().upperEndpoint();
+      int caseStartPosition = nextCaseStartPosition(cases, ifTreeRange);
       cases.add(
           new CaseIr(
               /* hasCaseNull= */ false,
               /* hasDefault= */ false,
               /* instanceOfOptional= */ Optional.of(
-                  ImmutableList.of(
-                      new InstanceOfIr(
-                          Optional.ofNullable(instanceOfTree.getExpression()),
-                          Optional.empty(),
-                          instanceOfTree.getType()))),
+                  ImmutableList.of(new InstanceOfIr.TypeTest(instanceOfTree.getType()))),
               /* guardOptional= */ Optional.empty(),
               /* expressionsOptional= */ Optional.empty(),
               /* arrowRhsOptional= */ arrowRhsOptional,
-              /* caseSourceCodeRange= */ Range.closedOpen(
-                  previousCaseEndPosition, Math.max(previousCaseEndPosition, caseEndPosition))));
+              /* caseSourceCodeRange= */ Range.closedOpen(caseStartPosition, caseEndPosition)));
       if (addDefault) {
         cases.add(
             new CaseIr(
@@ -1365,6 +1567,22 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
     return Optional.of(expression);
   }
 
+  /**
+   * Returns the source position at which the next case to be added begins, namely the end of the
+   * last case that is not a synthesized {@code default}.
+   *
+   * <p>A synthesized {@code default} covers the {@code else} statement (so that comments within it
+   * are preserved), and thus its range can extend beyond the start position of a case that is added
+   * afterwards. That happens while speculatively validating the disjuncts of a predicate such as
+   * {@code x instanceof Foo || x == 1}: each disjunct appends a case (and possibly a {@code
+   * default}) that is subsequently discarded and replaced by a single, grouped case.
+   */
+  private static int nextCaseStartPosition(List<CaseIr> cases, Range<Integer> ifTreeRange) {
+    return Streams.findLast(cases.stream().filter(caseIr -> !caseIr.hasDefault()))
+        .map(caseIr -> caseIr.caseSourceCodeRange().upperEndpoint())
+        .orElse(ifTreeRange.lowerEndpoint());
+  }
+
   private Optional<ExpressionTree> validateCompileTimeConstantForSubject(
       ExpressionTree lhs, ExpressionTree rhs, ValidateCommonParams params) {
     Optional<ExpressionTree> subject = params.subject();
@@ -1377,7 +1595,7 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
     boolean hasElse = params.hasElse();
     boolean hasElseIf = params.hasElseIf();
 
-    boolean compileTimeConstantOnLhs = COMPILE_TIME_CONSTANT_MATCHER.matches(lhs, state);
+    boolean compileTimeConstantOnLhs = isCaseConstant(lhs);
     ExpressionTree testExpression = compileTimeConstantOnLhs ? rhs : lhs;
     ExpressionTree compileTimeConstant = compileTimeConstantOnLhs ? lhs : rhs;
     Type compileTimeConstantType = getType(compileTimeConstant);
@@ -1410,11 +1628,41 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
       return Optional.empty();
     }
 
+    // Using a non-null case constant requires the switch subject to be a type in
+    // ALLOWED_SWITCH_CASE_CONSTANT_TYPES
+    if (subject.isPresent()) {
+      Type switchExpressionType = getType(subject.get());
+      if (switchExpressionType != null) {
+        boolean switchSubjectTypeWorksWithConstants =
+            ALLOWED_SWITCH_CASE_CONSTANT_TYPES.stream()
+                .map(state::getTypeFromString)
+                .filter(Objects::nonNull)
+                .anyMatch(t -> types.isSameType(switchExpressionType, t));
+        boolean validConstantSubject =
+            compileTimeConstant.getKind() == Kind.NULL_LITERAL
+                || switchSubjectTypeWorksWithConstants;
+        if (!validConstantSubject) {
+          return Optional.empty();
+        }
+      }
+    }
+
+    // The variable being switched on must also be one of the following types; this is
+    // an outer bound (relaxed in preview features, which this checker does not yet support)
+    if (subject.isPresent()) {
+      var switchExpressionType = getType(subject.get());
+      boolean validSwitchExpressionType =
+          switchExpressionType != null // Should never be null
+              && (switchExpressionType.isReference()
+                  || ALLOWED_SWITCH_SUBJECT_NON_REFERENCE_TYPES.contains(
+                      switchExpressionType.getKind()));
+      if (!validSwitchExpressionType) {
+        return Optional.empty();
+      }
+    }
+
     boolean addDefault = hasElse && !hasElseIf;
-    int previousCaseEndPosition =
-        cases.isEmpty()
-            ? ifTreeRange.lowerEndpoint()
-            : cases.getLast().caseSourceCodeRange().upperEndpoint();
+    int caseStartPosition = nextCaseStartPosition(cases, ifTreeRange);
     cases.add(
         new CaseIr(
             /* hasCaseNull= */ compileTimeConstant.getKind() == Kind.NULL_LITERAL,
@@ -1423,12 +1671,8 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
             /* guardOptional= */ Optional.empty(),
             /* expressionsOptional= */ Optional.of(ImmutableList.of(compileTimeConstant)),
             /* arrowRhsOptional= */ arrowRhsOptional,
-            /* caseSourceCodeRange= */ Range.openClosed(previousCaseEndPosition, caseEndPosition)));
+            /* caseSourceCodeRange= */ Range.closedOpen(caseStartPosition, caseEndPosition)));
     if (addDefault) {
-      previousCaseEndPosition =
-          cases.isEmpty()
-              ? ifTreeRange.lowerEndpoint()
-              : cases.getLast().caseSourceCodeRange().upperEndpoint();
       cases.add(
           new CaseIr(
               /* hasCaseNull= */ false,
@@ -1437,8 +1681,8 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
               /* guardOptional= */ Optional.empty(),
               /* expressionsOptional= */ Optional.empty(),
               /* arrowRhsOptional= */ elseOptional,
-              /* caseSourceCodeRange= */ Range.openClosed(
-                  previousCaseEndPosition,
+              /* caseSourceCodeRange= */ Range.closedOpen(
+                  caseEndPosition,
                   elseOptional.isPresent()
                       ? getStartPosition(elseOptional.get())
                       : caseEndPosition)));
@@ -1490,10 +1734,7 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
             .collect(toImmutableSet()));
 
     boolean addDefault = hasElse && !hasElseIf;
-    int previousCaseEndPosition =
-        cases.isEmpty()
-            ? ifTreeRange.lowerEndpoint()
-            : cases.getLast().caseSourceCodeRange().upperEndpoint();
+    int caseStartPosition = nextCaseStartPosition(cases, ifTreeRange);
     cases.add(
         new CaseIr(
             /* hasCaseNull= */ false,
@@ -1502,13 +1743,9 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
             /* guardOptional= */ Optional.empty(),
             /* expressionsOptional= */ Optional.of(ImmutableList.of(compileTimeConstant)),
             /* arrowRhsOptional= */ arrowRhsOptional,
-            /* caseSourceCodeRange= */ Range.closedOpen(previousCaseEndPosition, caseEndPosition)));
+            /* caseSourceCodeRange= */ Range.closedOpen(caseStartPosition, caseEndPosition)));
 
     if (addDefault) {
-      previousCaseEndPosition =
-          cases.isEmpty()
-              ? ifTreeRange.lowerEndpoint()
-              : cases.getLast().caseSourceCodeRange().upperEndpoint();
       cases.add(
           new CaseIr(
               /* hasCaseNull= */ false,
@@ -1546,25 +1783,6 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
     var statements = blockTree.getStatements();
     return ImmutableList.copyOf(
         statements.subList(statements.indexOf(path.getLeaf()) + 1, statements.size()));
-  }
-
-  /**
-   * Unboxes the given type, if it is a reference type which can be unboxed. Returns {@code
-   * Optional.empty()} if cannot be unboxed.
-   */
-  private static Optional<Type> unboxed(Tree tree, VisitorState state) {
-    Type type = ASTHelpers.getType(tree);
-    if (type == null || !type.isReference()) {
-      return Optional.empty();
-    }
-    Type unboxed = state.getTypes().unboxedType(type);
-    if (unboxed == null
-        || unboxed.getTag() == TypeTag.NONE
-        // Don't match java.lang.Void.
-        || unboxed.getTag() == TypeTag.VOID) {
-      return Optional.empty();
-    }
-    return Optional.of(unboxed);
   }
 
   /**
@@ -1857,7 +2075,8 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
           }
           if (lhs.instanceOfOptional().isPresent()) {
             for (InstanceOfIr instanceOfIr : lhs.instanceOfOptional().get()) {
-              Optional<Type> unboxedInstanceOfType = unboxed(instanceOfIr.type(), state);
+              Optional<Type> unboxedInstanceOfType =
+                  unboxedType(getType(instanceOfIr.type()), state);
               if (unboxedInstanceOfType.isPresent()) {
                 if (isSubtype(getType(constantExpression), unboxedInstanceOfType.get(), state)) {
                   // RHS constant can be assigned to LHS unboxed instanceof's type
@@ -1938,15 +2157,9 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
     // Is LHS a pattern?
     if (lhs.instanceOfOptional().isPresent()) {
       for (var lhsIo : lhs.instanceOfOptional().get()) {
-        Type lhsType =
-            lhsIo.type() != null
-                ? getType(lhsIo.type())
-                : getType(lhsIo.patternVariable().get().getType());
+        Type lhsType = getType(lhsIo.type());
         for (var rhsIo : rhs.instanceOfOptional().get()) {
-          Type rhsType =
-              rhsIo.type() != null
-                  ? getType(rhsIo.type())
-                  : getType(rhsIo.patternVariable().get().getType());
+          Type rhsType = getType(rhsIo.type());
           if (isSubtype(rhsType, lhsType, state)) {
             // The RHS type is a subtype of the LHS type, so the LHS dominates the RHS
             return true;
@@ -1989,19 +2202,29 @@ public final class IfChainToSwitch extends BugChecker implements IfTreeMatcher {
   }
 
   /**
-   * This record is an intermediate representation of a single `x instanceof Y` or `x instanceof Y
-   * y` expression.
+   * Intermediate representation of a single `x instanceof Y` or `x instanceof Y y` expression.
+   *
+   * <p>Those two forms are mutually exclusive, so they are modelled as separate implementations
+   * rather than as a single type with optional fields. This makes the distinction structural, so
+   * that javac can check that every consumer handles both.
    */
-  private record InstanceOfIr(
-      // In the example above, the expression would be `y`.
-      Optional<ExpressionTree> expression,
-      // In the example above, the variable tree would be `Y y`.
-      Optional<VariableTree> patternVariable,
-      // In the example above, the type would be `Y`.
-      Tree type) {
+  private sealed interface InstanceOfIr {
+    /** In the examples above, the type would be `Y`. */
+    Tree type();
 
-    InstanceOfIr {
-      checkArgument(type != null);
+    /** An `x instanceof Y y` expression, which declares the pattern variable `y`. */
+    record BindingPattern(VariableTree patternVariable, Tree type) implements InstanceOfIr {
+      public BindingPattern {
+        checkArgument(patternVariable != null);
+        checkArgument(type != null);
+      }
+    }
+
+    /** An `x instanceof Y` expression, which declares no pattern variable. */
+    record TypeTest(Tree type) implements InstanceOfIr {
+      public TypeTest {
+        checkArgument(type != null);
+      }
     }
   }
 

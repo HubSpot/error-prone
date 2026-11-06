@@ -23,6 +23,7 @@ import static com.google.errorprone.matchers.Matchers.expressionStatement;
 import static com.google.errorprone.matchers.method.MethodMatchers.constructor;
 import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
 import static com.google.errorprone.predicates.TypePredicates.isDescendantOf;
+import static com.google.errorprone.util.ASTHelpers.findEnclosingMethodPath;
 import static java.util.stream.Collectors.joining;
 
 import com.google.common.collect.ImmutableList;
@@ -68,7 +69,6 @@ import javax.lang.model.element.Modifier;
             + " pattern.",
     severity = ERROR)
 public class DoubleBraceInitialization extends BugChecker implements NewClassTreeMatcher {
-
   @SuppressWarnings("ImmutableEnumChecker") // Matcher is immutable in practice
   enum CollectionTypes {
     MAP("Map", "put", "ImmutableMap"),
@@ -156,7 +156,9 @@ public class DoubleBraceInitialization extends BugChecker implements NewClassTre
         }
         if (enclosing instanceof ReturnTree returnTree) {
           toReplace = returnTree.getExpression();
-          MethodTree enclosingMethod = ASTHelpers.findEnclosingNode(path, MethodTree.class);
+          TreePath enclosingMethodPath = findEnclosingMethodPath(path);
+          MethodTree enclosingMethod =
+              enclosingMethodPath == null ? null : (MethodTree) enclosingMethodPath.getLeaf();
           typeTree = enclosingMethod == null ? null : enclosingMethod.getReturnType();
         }
         break;

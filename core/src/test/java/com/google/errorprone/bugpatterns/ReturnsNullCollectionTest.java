@@ -74,6 +74,15 @@ public class ReturnsNullCollectionTest {
                 }
                 return new ArrayList();
               }
+
+              List<String> methodReturnsNullListInCatch() {
+                try {
+                  return new ArrayList();
+                } catch (Exception e) {
+                  // BUG: Diagnostic contains: ReturnsNullCollection
+                  return null;
+                }
+              }
             }
             """)
         .doTest();
@@ -110,6 +119,50 @@ public class ReturnsNullCollectionTest {
               @Nullable
               HashMap<String, String> methodReturnsNullHashMap() {
                 return null;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void ternary_b536946282_shouldBeFlagged() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import java.util.List;
+
+            class Test {
+              List<String> methodReturnsNullTernary(boolean foo, List<String> bar) {
+                // BUG: Diagnostic contains: ReturnsNullCollection
+                return foo ? bar : null;
+              }
+
+              List<String> methodReturnsNullTernaryReversed(boolean foo, List<String> bar) {
+                // BUG: Diagnostic contains: ReturnsNullCollection
+                return foo ? null : bar;
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void enclosingIfNull_b536946282_shouldBeFlagged() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import java.util.List;
+
+            class Test {
+              List<String> method(List<String> bar) {
+                if (bar == null) {
+                  // TODO(b/536946282): should be flagged by ReturnsNullCollection
+                  return bar;
+                }
+                return bar;
               }
             }
             """)

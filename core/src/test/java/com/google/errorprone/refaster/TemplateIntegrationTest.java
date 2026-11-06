@@ -19,6 +19,7 @@ package com.google.errorprone.refaster;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assert_;
 import static com.google.testing.compile.JavaFileObjects.forResource;
+import static com.google.testing.compile.JavaFileObjects.forSourceString;
 import static com.google.testing.compile.JavaSourceSubjectFactory.javaSource;
 import static org.junit.Assert.assertThrows;
 
@@ -26,9 +27,13 @@ import com.google.common.base.CharMatcher;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.CodeTransformer;
+import com.google.errorprone.matchers.Description;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.util.TreePath;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import javax.tools.JavaFileObject;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -380,5 +385,95 @@ public class TemplateIntegrationTest extends CompilerBasedTest {
   @Test
   public void unqualifiedMethod() throws IOException {
     runTest("UnqualifiedMethodTemplate");
+  }
+
+  @Test
+  public void placeholderWithMatchesReceivesType() throws IOException {
+    CodeTransformer transformer =
+        extractRefasterRule(
+            forSourceString(
+                "PlaceholderWithMatchesTemplate",
+                """
+                import com.google.errorprone.refaster.IsIntMatcher;
+                import com.google.errorprone.refaster.annotation.AfterTemplate;
+                import com.google.errorprone.refaster.annotation.BeforeTemplate;
+                import com.google.errorprone.refaster.annotation.Matches;
+                import com.google.errorprone.refaster.annotation.Placeholder;
+
+                abstract class PlaceholderWithMatchesTemplate<T> {
+                  @Placeholder
+                  @Matches(IsIntMatcher.class)
+                  abstract int getInt(T t);
+
+                  @BeforeTemplate
+                  int before(T t) {
+                    return getInt(t) * 1;
+                  }
+
+                  @AfterTemplate
+                  int after(T t) {
+                    return getInt(t);
+                  }
+                }
+                """));
+
+    JavaFileObject input =
+        forSourceString(
+            "Example",
+            """
+            class Example {
+              int intField;
+              double doubleField;
+
+              void test(Example ex) {
+                int a = ex.intField * 1;
+                double b = ex.doubleField * 1;
+              }
+            }
+            """);
+
+    JavaFileObject expectedOutput =
+        forSourceString(
+            "Example",
+            """
+            class Example {
+              int intField;
+              double doubleField;
+
+              void test(Example ex) {
+                int a = ex.intField;
+                double b = ex.doubleField * 1;
+              }
+            }
+            """);
+
+    expectTransforms(transformer, input, expectedOutput);
+  }
+
+  @Test
+  public void applyToSubtreeChecksEnclosingClass() {
+    JavaFileObject template =
+        forResource(String.format("%s/SuppressWarningsTemplate.java", TEMPLATE_DIR));
+    CodeTransformer transformer = extractRefasterRule(template);
+
+    List<Description> descriptions = new ArrayList<>();
+    transformer.apply(
+        TreePath.getPath(compilationUnits.getFirst(), getMethodDeclaration("abs")),
+        context,
+        descriptions::add);
+    assertThat(descriptions).isEmpty();
+
+    compile(forResource(String.format("%s/SuppressWarningsTemplateExample.java", INPUT_DIR)));
+    transformer.apply(
+        TreePath.getPath(compilationUnits.getFirst(), getMethodDeclaration("abs2")),
+        context,
+        descriptions::add);
+    assertThat(descriptions).isEmpty();
+
+    transformer.apply(
+        TreePath.getPath(compilationUnits.getFirst(), getMethodDeclaration("abs4")),
+        context,
+        descriptions::add);
+    assertThat(descriptions).hasSize(1);
   }
 }

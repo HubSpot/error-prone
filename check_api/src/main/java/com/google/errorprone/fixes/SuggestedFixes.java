@@ -24,8 +24,6 @@ import static com.google.common.collect.Iterables.getLast;
 import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.common.collect.Streams.stream;
 import static com.google.errorprone.fixes.ErrorProneEndPosTable.getEndPosition;
-import static com.google.errorprone.util.ASTHelpers.getAnnotation;
-import static com.google.errorprone.util.ASTHelpers.getAnnotationWithSimpleName;
 import static com.google.errorprone.util.ASTHelpers.getModifiers;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
@@ -35,7 +33,6 @@ import static com.google.errorprone.util.ASTHelpers.isRecord;
 import static com.sun.tools.javac.code.TypeTag.CLASS;
 import static com.sun.tools.javac.util.Position.NOPOS;
 import static java.lang.Math.max;
-import static java.util.Arrays.stream;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toCollection;
 
@@ -52,6 +49,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Streams;
 import com.google.common.io.CharStreams;
+import com.google.errorprone.ClassName;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.apply.DescriptionBasedDiff;
 import com.google.errorprone.apply.ImportOrganizer;
@@ -62,7 +60,7 @@ import com.google.errorprone.util.ErrorProneComment;
 import com.google.errorprone.util.ErrorProneToken;
 import com.google.errorprone.util.ErrorProneTokens;
 import com.google.errorprone.util.FindIdentifiers;
-
+import com.google.errorprone.util.MoreAnnotations;
 import com.sun.source.doctree.DocTree;
 import com.sun.source.doctree.ParamTree;
 import com.sun.source.tree.AnnotationTree;
@@ -99,6 +97,7 @@ import com.sun.tools.javac.code.Kinds.KindSelector;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
+import com.sun.tools.javac.code.Symbol.TypeSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Types.DefaultTypeVisitor;
 import com.sun.tools.javac.main.Arguments;
@@ -115,7 +114,7 @@ import com.sun.tools.javac.util.Position;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.lang.annotation.Target;
+import java.lang.annotation.ElementType;
 import java.net.JarURLConnection;
 import java.net.URI;
 import java.nio.file.Path;
@@ -140,7 +139,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
-
+import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
@@ -348,6 +347,8 @@ public final class SuggestedFixes {
     }
   }
 
+  private static final Splitter COMPONENT_SPLITTER = Splitter.on('.');
+
   /**
    * Returns a human-friendly name of the given {@link Symbol} for use in fixes.
    *
@@ -393,27 +394,6 @@ public final class SuggestedFixes {
       }
     }
     return Joiner.on('.').join(names);
-  }
-
-  private static boolean variableClashInScope(VisitorState state, Symbol sym) {
-    if (!sym.getKind().isField()) {
-      return false;
-    }
-    MethodTree method = state.findEnclosing(MethodTree.class);
-    if (method == null) {
-      return false;
-    }
-    boolean[] result = {false};
-    new TreeScanner<Void, Void>() {
-      @Override
-      public Void visitVariable(VariableTree tree, Void unused) {
-        if (tree.getName().contentEquals(sym.getSimpleName())) {
-          result[0] = true;
-        }
-        return super.visitVariable(tree, null);
-      }
-    }.scan(method, null);
-    return result[0];
   }
 
   /** Returns a human-friendly name of the given type for use in fixes. */
@@ -464,7 +444,19 @@ public final class SuggestedFixes {
         fix);
   }
 
-  private static final Splitter COMPONENT_SPLITTER = Splitter.on('.');
+  /**
+   * Returns a human-friendly name of the given {@code typeName} for use in fixes.
+   *
+   * <p>This should be used if the type may not be loaded.
+   */
+  public static String qualifyType(
+      VisitorState state, SuggestedFix.Builder fix, ClassName typeName) {
+    ClassSymbol sym = typeName.symbol(state);
+    if (sym != null) {
+      return qualifyType(state, fix, sym);
+    }
+    return qualifyType(state, fix, typeName.toString().replace('$', '.'));
+  }
 
   /**
    * Returns a human-friendly name of the given {@code typeName} for use in fixes.
@@ -500,11 +492,35 @@ public final class SuggestedFixes {
         return components.subList(i, components.size()).stream().collect(joining("."));
       }
       // Type already imported or otherwise visible.
+      if (found.getKind().equals(ElementKind.OTHER)) {
+        continue;
+      }
       if (found.getQualifiedName().contentEquals(qualifiedName)) {
         return components.subList(i, components.size()).stream().collect(joining("."));
       }
     }
     return typeName;
+  }
+
+  private static boolean variableClashInScope(VisitorState state, Symbol sym) {
+    if (!sym.getKind().isField()) {
+      return false;
+    }
+    MethodTree method = state.findEnclosing(MethodTree.class);
+    if (method == null) {
+      return false;
+    }
+    boolean[] result = {false};
+    new TreeScanner<Void, Void>() {
+      @Override
+      public Void visitVariable(VariableTree tree, Void unused) {
+        if (tree.getName().contentEquals(sym.getSimpleName())) {
+          result[0] = true;
+        }
+        return super.visitVariable(tree, null);
+      }
+    }.scan(method, null);
+    return result[0];
   }
 
   /**
@@ -526,7 +542,6 @@ public final class SuggestedFixes {
         .filter(ClassTree.class::isInstance)
         .map(ClassTree.class::cast)
         .map(ASTHelpers::getSymbol)
-        .filter(s -> s != null)
         .flatMap(
             enclosingClass ->
                 stream(
@@ -1123,7 +1138,8 @@ public final class SuggestedFixes {
       return;
     }
 
-    SuppressWarnings existingAnnotation = getAnnotation(suppressibleNode, SuppressWarnings.class);
+    AnnotationTree suppressAnnotationTree =
+        findSuppressWarnings(findAnnotationsTree(suppressibleNode), state);
     String suppression = state.getTreeMaker().Literal(CLASS, warningToSuppress).toString();
 
     // Line comment to add, if it is present.
@@ -1131,18 +1147,15 @@ public final class SuggestedFixes {
         Optional.ofNullable(lineComment).map(s -> "// " + s + "\n");
 
     // If we have an existing @SuppressWarnings on the element, extend its value
-    if (existingAnnotation != null) {
+    if (suppressAnnotationTree != null) {
       // Add warning to the existing annotation
-      String[] values = existingAnnotation.value();
-      if (Arrays.asList(values).contains(warningToSuppress)) {
+      AnnotationMirror compound = ASTHelpers.getAnnotationMirror(suppressAnnotationTree);
+      ImmutableSet<String> values =
+          compound != null
+              ? ImmutableSet.copyOf(MoreAnnotations.getStrings(compound, "value"))
+              : ImmutableSet.of();
+      if (values.contains(warningToSuppress)) {
         // The nearest suppress warnings already contains this thing, so we can't add another thing
-        return;
-      }
-      AnnotationTree suppressAnnotationTree =
-          getAnnotationWithSimpleName(
-              findAnnotationsTree(suppressibleNode), SuppressWarnings.class.getSimpleName());
-      if (suppressAnnotationTree == null) {
-        // This is weird, bail out
         return;
       }
 
@@ -1175,14 +1188,16 @@ public final class SuggestedFixes {
     }
 
     AnnotationTree suppressAnnotationTree =
-        getAnnotationWithSimpleName(
-            findAnnotationsTree(suppressibleNode), SuppressWarnings.class.getSimpleName());
+        findSuppressWarnings(findAnnotationsTree(suppressibleNode), state);
     if (suppressAnnotationTree == null) {
       return;
     }
 
-    SuppressWarnings annotation = getAnnotation(suppressibleNode, SuppressWarnings.class);
-    ImmutableSet<String> warningsSuppressed = ImmutableSet.copyOf(annotation.value());
+    AnnotationMirror suppression = ASTHelpers.getAnnotationMirror(suppressAnnotationTree);
+    ImmutableSet<String> warningsSuppressed =
+        suppression != null
+            ? ImmutableSet.copyOf(MoreAnnotations.getStrings(suppression, "value"))
+            : ImmutableSet.of();
     ImmutableSet<String> newWarningSet =
         warningsSuppressed.stream()
             .filter(warning -> !warning.equals(warningToRemove))
@@ -1199,6 +1214,18 @@ public final class SuggestedFixes {
     }
     fixBuilder.merge(
         updateAnnotationArgumentValues(suppressAnnotationTree, state, "value", newWarningSet));
+  }
+
+  private static @Nullable AnnotationTree findSuppressWarnings(
+      List<? extends AnnotationTree> annotations, VisitorState state) {
+    TypeSymbol suppressWarningsType = state.getSymtab().suppressWarningsType.tsym;
+    for (AnnotationTree annotation : annotations) {
+      AnnotationMirror compound = ASTHelpers.getAnnotationMirror(annotation);
+      if (compound != null && MoreAnnotations.asElement(compound).equals(suppressWarningsType)) {
+        return annotation;
+      }
+    }
+    return null;
   }
 
   private static List<? extends AnnotationTree> findAnnotationsTree(Tree tree) {
@@ -1736,14 +1763,15 @@ public final class SuggestedFixes {
 
   private static ImmutableSet<Class<? extends Tree>> supportedTreeTypes(
       Element exemptingAnnotation) {
-    Target targetAnnotation = exemptingAnnotation.getAnnotation(Target.class);
-    if (targetAnnotation == null) {
+    Set<ElementType> targetElementTypes =
+        MoreAnnotations.getTargetElementTypes(exemptingAnnotation);
+    if (targetElementTypes == null) {
       // in the absence of further information, we assume the annotation is supported on classes and
       // methods.
       return TREE_TYPE_UNKNOWN_ANNOTATION;
     }
-    return stream(targetAnnotation.value())
-        .flatMap(
+    return targetElementTypes.stream()
+        .<Class<? extends Tree>>flatMap(
             t ->
                 switch (t) {
                   case TYPE -> Stream.of(ClassTree.class);
@@ -1866,10 +1894,10 @@ public final class SuggestedFixes {
   public static Optional<SuggestedFix> replaceVariableType(
       VariableTree tree, String replacementType, VisitorState state) {
     Tree type = tree.getType();
-    if (hasExplicitSource(type, state)) {
+    if (type != null && hasExplicitSource(type, state)) {
       return Optional.of(SuggestedFix.replace(type, replacementType));
     }
-    int pos = getStartPosition(type);
+    int pos = type != null ? getStartPosition(type) : Position.NOPOS;
     if (pos == Position.NOPOS) {
       pos = getStartPosition(tree);
     }
@@ -1902,6 +1930,10 @@ public final class SuggestedFixes {
 
     Visibility(Optional<Modifier> modifier) {
       this.modifier = modifier;
+    }
+
+    public Optional<Modifier> modifier() {
+      return modifier;
     }
 
     public SuggestedFix refactor(Tree tree, VisitorState state) {
@@ -1940,19 +1972,52 @@ public final class SuggestedFixes {
     }
   }
 
+  /**
+   * Returns a {@link VariableNamer} that avoids shadowing any variables or identifiers in scope at
+   * the current {@code state} location.
+   */
   public static VariableNamer variableNamer(VisitorState state) {
-    return new VariableNamer(state);
+    return variableNamer(state, ImmutableList.of());
+  }
+
+  /**
+   * Returns a {@link VariableNamer} that avoids shadowing any variables or identifiers in scope at
+   * the current {@code state} location, as well as declarations within the given {@code extraScope}
+   * trees.
+   */
+  public static VariableNamer variableNamer(
+      VisitorState state, Iterable<? extends Tree> extraScope) {
+    return new VariableNamer(state, extraScope);
   }
 
   /** Helper class for avoiding variable name shadowing. */
-  public static class VariableNamer {
+  public static final class VariableNamer {
     private final Set<String> idents;
 
-    private VariableNamer(VisitorState state) {
+    private VariableNamer(VisitorState state, Iterable<? extends Tree> extraScope) {
       this.idents =
           FindIdentifiers.findAllIdents(state).stream()
               .map(s -> s.getSimpleName().toString())
               .collect(toCollection(HashSet::new));
+      scanExtraScope(extraScope);
+    }
+
+    private void scanExtraScope(Iterable<? extends Tree> extraScope) {
+      new TreeScanner<Void, Void>() {
+        @Override
+        public Void visitVariable(VariableTree node, Void unused) {
+          idents.add(node.getName().toString());
+          return super.visitVariable(node, null);
+        }
+
+        @Override
+        public Void visitClass(ClassTree node, Void unused) {
+          if (!node.getSimpleName().isEmpty()) {
+            idents.add(node.getSimpleName().toString());
+          }
+          return null;
+        }
+      }.scan(extraScope, null);
     }
 
     public String avoidShadowing(String name) {

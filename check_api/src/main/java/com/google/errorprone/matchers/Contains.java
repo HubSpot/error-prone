@@ -19,6 +19,7 @@ package com.google.errorprone.matchers;
 import com.google.errorprone.VisitorState;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.TreeScanner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A matcher that recursively inspects a tree, applying the given matcher to all levels of each tree
@@ -37,33 +38,23 @@ public class Contains implements Matcher<Tree> {
 
   @Override
   public boolean matches(Tree tree, VisitorState state) {
-    FirstMatchingScanner scanner = new FirstMatchingScanner(state);
-    Boolean matchFound = tree.accept(scanner, /* data= */ false);
-    return matchFound != null && matchFound;
-  }
+    var scanner =
+        new TreeScanner<Void, Void>() {
+          private boolean matchFound = false;
 
-  private class FirstMatchingScanner extends TreeScanner<Boolean, Boolean> {
-
-    private final VisitorState state;
-
-    FirstMatchingScanner(VisitorState state) {
-      this.state = state;
-    }
-
-    @Override
-    public Boolean scan(Tree tree, Boolean matchFound) {
-      if (matchFound) {
-        return true;
-      }
-      if (matcher.matches(tree, state)) {
-        return true;
-      }
-      return super.scan(tree, false);
-    }
-
-    @Override
-    public Boolean reduce(Boolean left, Boolean right) {
-      return (left != null && left) || (right != null && right);
-    }
+          @Override
+          public Void scan(@Nullable Tree tree, Void unused) {
+            if (tree == null || matchFound) {
+              return null;
+            }
+            if (matcher.matches(tree, state)) {
+              matchFound = true;
+              return null;
+            }
+            return super.scan(tree, null);
+          }
+        };
+    scanner.scan(tree, null);
+    return scanner.matchFound;
   }
 }

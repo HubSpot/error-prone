@@ -20,6 +20,7 @@ import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.constructor;
 import static com.google.errorprone.matchers.Matchers.staticMethod;
+import static com.google.errorprone.matchers.ProtobufMatchers.PROTO_TIME_STATIC_FACTORIES;
 
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
@@ -30,7 +31,7 @@ import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionTree;
-import java.util.regex.Pattern;
+import org.safere.Pattern;
 
 /** Flags fields which would be better expressed as time types rather than primitive integers. */
 @BugPattern(
@@ -51,19 +52,7 @@ public final class StronglyTypeTime extends BugChecker implements CompilationUni
               .namedAnyOf("ofEpochMilli", "ofEpochSecond")
               .withParameters("long"),
           // Proto time.
-          staticMethod()
-              .onClass("com.google.protobuf.util.Timestamps")
-              .namedAnyOf("fromNanos", "fromMicros", "fromMillis", "fromSeconds"),
-          staticMethod()
-              .onClass("com.google.protobuf.util.Durations")
-              .namedAnyOf(
-                  "fromNanos",
-                  "fromMicros",
-                  "fromMillis",
-                  "fromSeconds",
-                  "fromMinutes",
-                  "fromHours",
-                  "fromDays"),
+          PROTO_TIME_STATIC_FACTORIES,
           // Joda time.
           staticMethod()
               .onClass("org.joda.time.Duration")

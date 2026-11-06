@@ -46,6 +46,7 @@ import com.google.errorprone.fixes.SuggestedFixes;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.predicates.TypePredicates;
+import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
@@ -57,6 +58,7 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewArrayTree;
 import com.sun.source.tree.NewClassTree;
+import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeCastTree;
@@ -258,6 +260,8 @@ public class AssertThrowsMinimizer extends BugChecker implements MethodTreeMatch
           switch (tree) {
             case MethodInvocationTree methodInvocationTree -> methodInvocationTree.getArguments();
             case NewClassTree newClassTree -> newClassTree.getArguments();
+            case MemberReferenceTree memberReferenceTree ->
+                ImmutableList.of(memberReferenceTree.getQualifierExpression());
             default -> throw new AssertionError(tree.getKind());
           };
       if (arguments.stream().noneMatch(a -> needsHoisting(a, exceptionType, state))) {
@@ -285,6 +289,11 @@ public class AssertThrowsMinimizer extends BugChecker implements MethodTreeMatch
     }
     boolean needsHoisting =
         switch (tree) {
+          case BinaryTree binaryTree ->
+              needsHoisting(binaryTree.getLeftOperand(), exceptionType, state)
+                  || needsHoisting(binaryTree.getRightOperand(), exceptionType, state);
+          case ParenthesizedTree parenthesizedTree ->
+              needsHoisting(parenthesizedTree.getExpression(), exceptionType, state);
           case LambdaExpressionTree lambdaExpressionTree -> false;
           case MemberReferenceTree memberReferenceTree ->
               needsHoisting(memberReferenceTree.getQualifierExpression(), exceptionType, state);

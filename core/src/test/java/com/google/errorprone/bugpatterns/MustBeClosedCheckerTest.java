@@ -42,6 +42,7 @@ package com.google.errorprone.bugpatterns.testdata;
 import static java.io.OutputStream.nullOutputStream;
 
 import com.google.errorprone.annotations.MustBeClosed;
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.FilterOutputStream;
 import java.io.IOException;
@@ -296,6 +297,18 @@ class MustBeClosedCheckerPositiveCases {
         // handled above
         mustBeClosedOutputStream());
   }
+
+  OutputStream nestedDecoratorMustBeClosed() {
+    class MustBeClosedFilter extends FilterOutputStream {
+      @MustBeClosed
+      MustBeClosedFilter(OutputStream out) {
+        super(out);
+      }
+    }
+    return new BufferedOutputStream(
+      // BUG: Diagnostic contains:
+        new MustBeClosedFilter(mustBeClosedOutputStream()));
+  }
 }
 """;
 
@@ -526,6 +539,7 @@ package com.google.errorprone.bugpatterns.testdata;
 import static java.io.OutputStream.nullOutputStream;
 
 import com.google.errorprone.annotations.MustBeClosed;
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.FilterOutputStream;
 import java.io.IOException;
@@ -805,6 +819,19 @@ class MustBeClosedCheckerPositiveCases {
         // handled above
         mustBeClosedOutputStream());
   }
+
+  @MustBeClosed
+  OutputStream nestedDecoratorMustBeClosed() {
+    class MustBeClosedFilter extends FilterOutputStream {
+      @MustBeClosed
+      MustBeClosedFilter(OutputStream out) {
+        super(out);
+      }
+    }
+    return new BufferedOutputStream(
+        // BUG: Diagnostic contains:
+        new MustBeClosedFilter(mustBeClosedOutputStream()));
+  }
 }
 """)
         .allowBreakingChanges() // The fix is best-effort, and some variable names may clash
@@ -1035,6 +1062,166 @@ class MustBeClosedCheckerPositiveCases {
                 try (var closeable = foo.mustBeClosedMethod()) {
                   bar = closeable.method();
                 }
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void arenaPositiveCases() {
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import java.lang.foreign.Arena;
+            import java.lang.foreign.MemorySegment;
+
+            class Test {
+              void unclosedOfConfined() {
+                // BUG: Diagnostic contains: MustBeClosed
+                Arena arena = Arena.ofConfined();
+              }
+
+              void unclosedOfShared() {
+                // BUG: Diagnostic contains: MustBeClosed
+                Arena arena = Arena.ofShared();
+              }
+
+              void unclosedExpressionStatement() {
+                // BUG: Diagnostic contains: MustBeClosed
+                Arena.ofConfined();
+              }
+
+              void unclosedSubexpression() {
+                // BUG: Diagnostic contains: MustBeClosed
+                MemorySegment segment = Arena.ofConfined().allocate(100);
+              }
+
+              Arena unclosedReturn() {
+                // BUG: Diagnostic contains: MustBeClosed
+                return Arena.ofConfined();
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void arenaNegativeCases() {
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.errorprone.annotations.MustBeClosed;
+            import java.lang.foreign.Arena;
+            import java.lang.foreign.MemorySegment;
+
+            class Test {
+              private static final Arena CONSTANT_ARENA = Arena.ofShared();
+
+              void tryWithResourcesOfConfined() {
+                try (Arena arena = Arena.ofConfined()) {
+                  MemorySegment segment = arena.allocate(100);
+                }
+              }
+
+              void tryWithResourcesOfShared() {
+                try (Arena arena = Arena.ofShared()) {
+                  MemorySegment segment = arena.allocate(100);
+                }
+              }
+
+              void closedInFinally() {
+                Arena arena = Arena.ofConfined();
+                try {
+                  arena.allocate(100);
+                } finally {
+                  arena.close();
+                }
+              }
+
+              @MustBeClosed
+              Arena returnsMustBeClosed() {
+                return Arena.ofConfined();
+              }
+
+              void autoArenaDoesNotRequireClosing() {
+                Arena arena = Arena.ofAuto();
+              }
+
+              void globalArenaDoesNotRequireClosing() {
+                Arena arena = Arena.global();
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void arenaRefactoring() {
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            import java.lang.foreign.Arena;
+            import java.lang.foreign.MemorySegment;
+
+            class Test {
+              void statement() {
+                Arena.ofConfined();
+              }
+
+              void variable() {
+                Arena arena = Arena.ofConfined();
+              }
+
+              void varDeclaration() {
+                var arena = Arena.ofShared();
+              }
+
+              void subexpression() {
+                MemorySegment segment = Arena.ofConfined().allocate(100);
+              }
+
+              Arena unannotatedReturn() {
+                return Arena.ofConfined();
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            import com.google.errorprone.annotations.MustBeClosed;
+            import java.lang.foreign.Arena;
+            import java.lang.foreign.MemorySegment;
+
+            class Test {
+              void statement() {
+                try (var arena = Arena.ofConfined()) {}
+              }
+
+              void variable() {
+                try (Arena arena = Arena.ofConfined()) {}
+              }
+
+              void varDeclaration() {
+                try (var arena = Arena.ofShared()) {}
+              }
+
+              void subexpression() {
+                MemorySegment segment;
+                try (var arena = Arena.ofConfined()) {
+                  segment = arena.allocate(100);
+                }
+              }
+
+              @MustBeClosed
+              Arena unannotatedReturn() {
+                return Arena.ofConfined();
               }
             }
             """)

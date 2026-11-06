@@ -24,6 +24,8 @@ import static com.google.errorprone.matchers.Matchers.constructor;
 import static com.google.errorprone.matchers.Matchers.kindIs;
 import static com.google.errorprone.matchers.Matchers.not;
 import static com.google.errorprone.matchers.Matchers.packageStartsWith;
+import static com.google.errorprone.matchers.ProtobufMatchers.PROTO_BUILD_METHOD;
+import static com.google.errorprone.matchers.ProtobufMatchers.PROTO_NEW_BUILDER_METHOD;
 import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
 import static com.google.errorprone.matchers.method.MethodMatchers.staticMethod;
 import static com.google.errorprone.predicates.TypePredicates.isDescendantOf;
@@ -49,10 +51,10 @@ import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Symbol.PackageSymbol;
 import com.sun.tools.javac.code.Type;
 import java.util.Optional;
-import java.util.regex.Pattern;
 import javax.inject.Inject;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.Name;
+import org.safere.Pattern;
 
 /** A checker which produces an error when a return value is accidentally discarded. */
 @BugPattern(
@@ -326,18 +328,12 @@ public class ReturnValueIgnored extends AbstractReturnValueIgnored {
               .named("getMillis")
               .withNoParameters());
 
-  private static final String PROTO_MESSAGE = "com.google.protobuf.MessageLite";
-
   /**
    * The return values of {@code ProtoMessage.newBuilder()}, {@code protoBuilder.build()} and {@code
    * protoBuilder.buildPartial()} should always be checked.
    */
   private static final Matcher<ExpressionTree> PROTO_METHODS =
-      anyOf(
-          staticMethod().onDescendantOf(PROTO_MESSAGE).named("newBuilder"),
-          instanceMethod()
-              .onDescendantOf(PROTO_MESSAGE + ".Builder")
-              .namedAnyOf("build", "buildPartial"));
+      anyOf(PROTO_NEW_BUILDER_METHOD, PROTO_BUILD_METHOD);
 
   private static final Matcher<ExpressionTree> CLASS_METHODS =
       allOf(

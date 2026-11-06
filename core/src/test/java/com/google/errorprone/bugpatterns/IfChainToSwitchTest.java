@@ -39,6 +39,11 @@ public final class IfChainToSwitchTest {
         CLUB
       };
       """;
+  private static final String ENABLE_MAIN = "-XepOpt:IfChainToSwitch:EnableMain";
+  private static final String DISABLE_SAFE = "-XepOpt:IfChainToSwitch:EnableSafe=false";
+  private static final String ENABLE_SAFE = "-XepOpt:IfChainToSwitch:EnableSafe";
+  private static final String ENABLE_SAFE_TRUE = "-XepOpt:IfChainToSwitch:EnableSafe=true";
+  private static final String MIN_CHAIN_LENGTH_3 = "-XepOpt:IfChainToSwitch:MinChainLength=3";
   private final CompilationTestHelper helper =
       CompilationTestHelper.newInstance(IfChainToSwitch.class, getClass())
           .addSourceLines("Suit.java", SUIT);
@@ -54,8 +59,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               private Object suit;
 
@@ -78,8 +81,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   private Object suit;
 
@@ -101,7 +102,7 @@ public final class IfChainToSwitchTest {
                 }
                 """))
         .allowFormattingErrors()
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -113,8 +114,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               private Object suit;
 
@@ -135,7 +134,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -146,8 +145,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               private Object suit;
 
@@ -172,8 +169,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   private Object suit;
 
@@ -191,7 +186,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -203,8 +198,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               private Object suit;
 
@@ -230,8 +223,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   private Object suit;
 
@@ -251,7 +242,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -263,8 +254,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Boolean b = s == null;
@@ -278,7 +267,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -289,8 +278,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 long l = s == null ? 1 : 2;
@@ -304,7 +291,31 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_longSwitchExpression_noError() {
+    // Similar to ifChain_longSwitch_noError, but constants are ints instead of longs
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Suit s) {
+                long l = s == null ? 1 : 2;
+                if (l == 23) {
+                  System.out.println("It's 23");
+                } else if (l == 45) {
+                  System.out.println("It's 45");
+                } else if (l == 67) {
+                  System.out.println("It's 67");
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -315,8 +326,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 int i = s == null ? 1 : 2;
@@ -335,8 +344,6 @@ public final class IfChainToSwitchTest {
         .addOutputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 int i = s == null ? 1 : 2;
@@ -349,7 +356,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -361,8 +368,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -384,8 +389,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -400,7 +403,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -412,8 +415,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -435,8 +436,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -452,7 +451,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -464,8 +463,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               private Object suit;
 
@@ -483,7 +480,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -494,8 +491,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               private Object suit;
 
@@ -520,8 +515,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   private Object suit;
 
@@ -539,7 +532,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -551,8 +544,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               private Object suit;
 
@@ -575,8 +566,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   private Object suit;
 
@@ -593,7 +582,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -605,8 +594,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               private Object suit;
 
@@ -629,8 +616,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   private Object suit;
 
@@ -648,7 +633,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -660,8 +645,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -680,8 +663,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -695,7 +676,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -707,8 +688,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -727,8 +706,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -742,7 +719,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -754,8 +731,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -776,8 +751,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -792,7 +765,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -804,8 +777,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -826,8 +797,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -842,7 +811,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -886,7 +855,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -930,7 +899,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -942,8 +911,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -964,8 +931,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -980,7 +945,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -992,8 +957,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Integer i = s == null ? 1 : 2;
@@ -1012,8 +975,6 @@ public final class IfChainToSwitchTest {
         .addOutputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Integer i = s == null ? 1 : 2;
@@ -1027,7 +988,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -1039,8 +1000,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -1060,8 +1019,6 @@ public final class IfChainToSwitchTest {
         .addOutputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -1077,7 +1034,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -1129,7 +1086,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -1172,7 +1129,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1214,7 +1171,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1255,7 +1212,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1266,8 +1223,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit suit) {
                 String s = suit == null ? "null" : "nonnull";
@@ -1283,7 +1238,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1295,8 +1250,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 if (s == Suit.DIAMOND) {
@@ -1315,8 +1268,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     switch (s) {
@@ -1328,7 +1279,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -1340,8 +1291,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 if (s == Suit.DIAMOND) {
@@ -1356,7 +1305,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1367,8 +1316,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object o = s;
@@ -1388,7 +1335,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1400,8 +1347,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object o = s;
@@ -1423,7 +1368,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1474,7 +1419,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -1486,8 +1431,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 if (s == Suit.DIAMOND) {
@@ -1502,7 +1445,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1513,8 +1456,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 while (true) {
@@ -1532,7 +1473,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1543,8 +1484,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 int q =
@@ -1566,7 +1505,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1632,7 +1571,7 @@ public final class IfChainToSwitchTest {
             }
             """)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1643,8 +1582,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 while (true) {
@@ -1663,7 +1600,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1674,8 +1611,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 while (true) {
@@ -1693,7 +1628,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1704,8 +1639,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 a:
@@ -1725,7 +1658,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1781,7 +1714,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -1848,7 +1781,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -1860,8 +1793,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Integer i = s == null ? 1 : 2;
@@ -1877,7 +1808,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1888,8 +1819,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
 
               record Person(String name, int age) {}
@@ -1907,7 +1836,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1918,8 +1847,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -1933,7 +1860,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1944,8 +1871,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -1958,7 +1883,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -1969,9 +1894,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Integer;
-            import java.lang.Long;
-            import java.lang.Number;
             import java.math.BigDecimal;
             import java.time.Duration;
             import java.time.Instant;
@@ -2027,15 +1949,11 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-                import java.lang.Integer;
-                import java.lang.Long;
                 import java.math.BigDecimal;
                 import java.time.Duration;
                 import java.time.Instant;
                 import java.util.Date;
                 import java.util.Optional;
-
 
                 class Test {
                   public void foo(Suit s) {
@@ -2075,7 +1993,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -2086,8 +2004,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2109,8 +2025,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -2124,7 +2038,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -2135,8 +2049,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2158,8 +2070,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -2173,7 +2083,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -2185,8 +2095,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2217,8 +2125,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -2263,7 +2169,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -2274,8 +2180,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2306,8 +2210,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -2352,7 +2254,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -2364,8 +2266,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2387,8 +2287,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -2413,7 +2311,100 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_pullUpCompoundStatement_error() {
+    // Each trailing statement has more than one child node, so scanning it for `break`, `yield`,
+    // and `if` combines child results rather than just passing one through.  In `foo`, the
+    // assignment contains none of those, so it is pulled up.  In `bar`, the `break` is found in
+    // the `try` block (combined with the empty resources) and must still be reported when later
+    // combined with the empty catches and the `finally` block.  Pulling it up into `default ->`
+    // would make the `break` exit the switch rather than the loop, so it stays put.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              int x;
+
+              public void foo(int a) {
+                if (a == 1) {
+                  return;
+                } else if (a == 2) {
+                  return;
+                } else if (a == 3) {
+                  return;
+                }
+                x = a;
+              }
+
+              public void bar(int a) {
+                while (true) {
+                  if (a == 1) {
+                    return;
+                  } else if (a == 2) {
+                    return;
+                  } else if (a == 3) {
+                    return;
+                  }
+                  try {
+                    break;
+                  } finally {
+                    x = a;
+                  }
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              int x;
+
+              public void foo(int a) {
+                switch (a) {
+                  case 1 -> {
+                    return;
+                  }
+                  case 2 -> {
+                    return;
+                  }
+                  case 3 -> {
+                    return;
+                  }
+                  default -> x = a;
+                }
+              }
+
+              public void bar(int a) {
+                while (true) {
+                  switch (a) {
+                    case 1 -> {
+                      return;
+                    }
+                    case 2 -> {
+                      return;
+                    }
+                    case 3 -> {
+                      return;
+                    }
+                    default -> {}
+                  }
+                  try {
+                    break;
+                  } finally {
+                    x = a;
+                  }
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -2425,8 +2416,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2447,8 +2436,6 @@ public final class IfChainToSwitchTest {
         .addOutputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2471,7 +2458,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe=false")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -2483,8 +2470,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2505,8 +2490,6 @@ public final class IfChainToSwitchTest {
         .addOutputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2529,7 +2512,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -2541,8 +2524,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2560,7 +2541,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe=false")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -2571,8 +2552,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 int nonEffectivelyFinal = 0;
@@ -2592,7 +2571,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe=false")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -2604,8 +2583,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 String nonEffectivelyFinal = "hello";
@@ -2625,7 +2602,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe=false")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -2636,8 +2613,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2659,8 +2634,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -2685,7 +2658,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -2696,8 +2669,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 {
@@ -2711,7 +2682,7 @@ public final class IfChainToSwitchTest {
                   } else if (suit == Suit.CLUB) {
                     return;
                   }
-                  System.out.println("this will become unreachable");
+                  System.out.println("this will remain reachable");
                   System.out.println("this will too");
                 }
                 System.out.println("this will too");
@@ -2721,8 +2692,6 @@ public final class IfChainToSwitchTest {
         .addOutputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 {
@@ -2741,11 +2710,14 @@ public final class IfChainToSwitchTest {
                       return;
                     }
                   }
+                  System.out.println("this will remain reachable");
+                  System.out.println("this will too");
                 }
+                System.out.println("this will too");
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -2756,8 +2728,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 {
@@ -2783,8 +2753,6 @@ public final class IfChainToSwitchTest {
         .addOutputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 {
@@ -2810,7 +2778,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -2821,8 +2789,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2847,8 +2813,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -2865,7 +2829,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -2876,8 +2840,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2902,8 +2864,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -2920,7 +2880,7 @@ public final class IfChainToSwitchTest {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -2931,8 +2891,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2943,7 +2901,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -2953,8 +2911,6 @@ public final class IfChainToSwitchTest {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -2970,7 +2926,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -3008,7 +2964,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -3033,7 +2989,7 @@ public final class IfChainToSwitchTest {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe=true")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE_TRUE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -3044,7 +3000,6 @@ public final class IfChainToSwitchTest {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
             import java.util.ArrayList;
             import java.util.List;
 
@@ -3071,7 +3026,6 @@ public final class IfChainToSwitchTest {
             "Test.java",
             maybeChangeToUnnamedVariable(
 """
-import java.lang.Number;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -3093,7 +3047,7 @@ class Test {
   }
 }
 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -3105,7 +3059,6 @@ class Test {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
             import java.util.ArrayList;
             import java.util.List;
 
@@ -3132,7 +3085,6 @@ class Test {
             "Test.java",
             maybeChangeToUnnamedVariable(
 """
-import java.lang.Number;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -3153,7 +3105,7 @@ class Test {
   }
 }
 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -3165,7 +3117,6 @@ class Test {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
             import java.util.HashMap;
             import java.util.Map;
 
@@ -3192,7 +3143,6 @@ class Test {
             "Test.java",
             maybeChangeToUnnamedVariable(
 """
-import java.lang.Number;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -3214,7 +3164,7 @@ class Test {
   }
 }
 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -3226,7 +3176,6 @@ class Test {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
             import java.util.HashMap;
             import java.util.Map;
 
@@ -3253,7 +3202,6 @@ class Test {
             "Test.java",
             maybeChangeToUnnamedVariable(
 """
-import java.lang.Number;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -3274,8 +3222,524 @@ class Test {
   }
 }
 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_genericArrayType_error() {
+    // Type arguments belong to the element type of an array, and must be preserved.  A generic
+    // array type pattern empirically requires a modifier in order for javac to parse the `case`
+    // label.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            import java.util.List;
+            import java.util.Map;
+
+            class Test {
+              public void foo(Object o) {
+                if (o instanceof List<?>[] a) {
+                  System.out.println("list array " + a.length);
+                } else if (o instanceof Map<?, ?>[] b) {
+                  System.out.println("map array " + b.length);
+                } else if (o instanceof String[][] c) {
+                  System.out.println("string matrix " + c.length);
+                } else if (o instanceof int[] d) {
+                  System.out.println("int array " + d.length);
+                } else {
+                  System.out.println("other");
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            import java.util.List;
+            import java.util.Map;
+
+            class Test {
+              public void foo(Object o) {
+                switch (o) {
+                  case final List<?>[] a -> System.out.println("list array " + a.length);
+                  case final Map<?, ?>[] b -> System.out.println("map array " + b.length);
+                  case String[][] c -> System.out.println("string matrix " + c.length);
+                  case int[] d -> System.out.println("int array " + d.length);
+                  default -> System.out.println("other");
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_rawArrayType_error() {
+    // A raw element type is converted to the wildcard type, just as for a non-array raw type.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            import java.util.List;
+            import java.util.Map;
+
+            class Test {
+              public void foo(Object o) {
+                if (o instanceof List[] a) {
+                  System.out.println("list array " + a.length);
+                } else if (o instanceof Map[][] b) {
+                  System.out.println("map matrix " + b.length);
+                } else if (o instanceof String[] c) {
+                  System.out.println("string array " + c.length);
+                } else {
+                  System.out.println("other");
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            import java.util.List;
+            import java.util.Map;
+
+            class Test {
+              public void foo(Object o) {
+                switch (o) {
+                  case final List<?>[] a -> System.out.println("list array " + a.length);
+                  case final Map<?, ?>[][] b -> System.out.println("map matrix " + b.length);
+                  case String[] c -> System.out.println("string array " + c.length);
+                  default -> System.out.println("other");
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_genericArrayTypePatternVariableReassigned_error() {
+    // A pattern variable is an ordinary local variable, so `a` may be reassigned.  That rules out
+    // the `final` modifier, and without a modifier the generic array type cannot be parsed, so the
+    // element type's arguments are erased instead.  The decision is made per pattern variable: `b`
+    // is never reassigned and so keeps both its `final` modifier and its type arguments.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            import java.util.List;
+            import java.util.Map;
+
+            class Test {
+              public void foo(Object o) {
+                if (o instanceof List<?>[] a) {
+                  a = null;
+                  System.out.println("list array " + a);
+                } else if (o instanceof Map<?, ?>[] b) {
+                  System.out.println("map array " + b.length);
+                } else if (o instanceof String[] c) {
+                  System.out.println("string array " + c.length);
+                } else {
+                  System.out.println("other");
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            import java.util.List;
+            import java.util.Map;
+
+            class Test {
+              public void foo(Object o) {
+                switch (o) {
+                  case List[] a -> {
+                    a = null;
+                    System.out.println("list array " + a);
+                  }
+                  case final Map<?, ?>[] b -> System.out.println("map array " + b.length);
+                  case String[] c -> System.out.println("string array " + c.length);
+                  default -> System.out.println("other");
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_genericArrayTypePatternVariableElementAssigned_error() {
+    // Assigning to an *element* of the array does not reassign the pattern variable itself, so it
+    // remains effectively final and the `final` modifier may still be applied.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            import java.util.List;
+
+            class Test {
+              public void foo(Object o) {
+                if (o instanceof List<?>[] a) {
+                  a[0] = null;
+                  System.out.println("list array " + a.length);
+                } else if (o instanceof String[] b) {
+                  System.out.println("string array " + b.length);
+                } else if (o instanceof int[] c) {
+                  System.out.println("int array " + c.length);
+                } else {
+                  System.out.println("other");
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            import java.util.List;
+
+            class Test {
+              public void foo(Object o) {
+                switch (o) {
+                  case final List<?>[] a -> {
+                    a[0] = null;
+                    System.out.println("list array " + a.length);
+                  }
+                  case String[] b -> System.out.println("string array " + b.length);
+                  case int[] c -> System.out.println("int array " + c.length);
+                  default -> System.out.println("other");
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_concreteTypeArgumentArrayPattern_error() {
+    // Type arguments are preserved verbatim, not just the unbounded wildcards of the preceding
+    // tests.  A concrete type argument is only expressible when the subject's static type is
+    // checked cast convertible to the pattern's type (JLS 21 § 14.30.3 and 5.5), which it is here
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            import java.util.ArrayList;
+            import java.util.LinkedList;
+            import java.util.List;
+            import java.util.Vector;
+
+            class Test {
+              public void foo(List<String>[] o) {
+                if (o instanceof ArrayList<String>[] a) {
+                  a = null;
+                  System.out.println("array list " + a);
+                } else if (o instanceof LinkedList<String>[] b) {
+                  System.out.println("linked " + b.length);
+                } else if (o instanceof Vector<String>[] c) {
+                  System.out.println("vector " + c.length);
+                } else {
+                  System.out.println("other");
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            import java.util.ArrayList;
+            import java.util.LinkedList;
+            import java.util.List;
+            import java.util.Vector;
+
+            class Test {
+              public void foo(List<String>[] o) {
+                switch (o) {
+                  case ArrayList[] a -> {
+                    a = null;
+                    System.out.println("array list " + a);
+                  }
+                  case final LinkedList<String>[] b -> System.out.println("linked " + b.length);
+                  case final Vector<String>[] c -> System.out.println("vector " + c.length);
+                  default -> System.out.println("other");
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_nonArrayGenericPatternVariableReassigned_error() {
+    // A non-array generic type pattern parses without any modifier, so reassignment has no bearing
+    // on it: the type arguments are retained even though `a` is reassigned.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            import java.util.List;
+
+            class Test {
+              public void foo(Object o) {
+                if (o instanceof List<?> a) {
+                  a = null;
+                  System.out.println("list " + a);
+                } else if (o instanceof String b) {
+                  System.out.println("string " + b);
+                } else if (o instanceof Integer c) {
+                  System.out.println("integer " + c);
+                } else {
+                  System.out.println("other");
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            import java.util.List;
+
+            class Test {
+              public void foo(Object o) {
+                switch (o) {
+                  case List<?> a -> {
+                    a = null;
+                    System.out.println("list " + a);
+                  }
+                  case String b -> System.out.println("string " + b);
+                  case Integer c -> System.out.println("integer " + c);
+                  default -> System.out.println("other");
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_siblingConvertibleChain_error() {
+    // The single statement following the first chain is itself a convertible chain.  Pulling it up
+    // would delete source that the second chain's own fix replaces, and applying both throws.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(int a, int b) {
+                if (a == 1) {
+                  return;
+                } else if (a == 2) {
+                  return;
+                } else if (a == 3) {
+                  return;
+                }
+                if (b == 1) {
+                  System.out.println("x");
+                } else if (b == 2) {
+                  System.out.println("y");
+                } else if (b == 3) {
+                  System.out.println("z");
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(int a, int b) {
+                switch (a) {
+                  case 1 -> {
+                    return;
+                  }
+                  case 2 -> {
+                    return;
+                  }
+                  case 3 -> {
+                    return;
+                  }
+                  default -> {}
+                }
+                switch (b) {
+                  case 1 -> System.out.println("x");
+                  case 2 -> System.out.println("y");
+                  case 3 -> System.out.println("z");
+                  default -> {}
+                }
+              }
+            }
+            """)
+        .allowFormattingErrors()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_pullUpBlockContainingChain_error() {
+    // As in `ifChain_siblingConvertibleChain_error`, but the convertible chain is nested inside the
+    // trailing statement rather than being it, so the deletion range strictly contains the other
+    // fix's range
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(int a, int b) {
+                if (a == 1) {
+                  return;
+                } else if (a == 2) {
+                  return;
+                } else if (a == 3) {
+                  return;
+                }
+                {
+                  if (b == 1) {
+                    System.out.println("x");
+                  } else if (b == 2) {
+                    System.out.println("y");
+                  } else if (b == 3) {
+                    System.out.println("z");
+                  }
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(int a, int b) {
+                switch (a) {
+                  case 1 -> {
+                    return;
+                  }
+                  case 2 -> {
+                    return;
+                  }
+                  case 3 -> {
+                    return;
+                  }
+                  default -> {}
+                }
+                {
+                  switch (b) {
+                    case 1 -> System.out.println("x");
+                    case 2 -> System.out.println("y");
+                    case 3 -> System.out.println("z");
+                    default -> {}
+                  }
+                }
+              }
+            }
+            """)
+        .allowFormattingErrors()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_deadCodeRegionContainsChain_error() {
+    // Two trailing statements, so pull-up declines and the dead-code deletion would fire.  That
+    // code cannot be left in place (it would be unreachable), so the conversion of the first chain
+    // is declined and only the second chain is converted.  (However, if the user were to apply the
+    // fix and then run the checker again against the updated code, the finding for the first
+    // if-chain would then be reported.  So, this limitation just adds an extra step.)
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int b) {
+                if (o instanceof Integer) {
+                  throw new AssertionError();
+                } else if (o instanceof String) {
+                  throw new AssertionError();
+                } else if (o instanceof Object) {
+                  throw new AssertionError();
+                }
+                System.out.println("dead");
+                if (b == 1) {
+                  System.out.println("x");
+                } else if (b == 2) {
+                  System.out.println("y");
+                } else if (b == 3) {
+                  System.out.println("z");
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int b) {
+                if (o instanceof Integer) {
+                  throw new AssertionError();
+                } else if (o instanceof String) {
+                  throw new AssertionError();
+                } else if (o instanceof Object) {
+                  throw new AssertionError();
+                }
+                System.out.println("dead");
+                switch (b) {
+                  case 1 -> System.out.println("x");
+                  case 2 -> System.out.println("y");
+                  case 3 -> System.out.println("z");
+                  default -> {}
+                }
+              }
+            }
+            """)
+        .allowFormattingErrors()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_deadCodeRegionContainsLoneIf_noError() {
+    // The dead region holds a lone `if` that is not itself convertible, so no conflicting fix is
+    // possible.  hasIfInTree matches any `if` rather than trying to predict matchability, so the
+    // conversion is declined.  This could be improved by deeper examination of the if-chain to be
+    // deleted.
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int b) {
+                if (o instanceof Integer) {
+                  throw new AssertionError();
+                } else if (o instanceof String) {
+                  throw new AssertionError();
+                } else if (o instanceof Object) {
+                  throw new AssertionError();
+                }
+                System.out.println("dead");
+                if (b == 1) {
+                  System.out.println("x");
+                }
+              }
+            }
+            """)
+        .expectUnchanged()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -3286,8 +3750,6 @@ class Test {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Integer i = s == null ? 0 : 1;
@@ -3301,7 +3763,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -3312,8 +3774,6 @@ class Test {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -3332,7 +3792,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -3342,8 +3802,6 @@ class Test {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Object suit = s;
@@ -3366,8 +3824,6 @@ class Test {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Suit s) {
                     Object suit = s;
@@ -3383,7 +3839,7 @@ class Test {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -3394,8 +3850,6 @@ class Test {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Integer i = s == null ? 0 : 1;
@@ -3417,8 +3871,6 @@ class Test {
             "Test.java",
             maybeChangeToUnnamedVariable(
 """
-import java.lang.Number;
-
 class Test {
   public void foo(Suit s) {
     Integer i = s == null ? 0 : 1;
@@ -3432,7 +3884,7 @@ class Test {
   }
 }
 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -3444,8 +3896,6 @@ class Test {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Integer i = s == null ? 0 : 1;
@@ -3465,7 +3915,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -3476,8 +3926,6 @@ class Test {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Integer i = s == null ? 0 : 1;
@@ -3491,7 +3939,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -3502,8 +3950,6 @@ class Test {
         .addSourceLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Integer i = s == null ? 0 : 1;
@@ -3519,7 +3965,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -3530,8 +3976,6 @@ class Test {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Suit s) {
                 Integer i = s == null ? 0 : 1;
@@ -3553,8 +3997,6 @@ class Test {
             "Test.java",
             maybeChangeToUnnamedVariable(
 """
-import java.lang.Number;
-
 class Test {
   public void foo(Suit s) {
     Integer i = s == null ? 0 : 1;
@@ -3568,7 +4010,7 @@ class Test {
   }
 }
 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -3623,7 +4065,7 @@ class Test {
   }
 }
 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -3677,7 +4119,7 @@ class Test {
   }
 }
 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -3733,7 +4175,9 @@ class Test {
 }
 """))
         .setArgs(
-            "-XepOpt:IfChainToSwitch:EnableMain",
+            ENABLE_MAIN,
+            DISABLE_SAFE,
+            MIN_CHAIN_LENGTH_3,
             "--enable-preview",
             "--release",
             Integer.toString(Runtime.version().feature()))
@@ -3773,7 +4217,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -3785,8 +4229,6 @@ class Test {
         .addInputLines(
             "Test.java",
             """
-            import java.lang.Number;
-
             class Test {
               public void foo(Object obj) {
                 if (obj instanceof Object) {
@@ -3803,8 +4245,6 @@ class Test {
             "Test.java",
             maybeChangeToUnnamedVariable(
                 """
-                import java.lang.Number;
-
                 class Test {
                   public void foo(Object obj) {
                     switch (obj) {
@@ -3815,7 +4255,7 @@ class Test {
                   }
                 }
                 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -3865,7 +4305,7 @@ class Test {
   }
 }
 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -3898,7 +4338,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -3939,7 +4379,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -3972,7 +4412,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -4013,7 +4453,7 @@ class Test {
   }
 }
 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -4072,7 +4512,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -4114,7 +4554,7 @@ class Test {
   }
 }
 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -4140,7 +4580,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -4185,7 +4625,7 @@ class Test {
   }
 }
 """))
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -4228,7 +4668,7 @@ class Test {
   }
 }
 """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
         .doTest();
   }
@@ -4255,7 +4695,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -4281,7 +4721,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -4307,7 +4747,31 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_groupingInstanceofDuplicatedUnsafe_noError() {
+    // Duplication of `Object` should not be allowed, even when cases may be reordered
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o) {
+                if (o instanceof Float) {
+                  System.out.println("a");
+                } else if (o instanceof Object || o instanceof Number || o instanceof Object) {
+                  System.out.println("b");
+                } else if (o instanceof Integer) {
+                  System.out.println("c");
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -4333,7 +4797,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain", "-XepOpt:IfChainToSwitch:EnableSafe")
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -4359,7 +4823,7 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -4401,8 +4865,116 @@ class Test {
   }
 }
 """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_groupingThreeInstanceofs_error() {
+    // Every alternative of the disjunction must be retained, not just the last one
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o) {
+                if (o instanceof Float) {
+                  System.out.println("It's a float");
+                } else if (o instanceof Integer) {
+                  System.out.println("It's an integer");
+                } else if (o instanceof String || o instanceof Boolean || o instanceof Character) {
+                  System.out.println("It's one of three things");
+                } else {
+                  System.out.println("It's something else");
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o) {
+                switch (o) {
+                  case Float _ -> System.out.println("It's a float");
+                  case Integer _ -> System.out.println("It's an integer");
+                  case String _, Boolean _, Character _ -> System.out.println("It's one of three things");
+                  default -> System.out.println("It's something else");
+                }
+              }
+            }
+            """)
+        .allowFormattingErrors()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_groupingParenthesizedInstanceofs_error() {
+    // Parentheses regroup the disjunction, but every alternative must still be retained
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o) {
+                if (o instanceof Float) {
+                  System.out.println("It's a float");
+                } else if (o instanceof Integer) {
+                  System.out.println("It's an integer");
+                } else if (o instanceof String || (o instanceof Boolean || o instanceof Character)) {
+                  System.out.println("It's one of three things");
+                } else {
+                  System.out.println("It's something else");
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o) {
+                switch (o) {
+                  case Float _ -> System.out.println("It's a float");
+                  case Integer _ -> System.out.println("It's an integer");
+                  case String _, Boolean _, Character _ -> System.out.println("It's one of three things");
+                  default -> System.out.println("It's something else");
+                }
+              }
+            }
+            """)
+        .allowFormattingErrors()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_groupingInstanceofsOrConstant_noError() {
+    // Instanceof patterns still cannot be mixed with constants when there are three alternatives;
+    // JLS forbids constants and patterns in the same case label.
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Integer x) {
+                if (x == 1) {
+                  System.out.println("a");
+                } else if (x == 2) {
+                  System.out.println("b");
+                } else if (x instanceof Number || x instanceof Comparable || x == 5) {
+                  System.out.println("c");
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -4429,7 +5001,862 @@ class Test {
               }
             }
             """)
-        .setArgs("-XepOpt:IfChainToSwitch:EnableMain")
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_intDuplicateConstantDifferentTypes_fails() {
+    // Because 'a' is encoded as 97 (in ASCII), they are both the same (when cast to int)
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(int x) {
+                if (x == 'a') {
+                  System.out.println("a");
+                } else if (x == 97) {
+                  System.out.println("97");
+                } else if (x == 98) {
+                  System.out.println("98");
+                }
+              }
+            }
+            """)
+        .expectUnchanged()
+        .setArgs(ENABLE_MAIN, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_shortDuplicateConstantDifferentTypes_fails() {
+    // Because 'a' is encoded as 97 (in ASCII), they are both the same (when cast to short)
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(short x) {
+                if (x == 'a') {
+                  System.out.println("a");
+                } else if (x == 97) {
+                  System.out.println("97");
+                } else if (x == 98) {
+                  System.out.println("98");
+                }
+              }
+            }
+            """)
+        .expectUnchanged()
+        .setArgs(ENABLE_MAIN, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_stringConstantOnObjectSubject_noError() {
+    // String constants are not allowed on Object switch expressions, and more generally, non-null
+    // constants are only allowed with a limited set of types for the switch expression.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o) {
+                if (o instanceof String) {
+                  System.out.println("string");
+                } else if (o == "a") {
+                  System.out.println("a");
+                } else if (o instanceof Integer) {
+                  System.out.println("integer");
+                } else {
+                  System.out.println("default");
+                }
+              }
+            }
+            """)
+        .expectUnchanged()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_instanceOfOrIntConstant_noCrash() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Integer x) {
+                if (x instanceof Number || x == 5) {
+                  System.out.println("a");
+                } else {
+                  System.out.println("b");
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_instanceOfOrEnumConstant_noCrash() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o) {
+                if (o instanceof String || o == Suit.HEART) {
+                  System.out.println("a");
+                } else {
+                  System.out.println("b");
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_conditionalExpressionConstant_noError() {
+    // The ternary expression is not a compile-time constant
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(int x, boolean flag) {
+                if (x == (flag ? 1 : 2)) {
+                  System.out.println("a");
+                } else if (x == 3) {
+                  System.out.println("b");
+                } else if (x == 4) {
+                  System.out.println("c");
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_compileTimeConstantParameter_noError() {
+    // Although c is annotated with @CompileTimeConstant, it is not a compile-time constant.
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            import com.google.errorprone.annotations.CompileTimeConstant;
+
+            class Test {
+              public void foo(int x, @CompileTimeConstant final int c) {
+                if (x == c) {
+                  System.out.println("a");
+                } else if (x == 3) {
+                  System.out.println("b");
+                } else if (x == 4) {
+                  System.out.println("c");
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_exhaustiveEnumWithTrailingStatements_keepsTrailingStatements() {
+    // The trailing AssertionError should be kept.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit s) {
+                if (s == Suit.HEART) {
+                  return 1;
+                } else if (s == Suit.SPADE) {
+                  return 2;
+                } else if (s == Suit.DIAMOND) {
+                  return 3;
+                } else if (s == Suit.CLUB) {
+                  return 4;
+                }
+                System.out.println("not reached today, but reachable as far as javac knows");
+                throw new AssertionError();
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public int foo(Suit s) {
+                switch (s) {
+                  case Suit.HEART -> {
+                    return 1;
+                  }
+                  case Suit.SPADE -> {
+                    return 2;
+                  }
+                  case Suit.DIAMOND -> {
+                    return 3;
+                  }
+                  case Suit.CLUB -> {
+                    return 4;
+                  }
+                }
+                System.out.println("not reached today, but reachable as far as javac knows");
+                throw new AssertionError();
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_exhaustiveEnumInConstructor_keepsBlankFinalAssignment() {
+    // BUG (invalid code generated): the checker will delete the last two statements, the second of
+    // which is needed to initialize the blank final field `x`. (Failing to initialize a blank
+    // final field results in a compile-time error.)
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              final int x;
+
+              Test(Suit s) {
+                // BUG: Diagnostic contains: This if-chain may be converted into a switch
+                if (s == Suit.HEART) {
+                  x = 1;
+                  return;
+                } else if (s == Suit.SPADE) {
+                  x = 2;
+                  return;
+                } else if (s == Suit.DIAMOND) {
+                  x = 3;
+                  return;
+                } else if (s == Suit.CLUB) {
+                  x = 4;
+                  return;
+                }
+                System.out.println("not reached");
+                x = 0;
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_exhaustiveEnumInLocalClassInitializer_error() {
+    // The enclosing body is the initializer block of the local class `Bar`, which may complete
+    // normally, rather than the (non-void) enclosing method `foo`.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              String foo(Suit s) {
+                class Bar {
+                  {
+                    if (s == Suit.HEART) {
+                      throw new AssertionError("heart");
+                    } else if (s == Suit.SPADE) {
+                      throw new AssertionError("spade");
+                    } else if (s == Suit.DIAMOND) {
+                      throw new AssertionError("diamond");
+                    } else if (s == Suit.CLUB) {
+                      throw new AssertionError("club");
+                    }
+                    System.out.println("Don't delete me");
+                    System.out.println("Don't delete me too");
+                  }
+                }
+                return new Bar().toString();
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              String foo(Suit s) {
+                class Bar {
+                  {
+                    switch (s) {
+                      case Suit.HEART -> throw new AssertionError("heart");
+                      case Suit.SPADE -> throw new AssertionError("spade");
+                      case Suit.DIAMOND -> throw new AssertionError("diamond");
+                      case Suit.CLUB -> throw new AssertionError("club");
+                    }
+                    System.out.println("Don't delete me");
+                    System.out.println("Don't delete me too");
+                  }
+                }
+                return new Bar().toString();
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_exhaustiveEnumInConstructor_keepsTrailingStatements() {
+    // The trailing statements discharge the definite-assignment obligation for the blank final
+    // field (JLS 16.9), so they may not be deleted even though every case throws or returns.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              final int x;
+
+              Test(Suit s) {
+                if (s == Suit.HEART) {
+                  x = 1;
+                  return;
+                } else if (s == Suit.SPADE) {
+                  x = 2;
+                  return;
+                } else if (s == Suit.DIAMOND) {
+                  x = 3;
+                  return;
+                } else if (s == Suit.CLUB) {
+                  x = 4;
+                  return;
+                }
+                System.out.println("not reached");
+                x = 0;
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              final int x;
+
+              Test(Suit s) {
+                switch (s) {
+                  case Suit.HEART -> {
+                    x = 1;
+                    return;
+                  }
+                  case Suit.SPADE -> {
+                    x = 2;
+                    return;
+                  }
+                  case Suit.DIAMOND -> {
+                    x = 3;
+                    return;
+                  }
+                  case Suit.CLUB -> {
+                    x = 4;
+                    return;
+                  }
+                }
+                System.out.println("not reached");
+                x = 0;
+              }
+            }
+            """)
+        .allowFormattingErrors()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_exhaustiveEnumInSwitchExpressionArm_keepsTrailingStatements() {
+    // The trailing {@code yield} is the switch expression's only result expression (JLS
+    // 15.28.1), so it may not be deleted. The enclosing method is {@code void}, so its reachability
+    // says nothing about the reachability of the arm.
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Suit s, int k) {
+                int result =
+                    switch (k) {
+                      default -> {
+                        if (s == Suit.HEART) {
+                          throw new AssertionError();
+                        } else if (s == Suit.SPADE) {
+                          throw new AssertionError();
+                        } else if (s == Suit.DIAMOND) {
+                          throw new AssertionError();
+                        } else if (s == Suit.CLUB) {
+                          throw new AssertionError();
+                        }
+                        System.out.println("not reached");
+                        yield 0;
+                      }
+                    };
+                System.out.println(result);
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Suit s, int k) {
+                int result =
+                    switch (k) {
+                      default -> {
+                        switch (s) {
+                          case Suit.HEART -> throw new AssertionError();
+                          case Suit.SPADE -> throw new AssertionError();
+                          case Suit.DIAMOND -> throw new AssertionError();
+                          case Suit.CLUB -> throw new AssertionError();
+                        }
+                        System.out.println("not reached");
+                        yield 0;
+                      }
+                    };
+                System.out.println(result);
+              }
+            }
+            """)
+        .allowFormattingErrors()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_colonCaseTrailingDeadCode_error() {
+    // The statements following the chain live in a colon-style `case`, which holds them directly
+    // rather than in a block.  They are dead once the chain becomes an exhaustive switch, so they
+    // must be deleted; leaving them would not compile.
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int k) {
+                switch (k) {
+                  case 1:
+                    if (o instanceof Integer) {
+                      throw new AssertionError();
+                    } else if (o instanceof String) {
+                      throw new AssertionError();
+                    } else if (o instanceof Object) {
+                      throw new AssertionError();
+                    }
+                    System.out.println("dead");
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int k) {
+                switch (k) {
+                  case 1:
+                    switch (o) {
+                      case Integer _ -> throw new AssertionError();
+                      case String _ -> throw new AssertionError();
+                      case Object _ -> throw new AssertionError();
+                    }
+                }
+              }
+            }
+            """)
+        .allowFormattingErrors()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_colonCaseTrailingDeadCodeContainsIf_noError() {
+    // As above, but the dead statements in the colon-style `case` contain an `if`, which this check
+    // may rewrite under a separate finding whose fix would overlap the deletion.
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int k, int b) {
+                switch (k) {
+                  case 1:
+                    if (o instanceof Integer) {
+                      throw new AssertionError();
+                    } else if (o instanceof String) {
+                      throw new AssertionError();
+                    } else if (o instanceof Object) {
+                      throw new AssertionError();
+                    }
+                    System.out.println("dead");
+                    if (b == 1) {
+                      System.out.println("x");
+                    }
+                }
+              }
+            }
+            """)
+        .expectUnchanged()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_colonCaseTrailingDeadCodeSafe_error() {
+    // Safe mode injects `case null -> {}`, so the switch can still complete normally and the
+    // following statements stay reachable.  Nothing is deleted.
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int k) {
+                switch (k) {
+                  case 1:
+                    if (o instanceof Integer) {
+                      throw new AssertionError();
+                    } else if (o instanceof String) {
+                      throw new AssertionError();
+                    } else if (o instanceof Object) {
+                      throw new AssertionError();
+                    }
+                    System.out.println("dead");
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int k) {
+                switch (k) {
+                  case 1:
+                    switch (o) {
+                      case Integer _ -> throw new AssertionError();
+                      case String _ -> throw new AssertionError();
+                      case Object _ -> throw new AssertionError();
+                      case null -> {}
+                    }
+                    System.out.println("dead");
+                }
+              }
+            }
+            """)
+        .allowFormattingErrors()
+        .setArgs(ENABLE_MAIN, ENABLE_SAFE_TRUE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_colonCaseDeadCodeCascadesPastSwitch_error() {
+    // Deleting the dead statements in the colon-style `case` leaves the enclosing `switch` unable
+    // to complete normally, so the statement after it is dead too and must also be deleted.
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int k) {
+                switch (k) {
+                  default:
+                    throw new AssertionError();
+                  case 1:
+                    if (o instanceof Integer) {
+                      throw new AssertionError();
+                    } else if (o instanceof String) {
+                      throw new AssertionError();
+                    } else if (o instanceof Object) {
+                      throw new AssertionError();
+                    }
+                    System.out.println("dead");
+                }
+                System.out.println("afterSwitch");
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int k) {
+                switch (k) {
+                  default:
+                    throw new AssertionError();
+                  case 1:
+                    switch (o) {
+                      case Integer _ -> throw new AssertionError();
+                      case String _ -> throw new AssertionError();
+                      case Object _ -> throw new AssertionError();
+                    }
+                }
+              }
+            }
+            """)
+        .allowFormattingErrors()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_colonCaseDeadCodeWithBreak_error() {
+    // The dead statements hold the only `break` out of the enclosing `switch`, so deleting them
+    // leaves that switch unable to complete normally and the statement after it dead as well.
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int k, boolean flag) {
+                lbl:
+                switch (k) {
+                  default:
+                    throw new AssertionError();
+                  case 1:
+                    if (o instanceof Integer) {
+                      throw new AssertionError();
+                    } else if (o instanceof String) {
+                      throw new AssertionError();
+                    } else if (o instanceof Object) {
+                      throw new AssertionError();
+                    }
+                    while (flag) {
+                      break lbl;
+                    }
+                    System.out.println("dead");
+                }
+                System.out.println("afterSwitch");
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int k, boolean flag) {
+                lbl:
+                switch (k) {
+                  default:
+                    throw new AssertionError();
+                  case 1:
+                    switch (o) {
+                      case Integer _ -> throw new AssertionError();
+                      case String _ -> throw new AssertionError();
+                      case Object _ -> throw new AssertionError();
+                    }
+                }
+              }
+            }
+            """)
+        .allowFormattingErrors()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_deadCodeLeavesSurvivingBreak_error() {
+    // The `break l` in the other case survives the fix and still exits the loop, so the statement
+    // after the loop stays reachable and must be left alone.
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int x) {
+                l:
+                while (true) {
+                  switch (x) {
+                    default:
+                      break l;
+                    case 1:
+                      if (o instanceof Integer) {
+                        throw new AssertionError();
+                      } else if (o instanceof String) {
+                        throw new AssertionError();
+                      } else if (o instanceof Object) {
+                        throw new AssertionError();
+                      }
+                      System.out.println("remove me");
+                  }
+                }
+                System.out.println("after");
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, int x) {
+                l:
+                while (true) {
+                  switch (x) {
+                    default:
+                      break l;
+                    case 1:
+                      switch (o) {
+                        case Integer _ -> throw new AssertionError();
+                        case String _ -> throw new AssertionError();
+                        case Object _ -> throw new AssertionError();
+                      }
+                  }
+                }
+                System.out.println("after");
+              }
+            }
+            """)
+        .allowFormattingErrors()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_continueKeepsDoWhileCompletable_error() {
+    // Each switch contains a `continue`, which reaches the condition of the enclosing `do`, so the
+    // loop can still complete normally and the statement after it stays reachable.  In `foo` the
+    // `continue` is in a branch of the chain; in `bar` it is pulled up into the `default` case.  In
+    // `baz` and `qux` nothing follows the chain; in `baz` the `continue` is in the last branch,
+    // whose `if` has no `else`, and in `qux` it is in an earlier branch.
+    assume().that(Runtime.version().feature()).isAtLeast(22);
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, boolean b) {
+                do {
+                  if (o instanceof Integer) {
+                    continue;
+                  } else if (o instanceof String) {
+                    throw new AssertionError();
+                  } else if (o instanceof Object) {
+                    throw new AssertionError();
+                  }
+                  System.out.println("dead");
+                } while (b);
+                System.out.println("after");
+              }
+
+              public void bar(Object o, boolean b) {
+                do {
+                  if (o instanceof Integer) {
+                    throw new AssertionError();
+                  } else if (o instanceof String) {
+                    throw new AssertionError();
+                  } else if (o instanceof Long) {
+                    throw new AssertionError();
+                  }
+                  continue;
+                } while (b);
+                System.out.println("after");
+              }
+
+              public void baz(Object o, boolean b) {
+                do {
+                  if (o instanceof Integer) {
+                    throw new AssertionError();
+                  } else if (o instanceof String) {
+                    throw new AssertionError();
+                  } else if (o instanceof Object) {
+                    continue;
+                  }
+                } while (b);
+                System.out.println("after");
+              }
+
+              public void qux(Object o, boolean b) {
+                do {
+                  if (o instanceof Integer) {
+                    continue;
+                  } else if (o instanceof String) {
+                    throw new AssertionError();
+                  } else if (o instanceof Object) {
+                    throw new AssertionError();
+                  }
+                } while (b);
+                System.out.println("after");
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              public void foo(Object o, boolean b) {
+                do {
+                  switch (o) {
+                    case Integer _ -> {
+                      continue;
+                    }
+                    case String _ -> throw new AssertionError();
+                    case Object _ -> throw new AssertionError();
+                  }
+                } while (b);
+                System.out.println("after");
+              }
+
+              public void bar(Object o, boolean b) {
+                do {
+                  switch (o) {
+                    case Integer _ -> throw new AssertionError();
+                    case String _ -> throw new AssertionError();
+                    case Long _ -> throw new AssertionError();
+                    default -> {
+                      continue;
+                    }
+                  }
+
+                } while (b);
+                System.out.println("after");
+              }
+
+              public void baz(Object o, boolean b) {
+                do {
+                  switch (o) {
+                    case Integer _ -> throw new AssertionError();
+                    case String _ -> throw new AssertionError();
+                    case Object _ -> {
+                      continue;
+                    }
+                  }
+                } while (b);
+                System.out.println("after");
+              }
+
+              public void qux(Object o, boolean b) {
+                do {
+                  switch (o) {
+                    case Integer _ -> {
+                      continue;
+                    }
+                    case String _ -> throw new AssertionError();
+                    case Object _ -> throw new AssertionError();
+                  }
+                } while (b);
+                System.out.println("after");
+              }
+            }
+            """)
+        .allowFormattingErrors()
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
         .doTest();
   }
 
@@ -4440,6 +5867,100 @@ class Test {
     } else {
       return s;
     }
+  }
+
+  @Test
+  public void ifChain_deletedDeclarationUsedInLaterCase_noError() {
+    // Converting would make the rest of `case 1` unreachable, so it would be deleted, but `y` is
+    // still used by `case 2`
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            class Test {
+              int f(int x, Object o) {
+                switch (x) {
+                  case 1:
+                    if (o instanceof String s) {
+                      return 1;
+                    } else if (o instanceof Integer i) {
+                      return 2;
+                    } else if (o instanceof Object obj) {
+                      return 3;
+                    }
+                    int y = 5; // Used below!
+                    return y;
+                  case 2:
+                    y = 7;
+                    return y;
+                  default:
+                    return 0;
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .doTest();
+  }
+
+  @Test
+  public void ifChain_deletedDeclarationUnusedInLaterCase_error() {
+    // The rest of `case 1` becomes unreachable and is deleted, including the declaration of `y`,
+    // which is safe because no later case refers to it
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            """
+            class Test {
+              int f(int x, Object o) {
+                switch (x) {
+                  case 1:
+                    if (o instanceof String s) {
+                      return 1;
+                    } else if (o instanceof Integer i) {
+                      return 2;
+                    } else if (o instanceof Object obj) {
+                      return 3;
+                    }
+                    int y = 5;
+                    return y;
+                  case 2:
+                    return 7;
+                  default:
+                    return 0;
+                }
+              }
+            }
+            """)
+        .addOutputLines(
+            "Test.java",
+            """
+            class Test {
+              int f(int x, Object o) {
+                switch (x) {
+                  case 1:
+                    switch (o) {
+                      case String s -> {
+                        return 1;
+                      }
+                      case Integer i -> {
+                        return 2;
+                      }
+                      case Object obj -> {
+                        return 3;
+                      }
+                    }
+                  case 2:
+                    return 7;
+                  default:
+                    return 0;
+                }
+              }
+            }
+            """)
+        .setArgs(ENABLE_MAIN, DISABLE_SAFE, MIN_CHAIN_LENGTH_3)
+        .setFixChooser(IfChainToSwitchTest::assertOneFixAndChoose)
+        .doTest();
   }
 
   /**

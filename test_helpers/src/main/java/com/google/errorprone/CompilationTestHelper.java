@@ -59,7 +59,7 @@ import org.jspecify.annotations.Nullable;
 
 /** Helps test Error Prone bug checkers and compilations. */
 @CheckReturnValue
-public class CompilationTestHelper {
+public final class CompilationTestHelper {
   private static final ImmutableList<String> DEFAULT_ARGS =
       ImmutableList.of(
           "-encoding",
@@ -86,6 +86,7 @@ public class CompilationTestHelper {
   private Optional<Result> expectedResult = Optional.empty();
   private LookForCheckNameInDiagnostic lookForCheckNameInDiagnostic =
       LookForCheckNameInDiagnostic.YES;
+  private boolean testOnly = false;
 
   private boolean run = false;
 
@@ -138,10 +139,13 @@ public class CompilationTestHelper {
    * the overridden classpath, if provided, and any extraArgs that were provided.
    */
   private static ImmutableList<String> buildArguments(
-      @Nullable List<Class<?>> overrideClasspath, List<String> extraArgs) {
+      @Nullable List<Class<?>> overrideClasspath, List<String> extraArgs, boolean testOnly) {
     ImmutableList.Builder<String> result = ImmutableList.<String>builder().addAll(DEFAULT_ARGS);
     getOverrideClasspath(overrideClasspath)
         .ifPresent((Path jar) -> result.add("-cp").add(jar.toString()));
+    if (testOnly && !extraArgs.contains("-XepCompilingTestOnlyCode")) {
+      result.add("-XepCompilingTestOnlyCode");
+    }
     return result.addAll(disableImplicitProcessing(extraArgs)).build();
   }
 
@@ -248,6 +252,13 @@ public class CompilationTestHelper {
     return this;
   }
 
+  /** Configures the compilation to treat the code as test-only. Off by default. */
+  @CanIgnoreReturnValue
+  public CompilationTestHelper setTestOnly() {
+    this.testOnly = true;
+    return this;
+  }
+
   /**
    * Tells the compilation helper to expect that no diagnostics will be generated, even if the
    * source file contains bug markers. Useful for testing that a check is actually disabled when the
@@ -340,13 +351,20 @@ public class CompilationTestHelper {
           .that(result)
           .isEqualTo(expectedResult.orElse(Result.OK));
     } else {
+      ImmutableList.Builder<String> mismatches = ImmutableList.builder();
       for (JavaFileObject source : sources) {
         try {
-          diagnosticHelper.assertHasDiagnosticOnAllMatchingLines(
-              source, lookForCheckNameInDiagnostic);
+          for (String mismatch :
+              diagnosticHelper.findMismatchedLines(source, lookForCheckNameInDiagnostic)) {
+            mismatches.add(sources.size() > 1 ? source.getName() + ": " + mismatch : mismatch);
+          }
         } catch (IOException e) {
           throw new UncheckedIOException(e);
         }
+      }
+      ImmutableList<String> allMismatches = mismatches.build();
+      if (!allMismatches.isEmpty()) {
+        fail(diagnosticHelper.describeMismatches(allMismatches));
       }
       assertWithMessage("Unused error keys: %s", diagnosticHelper.getUnusedLookupKeys())
           .that(diagnosticHelper.getUnusedLookupKeys().isEmpty())
@@ -366,7 +384,7 @@ public class CompilationTestHelper {
   }
 
   private Result compile() {
-    List<String> processedArgs = buildArguments(overrideClasspath, extraArgs);
+    ImmutableList<String> processedArgs = buildArguments(overrideClasspath, extraArgs, testOnly);
     return compiler
             .getTask(
                 new PrintWriter(
@@ -374,7 +392,7 @@ public class CompilationTestHelper {
                     /* autoFlush= */ true),
                 FileManagers.testFileManager(),
                 diagnosticHelper.collector,
-                /* options= */ ImmutableList.copyOf(processedArgs),
+                /* options= */ processedArgs,
                 /* classes= */ ImmutableList.of(),
                 sources)
             .call()

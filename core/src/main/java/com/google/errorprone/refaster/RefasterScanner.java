@@ -35,8 +35,8 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.tree.WhileLoopTree;
 import com.sun.source.util.SimpleTreeVisitor;
+import com.sun.source.util.TreePath;
 import com.sun.source.util.TreeScanner;
-import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
 import com.sun.tools.javac.tree.JCTree.JCStatement;
@@ -53,31 +53,39 @@ import com.sun.tools.javac.util.ListBuffer;
 abstract class RefasterScanner<M extends TemplateMatch, T extends Template<M>>
     extends TreeScanner<Void, Context> {
   static <M extends TemplateMatch, T extends Template<M>> RefasterScanner<M, T> create(
-      RefasterRule<M, T> rule, DescriptionListener listener) {
-    return new AutoValue_RefasterScanner<>(rule, listener);
+      RefasterRule<M, T> rule, DescriptionListener listener, JCCompilationUnit compilationUnit) {
+    return new AutoValue_RefasterScanner<>(rule, listener, compilationUnit);
   }
 
   abstract RefasterRule<M, T> rule();
 
   abstract DescriptionListener listener();
 
+  abstract JCCompilationUnit compilationUnit();
+
+  public Void scan(TreePath path, Context context) {
+    for (TreePath parent = path.getParentPath(); parent != null; parent = parent.getParentPath()) {
+      if (isSuppressed(parent.getLeaf(), context)) {
+        return null;
+      }
+    }
+    return scan(path.getLeaf(), context);
+  }
+
   @Override
   public Void visitClass(ClassTree node, Context context) {
     if (isSuppressed(node, context)) {
       return null;
     }
-    Symbol sym = ASTHelpers.getSymbol(node);
-    if (sym == null || !sym.getQualifiedName().contentEquals(rule().qualifiedTemplateClass())) {
-      ListBuffer<JCStatement> statements = new ListBuffer<>();
-      for (Tree tree : node.getMembers()) {
-        if (tree instanceof JCStatement jCStatement) {
-          statements.append(jCStatement);
-        } else {
-          tree.accept(this, context);
-        }
+    ListBuffer<JCStatement> statements = new ListBuffer<>();
+    for (Tree tree : node.getMembers()) {
+      if (tree instanceof JCStatement jCStatement) {
+        statements.append(jCStatement);
+      } else {
+        tree.accept(this, context);
       }
-      scan(TreeMaker.instance(context).Block(0, statements.toList()), context);
     }
+    scan(TreeMaker.instance(context).Block(0, statements.toList()), context);
     return null;
   }
 
@@ -102,10 +110,10 @@ abstract class RefasterScanner<M extends TemplateMatch, T extends Template<M>>
     if (tree == null) {
       return null;
     }
-    JCCompilationUnit compilationUnit = context.get(JCCompilationUnit.class);
+    JCCompilationUnit compilationUnit = compilationUnit();
     for (T beforeTemplate : rule().beforeTemplates()) {
       matchLoop:
-      for (M match : beforeTemplate.match((JCTree) tree, context)) {
+      for (M match : beforeTemplate.match((JCTree) tree, context, compilationUnit)) {
         if (rule().rejectMatchesWithComments()) {
           String matchContents = match.getRange(compilationUnit);
           if (stringContainsComments(matchContents, context)) {
@@ -181,6 +189,10 @@ abstract class RefasterScanner<M extends TemplateMatch, T extends Template<M>>
   }
 
   private boolean isSuppressed(Tree node, Context context) {
-    return RefasterSuppressionHelper.suppressed(rule(), node, context);
+    return (node instanceof ClassTree classTree
+            && ASTHelpers.getSymbol(classTree)
+                .getQualifiedName()
+                .contentEquals(rule().qualifiedTemplateClass()))
+        || RefasterSuppressionHelper.suppressed(rule(), node, context);
   }
 }

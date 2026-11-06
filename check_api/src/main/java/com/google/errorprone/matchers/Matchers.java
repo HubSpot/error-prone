@@ -17,6 +17,7 @@
 package com.google.errorprone.matchers;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.common.collect.Iterables.getLast;
 import static com.google.common.collect.Iterables.getOnlyElement;
@@ -27,19 +28,23 @@ import static com.google.errorprone.predicates.TypePredicates.isExactType;
 import static com.google.errorprone.suppliers.Suppliers.BOOLEAN_TYPE;
 import static com.google.errorprone.suppliers.Suppliers.INT_TYPE;
 import static com.google.errorprone.suppliers.Suppliers.JAVA_LANG_BOOLEAN_TYPE;
+import static com.google.errorprone.suppliers.Suppliers.OBJECT_TYPE;
 import static com.google.errorprone.suppliers.Suppliers.STRING_TYPE;
 import static com.google.errorprone.suppliers.Suppliers.typeFromClass;
-import static com.google.errorprone.suppliers.Suppliers.typeFromString;
+import static com.google.errorprone.util.ASTHelpers.findEnclosingMethod;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
 import static com.google.errorprone.util.ASTHelpers.stripParentheses;
+import static com.google.errorprone.util.ASTHelpers.unboxedTypeOrType;
 import static java.util.Objects.requireNonNull;
 import static javax.lang.model.element.Modifier.STATIC;
 
 import com.google.common.base.VerifyException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Lists;
+import com.google.errorprone.ClassName;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.dataflow.nullnesspropagation.Nullness;
 import com.google.errorprone.matchers.ChildMultiMatcher.MatchType;
@@ -50,9 +55,11 @@ import com.google.errorprone.matchers.method.MethodMatchers.ConstructorMatcher;
 import com.google.errorprone.matchers.method.MethodMatchers.InstanceMethodMatcher;
 import com.google.errorprone.matchers.method.MethodMatchers.StaticMethodMatcher;
 import com.google.errorprone.predicates.TypePredicate;
+import com.google.errorprone.predicates.TypePredicates;
 import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.suppliers.Suppliers;
 import com.google.errorprone.util.ASTHelpers;
+import com.google.errorprone.util.SourcePathMatcher;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.AssertTree;
 import com.sun.source.tree.AssignmentTree;
@@ -95,17 +102,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
-import java.util.regex.Pattern;
-import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeMirror;
+import org.safere.Pattern;
 
 /**
  * Static factory methods which make the DSL read more fluently. Since matchers are run in a tight
@@ -114,7 +119,7 @@ import javax.lang.model.type.TypeMirror;
  *
  * @author alexeagle@google.com (Alex Eagle)
  */
-public class Matchers {
+public final class Matchers {
 
   private Matchers() {}
 
@@ -401,6 +406,15 @@ public class Matchers {
   }
 
   /**
+   * Matches an AST node if its type is a subtype of the given class.
+   *
+   * @param className the class to check against
+   */
+  public static <T extends Tree> Matcher<T> isSubtypeOf(ClassName className) {
+    return typePredicateMatcher(isDescendantOf(className));
+  }
+
+  /**
    * Matches an AST node if its type is a subtype of the given type.
    *
    * @param type the type to check against
@@ -426,6 +440,11 @@ public class Matchers {
   /** Matches an AST node if it has the same erased type as the given type. */
   public static <T extends Tree> Matcher<T> isSameType(String typeString) {
     return typePredicateMatcher(isExactType(typeString));
+  }
+
+  /** Matches an AST node if it has the same erased type as the given class. */
+  public static <T extends Tree> Matcher<T> isSameType(ClassName className) {
+    return typePredicateMatcher(isExactType(className));
   }
 
   /** Matches an AST node if it has the same erased type as the given class. */
@@ -478,15 +497,12 @@ public class Matchers {
    * Matches an AST node if its type is a primitive type, or a boxed version of a primitive type.
    */
   public static <T extends Tree> Matcher<T> isPrimitiveOrBoxedPrimitiveType() {
-    return typePredicateMatcher(
-        (type, state) -> state.getTypes().unboxedTypeOrType(type).isPrimitive());
+    return typePredicateMatcher((type, state) -> unboxedTypeOrType(type, state).isPrimitive());
   }
 
   /** Matches an AST node if its type is a boxed primitive type. */
   public static Matcher<ExpressionTree> isBoxedPrimitiveType() {
-    return typePredicateMatcher(
-        (type, state) ->
-            !state.getTypes().isSameType(state.getTypes().unboxedType(type), Type.noType));
+    return typePredicateMatcher(ASTHelpers::isBoxedPrimitiveType);
   }
 
   /** Matches an AST node which is enclosed by a block node that matches the given matcher. */
@@ -598,21 +614,37 @@ public class Matchers {
     };
   }
 
+  static Matcher<ExpressionTree> stringLiteral(Predicate<String> matcher) {
+    return (tree, state) ->
+        tree instanceof LiteralTree literalTree
+            && literalTree.getValue() instanceof String string
+            && matcher.test(string);
+  }
+
   /**
    * Matches a Literal AST node if it is a string literal with the given value. For example, {@code
    * stringLiteral("thing")} matches the literal {@code "thing"}
    */
   public static Matcher<ExpressionTree> stringLiteral(String value) {
-    return new StringLiteral(value);
+    return stringLiteral(value::equals);
   }
 
   /**
-   * Matches a Literal AST node if it is a string literal which matches the given {@link Pattern}.
+   * Matches a Literal AST node if it is a string literal which matches the given {@code Pattern}.
    *
    * @see #stringLiteral(String)
    */
   public static Matcher<ExpressionTree> stringLiteral(Pattern pattern) {
-    return new StringLiteral(pattern);
+    return stringLiteral(pattern.asPredicate());
+  }
+
+  /**
+   * Matches a Literal AST node if it is a string literal which matches the given {@code Pattern}.
+   *
+   * @see #stringLiteral(String)
+   */
+  public static Matcher<ExpressionTree> stringLiteral(java.util.regex.Pattern pattern) {
+    return stringLiteral(pattern.asPredicate());
   }
 
   public static Matcher<ExpressionTree> booleanLiteral(boolean value) {
@@ -684,8 +716,30 @@ public class Matchers {
     return new AnnotationDoesNotHaveArgument(argumentName);
   }
 
+  /** Matches an {@link AnnotationTree} with the given qualified annotation class name. */
   public static Matcher<AnnotationTree> isType(String annotationClassName) {
     return new AnnotationType(annotationClassName);
+  }
+
+  /** Matches an {@link AnnotationTree} with the given annotation {@link ClassName}. */
+  public static Matcher<AnnotationTree> isType(ClassName annotationClassName) {
+    return new AnnotationType(annotationClassName);
+  }
+
+  /**
+   * Matches an annotation that is itself annotated with the given annotation, i.e. a
+   * meta-annotation.
+   */
+  public static Matcher<AnnotationTree> hasMetaAnnotation(String annotationClassName) {
+    return typePredicateMatcher(TypePredicates.hasAnnotation(annotationClassName));
+  }
+
+  /**
+   * Matches an annotation that is itself annotated with the given annotation, i.e. a
+   * meta-annotation.
+   */
+  public static Matcher<AnnotationTree> hasMetaAnnotation(ClassName annotationClassName) {
+    return typePredicateMatcher(TypePredicates.hasAnnotation(annotationClassName));
   }
 
   /**
@@ -704,6 +758,18 @@ public class Matchers {
   }
 
   /**
+   * Determines whether an expression has an annotation with the given simple name. This does not
+   * include annotations inherited from superclasses due to @Inherited.
+   *
+   * @param simpleName the simple name of the annotation (e.g. "Nullable")
+   */
+  public static <T extends Tree> Matcher<T> hasAnnotationWithSimpleName(String simpleName) {
+    return (tree, state) ->
+        ASTHelpers.hasDirectAnnotationWithSimpleName(
+            ASTHelpers.getDeclaredSymbol(tree), simpleName);
+  }
+
+  /**
    * Determines whether an expression has an annotation of the given type. This includes annotations
    * inherited from superclasses due to @Inherited.
    *
@@ -711,12 +777,16 @@ public class Matchers {
    *     "javax.annotation.Nullable", or "some.package.OuterClassName$InnerClassName")
    */
   public static <T extends Tree> Matcher<T> hasAnnotation(String annotationClass) {
-    Supplier<Set<Name>> name =
-        VisitorState.memoize(
-            state -> ImmutableSet.of(state.binaryNameFromClassname(annotationClass)));
+    return hasAnnotation(ClassName.of(annotationClass));
+  }
+
+  /**
+   * Determines whether an expression has an annotation of the given type. This includes annotations
+   * inherited from superclasses due to @Inherited.
+   */
+  public static <T extends Tree> Matcher<T> hasAnnotation(ClassName annotationClass) {
     return (T tree, VisitorState state) ->
-        !ASTHelpers.annotationsAmong(ASTHelpers.getDeclaredSymbol(tree), name.get(state), state)
-            .isEmpty();
+        ASTHelpers.hasAnnotation(ASTHelpers.getDeclaredSymbol(tree), annotationClass, state);
   }
 
   /**
@@ -742,15 +812,13 @@ public class Matchers {
   }
 
   /**
-   * Determines whether an expression has an annotation with the given simple name. This does not
-   * include annotations inherited from superclasses due to @Inherited.
+   * Determines whether an expression has an annotation of the given class. This includes
+   * annotations inherited from superclasses due to @Inherited.
    *
-   * @param simpleName the simple name of the annotation (e.g. "Nullable")
+   * @param inputClass the class of the annotation to look for (e.g, {@code Produces.class})
    */
-  public static <T extends Tree> Matcher<T> hasAnnotationWithSimpleName(String simpleName) {
-    return (tree, state) ->
-        ASTHelpers.hasDirectAnnotationWithSimpleName(
-            ASTHelpers.getDeclaredSymbol(tree), simpleName);
+  public static <T extends Tree> Matcher<T> hasAnnotation(Class<? extends Annotation> inputClass) {
+    return hasAnnotation(ClassName.of(inputClass.getName()));
   }
 
   /**
@@ -766,14 +834,12 @@ public class Matchers {
   }
 
   /**
-   * Determines whether an expression has an annotation of the given class. This includes
-   * annotations inherited from superclasses due to @Inherited.
-   *
-   * @param inputClass The class of the annotation to look for (e.g, Produces.class).
+   * Determines whether an expression refers to a symbol that has an annotation of the given type.
+   * This includes annotations inherited from superclasses due to @Inherited.
    */
-  public static <T extends Tree> Matcher<T> hasAnnotation(Class<? extends Annotation> inputClass) {
-    return (tree, state) ->
-        ASTHelpers.hasAnnotation(ASTHelpers.getDeclaredSymbol(tree), inputClass, state);
+  public static <T extends Tree> Matcher<T> symbolHasAnnotation(ClassName annotationClass) {
+    return symbolMatcher(
+        (symbol, state) -> ASTHelpers.hasAnnotation(symbol, annotationClass, state));
   }
 
   /**
@@ -797,9 +863,25 @@ public class Matchers {
   public static Matcher<MethodTree> hasAnnotationOnAnyOverriddenMethod(String annotationClass) {
     return (tree, state) -> {
       MethodSymbol methodSym = getSymbol(tree);
-      if (methodSym == null) {
-        return false;
+      if (ASTHelpers.hasAnnotation(methodSym, annotationClass, state)) {
+        return true;
       }
+      for (MethodSymbol method : ASTHelpers.findSuperMethods(methodSym, state.getTypes())) {
+        if (ASTHelpers.hasAnnotation(method, annotationClass, state)) {
+          return true;
+        }
+      }
+      return false;
+    };
+  }
+
+  /**
+   * Matches if a method or any method it overrides has an annotation of the given type. JUnit 4's
+   * {@code @Test}, {@code @Before}, and {@code @After} annotations behave this way.
+   */
+  public static Matcher<MethodTree> hasAnnotationOnAnyOverriddenMethod(ClassName annotationClass) {
+    return (tree, state) -> {
+      MethodSymbol methodSym = getSymbol(tree);
       if (ASTHelpers.hasAnnotation(methodSym, annotationClass, state)) {
         return true;
       }
@@ -829,7 +911,13 @@ public class Matchers {
     };
   }
 
+  /** Match a method whose return type equals the given {@code returnType}. */
   public static Matcher<MethodTree> methodReturns(Supplier<Type> returnType) {
+    return methodReturns(isSameType(returnType));
+  }
+
+  /** Match a method whose return type equals the given {@code returnType}. */
+  public static Matcher<MethodTree> methodReturns(ClassName returnType) {
     return methodReturns(isSameType(returnType));
   }
 
@@ -867,6 +955,19 @@ public class Matchers {
     return (methodTree, state) ->
         getSymbol(methodTree).getEnclosingElement().getQualifiedName().contentEquals(className)
             && methodTree.getName().contentEquals(methodName);
+  }
+
+  /**
+   * Match a method declaration with a specific enclosing class and method name.
+   *
+   * @param className The enclosing class
+   * @param methodName The name of the method to match, e.g., "checkNotNull"
+   */
+  public static Matcher<MethodTree> methodWithClassAndName(ClassName className, String methodName) {
+    return (methodTree, state) ->
+        methodTree.getName().contentEquals(methodName)
+            && getSymbol(methodTree).getEnclosingElement() instanceof ClassSymbol owner
+            && owner.flatName().equals(className.binaryName(state));
   }
 
   /**
@@ -940,6 +1041,20 @@ public class Matchers {
       Symbol symbol = getSymbol(methodTree);
       return symbol.getEnclosingElement().getQualifiedName().contentEquals(className)
           && symbol.isConstructor();
+    };
+  }
+
+  /**
+   * Matches a constructor declaration in a specific enclosing class.
+   *
+   * @param className The enclosing class
+   */
+  public static Matcher<MethodTree> constructorOfClass(ClassName className) {
+    return (methodTree, state) -> {
+      Symbol symbol = getSymbol(methodTree);
+      return symbol.isConstructor()
+          && symbol.getEnclosingElement() instanceof ClassSymbol owner
+          && owner.flatName().equals(className.binaryName(state));
     };
   }
 
@@ -1110,13 +1225,14 @@ public class Matchers {
   /** Matches if this Tree is enclosed by either a synchronized block or a synchronized method. */
   public static <T extends Tree> Matcher<T> inSynchronized() {
     return (tree, state) -> {
+      // TODO(cpovirk): Look for `synchronized` only within the current method?
       SynchronizedTree synchronizedTree =
           ASTHelpers.findEnclosingNode(state.getPath(), SynchronizedTree.class);
       if (synchronizedTree != null) {
         return true;
       }
 
-      MethodTree methodTree = ASTHelpers.findEnclosingNode(state.getPath(), MethodTree.class);
+      MethodTree methodTree = findEnclosingMethod(state);
       return methodTree != null
           && methodTree.getModifiers().getFlags().contains(Modifier.SYNCHRONIZED);
     };
@@ -1292,8 +1408,20 @@ public class Matchers {
     return new IsDirectImplementationOf(isProvidedType);
   }
 
+  /** Matches any node that is directly an implementation, but not extension, of the given Class. */
+  public static Matcher<ClassTree> isDirectImplementationOf(ClassName clazz) {
+    Matcher<Tree> isProvidedType = isSameType(clazz);
+    return new IsDirectImplementationOf(isProvidedType);
+  }
+
   /** Matches any node that is a direct extension of the given class. */
   public static Matcher<ClassTree> isExtensionOf(String clazz) {
+    Matcher<Tree> isProvidedType = isSameType(clazz);
+    return new IsExtensionOf(isProvidedType);
+  }
+
+  /** Matches any node that is a direct extension of the given class. */
+  public static Matcher<ClassTree> isExtensionOf(ClassName clazz) {
     Matcher<Tree> isProvidedType = isSameType(clazz);
     return new IsExtensionOf(isProvidedType);
   }
@@ -1305,6 +1433,20 @@ public class Matchers {
       matchers.add(hasAnnotation(annotation));
     }
     return anyOf(matchers);
+  }
+
+  /**
+   * Determines whether a tree has any of the given annotations. This includes annotations inherited
+   * from superclasses due to {@code @Inherited}.
+   */
+  public static <T extends Tree> Matcher<T> hasAnyAnnotation(ClassName... annotations) {
+    ImmutableList<ClassName> classNames = ImmutableList.copyOf(annotations);
+    Supplier<ImmutableSet<Name>> names =
+        VisitorState.memoize(
+            state -> classNames.stream().map(a -> a.binaryName(state)).collect(toImmutableSet()));
+    return (T tree, VisitorState state) ->
+        !ASTHelpers.annotationsAmong(ASTHelpers.getDeclaredSymbol(tree), names.get(state), state)
+            .isEmpty();
   }
 
   public static Matcher<Tree> hasAnyAnnotation(List<? extends TypeMirror> mirrors) {
@@ -1326,8 +1468,12 @@ public class Matchers {
   }
 
   public static boolean isThrowingFunctionalInterface(Type clazzType, VisitorState state) {
-    return CLASSES_CONSIDERED_THROWING.get(state).stream()
-        .anyMatch(t -> isSubtype(clazzType, t, state));
+    for (ClassName throwingClass : CLASSES_CONSIDERED_THROWING) {
+      if (isSubtype(clazzType, throwingClass, state)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -1338,22 +1484,17 @@ public class Matchers {
    * errorCollector.checkThrows(FooException.class, () -> myCodeThatThrowsAnException()); }
    */
   // TODO(glorioso): Consider a meta-annotation like @LikelyToThrow instead/in addition?
-  private static final Supplier<ImmutableSet<Type>> CLASSES_CONSIDERED_THROWING =
-      VisitorState.memoize(
-          state ->
-              Stream.of(
-                      "org.junit.function.ThrowingRunnable",
-                      "org.junit.jupiter.api.function.Executable",
-                      "org.assertj.core.api.ThrowableAssert$ThrowingCallable",
-                      "com.google.common.truth.ExpectFailure.AssertionCallback",
-                      "com.google.common.truth.ExpectFailure.DelegatedAssertionCallback",
-                      "com.google.common.truth.ExpectFailure.StandardSubjectBuilderCallback",
-                      "com.google.common.truth.ExpectFailure.SimpleSubjectBuilderCallback",
-                      "com.google.devtools.build.lib.testutil.MoreAsserts$ThrowingRunnable",
-                      "com.google.gerrit.testing.GerritJUnit$ThrowingRunnable")
-                  .map(state::getTypeFromString)
-                  .filter(Objects::nonNull)
-                  .collect(toImmutableSet()));
+  private static final ImmutableList<ClassName> CLASSES_CONSIDERED_THROWING =
+      ImmutableList.of(
+          ClassName.of("org.junit.function.ThrowingRunnable"),
+          ClassName.of("org.junit.jupiter.api.function.Executable"),
+          ClassName.of("org.assertj.core.api.ThrowableAssert$ThrowingCallable"),
+          ClassName.of("com.google.common.truth.ExpectFailure.AssertionCallback"),
+          ClassName.of("com.google.common.truth.ExpectFailure.DelegatedAssertionCallback"),
+          ClassName.of("com.google.common.truth.ExpectFailure.StandardSubjectBuilderCallback"),
+          ClassName.of("com.google.common.truth.ExpectFailure.SimpleSubjectBuilderCallback"),
+          ClassName.of("com.google.devtools.build.lib.testutil.MoreAsserts$ThrowingRunnable"),
+          ClassName.of("com.google.gerrit.testing.GerritJUnit$ThrowingRunnable"));
 
   private static class IsDirectImplementationOf extends ChildMultiMatcher<ClassTree, Tree> {
     IsDirectImplementationOf(Matcher<Tree> classMatcher) {
@@ -1380,6 +1521,85 @@ public class Matchers {
       }
       return matched;
     }
+  }
+
+  /**
+   * Matches if the compilation unit's canonical source path (as defined by {@link
+   * ASTHelpers#getSourcePath(VisitorState)}) starts with any of the given directory prefixes.
+   *
+   * @param prefix the directory prefix to match (e.g. "third_party/" or "javatests/"); must not
+   *     start with a leading {@code /}
+   * @see ASTHelpers#getSourcePath(VisitorState)
+   */
+  public static Matcher<Tree> sourcePathStartsWith(String prefix, String... morePrefixes) {
+    return sourcePathStartsWith(Lists.asList(prefix, morePrefixes));
+  }
+
+  /**
+   * Matches if the compilation unit's canonical source path (as defined by {@link
+   * ASTHelpers#getSourcePath(VisitorState)}) starts with any of the given directory prefixes.
+   *
+   * @see ASTHelpers#getSourcePath(VisitorState)
+   */
+  public static Matcher<Tree> sourcePathStartsWith(Iterable<String> prefixes) {
+    ImmutableList<String> prefixList =
+        stream(prefixes).map(Matchers::normalizePrefix).collect(toImmutableList());
+    return (tree, state) -> {
+      String canonicalPath = ASTHelpers.getSourcePath(state);
+      for (String p : prefixList) {
+        if (canonicalPath.startsWith(p)) {
+          return true;
+        }
+      }
+      return false;
+    };
+  }
+
+  private static final Matcher<Tree> IN_THIRD_PARTY = sourcePathStartsWith("third_party/");
+
+  /**
+   * Matches if the compilation unit's canonical source path (as defined by {@link
+   * ASTHelpers#getSourcePath(VisitorState)}) is located within third_party.
+   *
+   * @see ASTHelpers#getSourcePath(VisitorState)
+   */
+  public static Matcher<Tree> inThirdParty() {
+    return IN_THIRD_PARTY;
+  }
+
+  /**
+   * Matches if the compilation is marked as test-only (e.g. via {@code -XepCompilingTestOnlyCode}).
+   */
+  public static <T extends Tree> Matcher<T> isTestOnlyTarget() {
+    return (tree, state) -> state.errorProneOptions().isTestOnlyTarget();
+  }
+
+  private static String normalizePrefix(String prefix) {
+    checkArgument(!prefix.startsWith("/"), "Path prefix must not start with '/': %s", prefix);
+    checkArgument(!prefix.contains("//"), "Path prefix must not contain '//': %s", prefix);
+    return prefix.endsWith("/") ? prefix : prefix + "/";
+  }
+
+  /**
+   * Matches if the compilation unit's canonical source path (as defined by {@link
+   * ASTHelpers#getSourcePath(VisitorState)}) matches the given path pattern (exact path ending with
+   * {@code .java}, or directory prefix ending with {@code /}).
+   *
+   * @see ASTHelpers#getSourcePath(VisitorState)
+   */
+  public static Matcher<Tree> sourcePathMatches(String pattern) {
+    SourcePathMatcher matcher = SourcePathMatcher.create(pattern);
+    return (tree, state) -> matcher.matches(state);
+  }
+
+  /**
+   * Matches if the compilation unit's canonical source path (as defined by {@link
+   * ASTHelpers#getSourcePath(VisitorState)}) matches the given {@link SourcePathMatcher}.
+   *
+   * @see ASTHelpers#getSourcePath(VisitorState)
+   */
+  public static Matcher<Tree> sourcePathMatches(SourcePathMatcher matcher) {
+    return (tree, state) -> matcher.matches(state);
   }
 
   /** Matches an AST node whose compilation unit's package name matches the given predicate. */
@@ -1574,16 +1794,13 @@ public class Matchers {
           anyOf(
               allOf(
                   methodIsNamed("readObject"),
-                  methodHasParameters(isSameType("java.io.ObjectInputStream"))),
+                  methodHasParameters(isSameType(ClassName.of("java.io.ObjectInputStream")))),
               allOf(
                   methodIsNamed("writeObject"),
-                  methodHasParameters(isSameType("java.io.ObjectOutputStream"))),
+                  methodHasParameters(isSameType(ClassName.of("java.io.ObjectOutputStream")))),
               allOf(methodIsNamed("readObjectNoData"), methodReturns(isVoidType())),
-              allOf(
-                  methodIsNamed("readResolve"), methodReturns(typeFromString("java.lang.Object"))),
-              allOf(
-                  methodIsNamed("writeReplace"),
-                  methodReturns(typeFromString("java.lang.Object")))));
+              allOf(methodIsNamed("readResolve"), methodReturns(OBJECT_TYPE)),
+              allOf(methodIsNamed("writeReplace"), methodReturns(OBJECT_TYPE))));
 
   public static final Matcher<Tree> IS_INTERFACE =
       (t, s) -> {

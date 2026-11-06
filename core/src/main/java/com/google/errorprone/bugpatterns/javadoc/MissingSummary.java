@@ -25,6 +25,8 @@ import static com.google.errorprone.util.ASTHelpers.findSuperMethods;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.isEffectivelyPrivate;
+import static com.google.errorprone.util.AnnotationNames.DEPRECATED_ANNOTATION;
+import static com.google.errorprone.util.AnnotationNames.OVERRIDE_ANNOTATION;
 import static java.util.stream.Collectors.joining;
 
 import com.google.errorprone.BugPattern;
@@ -119,8 +121,8 @@ public final class MissingSummary extends BugChecker
     if (!modifiers.contains(Modifier.PUBLIC) && !modifiers.contains(Modifier.PROTECTED)) {
       return NO_MATCH;
     }
-    if (hasAnnotation(symbol, "java.lang.Override", state)
-        || hasAnnotation(symbol, "java.lang.Deprecated", state)) {
+    if (hasAnnotation(symbol, OVERRIDE_ANNOTATION, state)
+        || hasAnnotation(symbol, DEPRECATED_ANNOTATION, state)) {
       return NO_MATCH;
     }
     return buildDescription(diagnosticPosition(docTreePath, state)).build();
@@ -143,7 +145,7 @@ public final class MissingSummary extends BugChecker
                     lowerFirstLetter(description), description.endsWith(".") ? "" : "."))
             .build();
     return buildDescription(diagnosticPosition(docTreePath, state))
-        .setMessage(String.format(CONSIDER_USING_MESSAGE, "return"))
+        .setMessage(CONSIDER_USING_MESSAGE, "return")
         .addFix(fix)
         .build();
   }
@@ -166,7 +168,7 @@ public final class MissingSummary extends BugChecker
                             .collect(joining(" "))))
                 .build();
     return buildDescription(diagnosticPosition(docTreePath, state))
-        .setMessage(String.format(CONSIDER_USING_MESSAGE, "see"))
+        .setMessage(CONSIDER_USING_MESSAGE, "see")
         .addFix(fix)
         .build();
   }

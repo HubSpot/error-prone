@@ -25,6 +25,7 @@ import static com.google.errorprone.matchers.Matchers.symbolHasAnnotation;
 import static com.google.errorprone.matchers.Matchers.toType;
 import static com.google.errorprone.matchers.method.MethodMatchers.staticMethod;
 import static com.google.errorprone.util.ASTHelpers.enclosingClass;
+import static com.google.errorprone.util.ASTHelpers.findEnclosingMethod;
 import static com.google.errorprone.util.ASTHelpers.findEnclosingNode;
 import static com.google.errorprone.util.ASTHelpers.getReceiver;
 import static com.google.errorprone.util.ASTHelpers.getReturnType;
@@ -44,6 +45,7 @@ import com.google.auto.value.AutoValue;
 import com.google.common.base.CaseFormat;
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.Multiset;
+import com.google.errorprone.ClassName;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.annotations.ForOverride;
 import com.google.errorprone.annotations.MustBeClosed;
@@ -75,14 +77,12 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
-import org.jspecify.annotations.Nullable;
 
 /**
  * An abstract check for resources that must be closed; used by {@link StreamResourceLeak} and
  * {@link MustBeClosedChecker}.
  */
 public abstract class AbstractMustBeClosedChecker extends BugChecker {
-
   private static final String MUST_BE_CLOSED_ANNOTATION_NAME =
       MustBeClosed.class.getCanonicalName();
 
@@ -249,7 +249,7 @@ public abstract class AbstractMustBeClosedChecker extends BugChecker {
 
   private Optional<Change> checkClosed(
       ExpressionTree tree, VisitorState state, NameSuggester suggester) {
-    MethodTree callerMethodTree = enclosingMethod(state);
+    MethodTree callerMethodTree = findEnclosingMethod(state);
     TreePath path = state.getPath();
     OUTER:
     while (true) {
@@ -289,7 +289,7 @@ public abstract class AbstractMustBeClosedChecker extends BugChecker {
         }
         case MemberSelectTree memberSelectTree -> {
           if (memberSelectTree.getExpression().equals(prev.getLeaf())) {
-            Type streamType = state.getTypeFromString(Stream.class.getName());
+            Type streamType = STREAM.type(state);
             Type classType = enclosingClass(getSymbol(memberSelectTree)).asType();
             Type returnType = getReturnType(memberSelectTree);
             if (isSubtype(classType, streamType, state)
@@ -353,28 +353,6 @@ public abstract class AbstractMustBeClosedChecker extends BugChecker {
 
   private static Optional<Change> findingWithNoFix() {
     return Change.of(SuggestedFix.emptyFix());
-  }
-
-  /**
-   * Returns the enclosing method of the given visitor state. Returns null if the state is within a
-   * lambda expression or anonymous class.
-   */
-  private static @Nullable MethodTree enclosingMethod(VisitorState state) {
-    for (Tree node : state.getPath().getParentPath()) {
-      switch (node) {
-        case LambdaExpressionTree let -> {
-          return null;
-        }
-        case NewClassTree nct -> {
-          return null;
-        }
-        case MethodTree methodTree -> {
-          return methodTree;
-        }
-        default -> {}
-      }
-    }
-    return null;
   }
 
   private static boolean isClosedInFinallyClause(VarSymbol var, TreePath path, VisitorState state) {
@@ -547,4 +525,6 @@ public abstract class AbstractMustBeClosedChecker extends BugChecker {
         .flatMap(key -> CLOSEABLE_DECORATOR_TYPES.get(key).stream())
         .anyMatch(value -> isSubtype(decoratorType, state.getTypeFromString(value), state));
   }
+
+  private static final ClassName STREAM = ClassName.of(Stream.class.getName());
 }

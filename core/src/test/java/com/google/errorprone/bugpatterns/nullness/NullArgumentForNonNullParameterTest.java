@@ -442,7 +442,6 @@ public class NullArgumentForNonNullParameterTest {
         .addSourceLines(
             "Foo.java",
             """
-            import java.io.Serializable;
             import org.jspecify.annotations.NonNull;
 
             class Foo<V extends @NonNull Object, T extends V> {
@@ -623,6 +622,36 @@ public class NullArgumentForNonNullParameterTest {
                   // BUG: Diagnostic contains:
                   Optional.of(null);
                 }
+              }
+            }
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void positiveProtoNonnullApi() {
+    conservativeHelper
+        .addSourceLines(
+            "com/google/protobuf/Internal.java",
+            """
+            package com.google.protobuf;
+
+            public class Internal {
+              public @interface ProtoNonnullApi {}
+            }
+            """)
+        .addSourceLines(
+            "Foo.java",
+            """
+            import com.google.protobuf.Internal.ProtoNonnullApi;
+
+            @ProtoNonnullApi
+            class Foo {
+              void consume(String s) {}
+
+              void foo() {
+                // BUG: Diagnostic contains: parameter 's' of method 'consume'
+                consume(null);
               }
             }
             """)

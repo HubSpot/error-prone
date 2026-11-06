@@ -84,9 +84,7 @@ public abstract class ApiDiffChecker extends BugChecker
     // check for information associated with the class
     if (apiDiff.isClassUnsupported(Signatures.classDescriptor(receiver.type, state))
         || classOrEnclosingClassIsForbiddenByAnnotation(receiver, state)) {
-      return buildDescription(tree)
-          .setMessage(String.format("%s is not available", receiver))
-          .build();
+      return buildDescription(tree).setMessage("%s is not available", receiver).build();
     }
     // check for fields and methods that are not present in the old API
     if (!(sym instanceof VarSymbol || sym instanceof MethodSymbol)) {
@@ -99,7 +97,7 @@ public abstract class ApiDiffChecker extends BugChecker
     if (apiDiff.isMemberUnsupported(Signatures.classDescriptor(owner.type, state), memberKey)
         || hasAnnotationForbiddingUse(sym, state)) {
       return buildDescription(tree)
-          .setMessage(String.format("%s#%s is not available in %s", owner, sym, receiver))
+          .setMessage("%s#%s is not available in %s", owner, sym, receiver)
           .build();
     }
     return Description.NO_MATCH;
@@ -130,23 +128,20 @@ public abstract class ApiDiffChecker extends BugChecker
     if (ASTHelpers.isStatic(sym) || sym instanceof ClassSymbol) {
       return sym.enclClass();
     }
-    switch (tree.getKind()) {
+    return switch (tree.getKind()) {
       case MEMBER_SELECT, METHOD_INVOCATION -> {
         Type receiver = ASTHelpers.getType(ASTHelpers.getReceiver(tree));
         if (receiver == null) {
-          return null;
+          yield null;
         }
-        return receiver.tsym.enclClass();
+        yield receiver.tsym.enclClass();
       }
-      case IDENTIFIER -> {
-        // Simple names are implicitly qualified by an enclosing instance, so if we get here
-        // we're inside the compilation unit that declares the receiver, and the diff doesn't
-        // contain accurate information.
-        return null;
-      }
-      default -> {
-        return null;
-      }
-    }
+      case IDENTIFIER ->
+          // Simple names are implicitly qualified by an enclosing instance, so if we get here
+          // we're inside the compilation unit that declares the receiver, and the diff doesn't
+          // contain accurate information.
+          null;
+      default -> null;
+    };
   }
 }

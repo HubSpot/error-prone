@@ -28,16 +28,48 @@ public final class InvalidSnippetTest {
       CompilationTestHelper.newInstance(InvalidSnippet.class, getClass());
 
   @Test
-  public void snippetWithoutBody_butWithFile() {
+  @SuppressWarnings("MisformattedTestData") // sadly intentional, so the BUG line precedes the issue
+  public void snippetWithoutColonOrFile() {
     helper
         .addSourceLines(
             "Test.java",
             """
             /**
-             *
-             *
-             * {@snippet file="foo.java"}
+             * // BUG: Diagnostic contains:
+             * {@snippet
+             *    I have no colon
+             *  }
              */
+            interface Test {}
+            """)
+        .doTest();
+  }
+
+  @Test
+  @SuppressWarnings("MisformattedTestData") // sadly intentional, so the BUG line precedes the issue
+  public void snippetWithoutColon_causingParseErrors() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            /**
+             * // BUG: Diagnostic contains:
+             * {@snippet
+             *    List<Foo, Bar> xs = List.of();
+             *  }
+             */
+            interface Test {}
+            """)
+        .doTest();
+  }
+
+  @Test
+  public void snippetWithoutBody_butWithFile() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            """
+            /** {@snippet file="foo.java"} */
             interface Test {}
             """)
         .doTest();
@@ -50,8 +82,6 @@ public final class InvalidSnippetTest {
             "Test.java",
             """
             /**
-             *
-             *
              * {@snippet :
              *    I have a colon
              *  }
